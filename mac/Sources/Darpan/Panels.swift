@@ -91,10 +91,7 @@ struct DisplayPanel: View {
                 .pickerStyle(.segmented).labelsHidden()
             }
             PanelSection(title: "Quality") {
-                Picker("Quality", selection: $settings.quality) {
-                    ForEach(Settings.qualities, id: \.kbps) { Text($0.name).tag($0.kbps) }
-                }
-                .pickerStyle(.segmented).labelsHidden()
+                QualityPicker(selection: $settings.quality)
             }
             PanelSection(title: "Frame rate") {
                 Picker("Frame rate", selection: $settings.fps) {
@@ -149,5 +146,32 @@ struct KeysPanel: View {
         }
         .padding(14)
         .frame(width: 320)
+    }
+}
+
+/// Four quality choices as a segmented row; the long names take two lines ("Faster" over "Speed").
+private struct QualityPicker: View {
+    @Binding var selection: Int
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Settings.qualities, id: \.kbps) { q in
+                let on = selection == q.kbps
+                Button { selection = q.kbps } label: {
+                    Text(q.name.replacingOccurrences(of: " ", with: "\n"))
+                        .font(.system(size: 11, weight: on ? .semibold : .regular))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(on ? Color.white : Color.primary)
+                .background(RoundedRectangle(cornerRadius: 6).fill(on ? Color.accentColor : Color.clear))
+                .help("Up to \(q.kbps / 1000) Mbit/s; less when the network needs it")
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.08)))
     }
 }

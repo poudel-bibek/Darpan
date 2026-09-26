@@ -50,7 +50,7 @@ enum MainMenu {
         conn.addItem(withTitle: "Resolution", action: nil, keyEquivalent: "").submenu = resolution
         let quality = NSMenu(title: "Quality")
         for q in Settings.qualities {
-            let i = item(q.kbps == 0 ? "Auto" : "\(q.name) (\(q.kbps / 1000) Mbps)", #selector(Session.chooseQuality(_:)))
+            let i = item("\(q.name) (up to \(q.kbps / 1000) Mbps)", #selector(Session.chooseQuality(_:)))
             i.tag = q.kbps
             quality.addItem(i)
         }
