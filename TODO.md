@@ -8,7 +8,8 @@ Today the Linux computer is the one you connect **to**. Make it work in both dir
 can also use your Mac from Linux.
 
 * **On the Mac:** one switch, *Allow my other computers to connect*, off by default. The first time,
-  macOS asks for Screen Recording and Accessibility. Same address and password as on Linux.
+  macOS asks for Screen Recording and Accessibility. Like Linux, the Mac shows its own address and
+  password.
 * **On Linux:** the Darpan window lists your Macs. Click one to connect.
 * **No new setup:** both are already on your Tailscale network.
 * **The work:** a Mac host (ScreenCaptureKit capture, VideoToolbox H.264, input, sound) that speaks
