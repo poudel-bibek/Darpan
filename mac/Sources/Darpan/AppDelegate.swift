@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake(_:)),
                                                           name: NSWorkspace.didWakeNotification, object: nil)
         connectWindow.model.autoConnect(environment: ProcessInfo.processInfo.environment)
+        Updater.shared.start()
         #if DEBUG
         DebugHooks.install(self)
         #endif
@@ -63,6 +64,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func newConnection(_ sender: Any?) {
         connectWindow.showWindow(nil)
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        Updater.shared.check(manual: true)
     }
 
     @objc func showAbout(_ sender: Any?) {

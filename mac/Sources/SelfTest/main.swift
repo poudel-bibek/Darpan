@@ -6,6 +6,7 @@ protocolTests()
 videoTests()
 inputTests()
 audioTests()
+updateTests()
 
 print(failures == 0 ? "PASS: \(checks) checks" : "FAILED: \(failures) of \(checks) checks")
 exit(failures == 0 ? 0 : 1)
