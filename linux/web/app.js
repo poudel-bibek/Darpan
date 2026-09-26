@@ -1072,7 +1072,7 @@
       for (let n = 1; await into.getDirectoryHandle(target).then(() => true, () => false); n++) target = `${name} (${n})`;
       const root = await into.getDirectoryHandle(target, { create: true });
       const dir = async (parts) => { let h = root; for (const q of parts) h = await h.getDirectoryHandle(q, { create: true }); return h; };
-      for (const x of r.entries) if (x.type === 'd') await dir(x.name.split('/'));
+      for (const x of r.entries) if (x.type === 'd') { stop.signal.throwIfAborted(); await dir(x.name.split('/')); }
       files = r.entries.filter((x) => x.type === 'f');
       const total = files.reduce((a, f) => a + f.size, 0) || 1;
       let done = 0;
@@ -1086,12 +1086,14 @@
         await resp.body.pipeThrough(count).pipeTo(await h.createWritable(), { signal: stop.signal });
         got++;
       }
+      stop.signal.throwIfAborted();
       finished(el, 'done', `${files.length} file${files.length === 1 ? '' : 's'} into ${into.name}/${target}`);
     } catch (err) {
       if (stop.signal.aborted) finished(el, 'cancelled', `${FS_MSG.cancelled}: ${got} of ${files.length} files`);
       else finished(el, 'fail', err.message);
+    } finally {
+      over = true;                                    // from now on the × only dismisses the line
     }
-    over = true;
   }
   $('fsReceive').addEventListener('click', () => fsReceive());
 
