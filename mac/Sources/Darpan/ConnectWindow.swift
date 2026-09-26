@@ -234,6 +234,7 @@ struct ConnectView: View {
     @ObservedObject var discovery: Discovery
     @ObservedObject var settings = Settings.shared
     @ObservedObject var net = Tailnet.shared
+    @ObservedObject var updater = Updater.shared
     @FocusState private var focus: Field?
     @State private var manual = false
 
@@ -266,6 +267,7 @@ struct ConnectView: View {
                 Button("Cancel") { model.cancel() }.keyboardShortcut(.cancelAction).padding(.top, 8)
             }
             if model.showTailscaleHint && settings.network == .system { tailscaleHint.padding(.top, 8) }
+            update
             footer.padding(.top, 18)
         }
         .padding(24)
@@ -407,6 +409,28 @@ struct ConnectView: View {
         .onAppear { focus = model.address.isEmpty ? .address : .password }
     }
 
+    // MARK: - a new version
+
+    @ViewBuilder private var update: some View {
+        switch updater.state {
+        case .available(let m):
+            HStack {
+                Text("Darpan \(m.version) is available").font(.system(size: 12))
+                Spacer()
+                Button("Install & Relaunch") { updater.install() }.controlSize(.small)
+            }
+            .padding(.top, 18)
+        case .installing:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Updating…").font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            .padding(.top, 18)
+        default:
+            EmptyView()
+        }
+    }
+
     // MARK: - footer
 
     private var footer: some View {
@@ -430,6 +454,8 @@ struct ConnectView: View {
                     Divider()
                     Button("Forget Saved Password for This Computer") { model.forgetSavedKey() }
                 }
+                Divider()
+                Toggle("Check for Updates Automatically", isOn: $settings.checkUpdates)
             } label: {
                 Image(systemName: "gearshape")
             }

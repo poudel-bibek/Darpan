@@ -2,7 +2,7 @@ import AppKit
 import DarpanCore
 
 /// App lifecycle: the connect window, at most one session at a time, the menu bar.
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var connectWindow: ConnectWindowController!
     private var session: Session?
     private var resolutionMenu: NSMenu?
@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake(_:)),
                                                           name: NSWorkspace.didWakeNotification, object: nil)
         connectWindow.model.autoConnect(environment: ProcessInfo.processInfo.environment)
+        Updater.shared.start()
         #if DEBUG
         DebugHooks.install(self)
         #endif
@@ -63,6 +64,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func newConnection(_ sender: Any?) {
         connectWindow.showWindow(nil)
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        if case .available = Updater.shared.state { Updater.shared.install() } else { Updater.shared.check(manual: true) }
+    }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard item.action == #selector(checkForUpdates(_:)) else { return true }
+        // An update found while a session hides the connect window is offered here too.
+        switch Updater.shared.state {
+        case .available(let m): item.title = "Install Darpan \(m.version) and Relaunch"
+        case .installing: item.title = "Updating…"; return false
+        default: item.title = "Check for Updates…"
+        }
+        return true
     }
 
     @objc func showAbout(_ sender: Any?) {

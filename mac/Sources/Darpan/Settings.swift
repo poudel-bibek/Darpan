@@ -43,11 +43,13 @@ final class Settings: ObservableObject {
     /// How to reach the tailnet: the node built into the app, or whatever this Mac provides
     /// (the Tailscale app, another VPN, a LAN).
     @Published var network: NetworkMode { didSet { d.set(network.rawValue, forKey: "network") } }
+    /// Look for a new version once a day (GitHub releases), while the app runs.
+    @Published var checkUpdates: Bool { didSet { d.set(checkUpdates, forKey: "checkUpdates"); Updater.shared.start() } }
     /// Origins, most recent first.
     @Published private(set) var hosts: [String] { didSet { d.set(hosts, forKey: "hosts") } }
 
     private init() {
-        d.register(defaults: ["quality": 0, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true])
+        d.register(defaults: ["quality": 0, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true, "checkUpdates": true])
         scale = ScaleMode(rawValue: d.string(forKey: "scale") ?? "") ?? .fit
         let q = d.integer(forKey: "quality")
         quality = Self.qualities.contains { $0.kbps == q } ? q : 0
@@ -63,6 +65,7 @@ final class Settings: ObservableObject {
         remember = d.bool(forKey: "remember")
         sound = d.bool(forKey: "sound")
         network = NetworkMode(rawValue: d.string(forKey: "network") ?? "") ?? .builtIn
+        checkUpdates = d.bool(forKey: "checkUpdates")
         hosts = (d.stringArray(forKey: "hosts") ?? []).filter { (try? HostAddress(parsing: $0)) != nil }
     }
 

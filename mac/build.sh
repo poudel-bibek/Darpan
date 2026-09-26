@@ -13,9 +13,12 @@ MAC="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$MAC")"
 DIST="$ROOT/dist"
 NAME=Darpan
-VERSION=1.2.0
+VERSION=$(sed -n 's/.*static let string = "\(.*\)"/\1/p' "$MAC/Sources/DarpanCore/Auth.swift")   # DarpanVersion
 BUILD=3
 APP="$DIST/$NAME.app"
+# The GitHub repository ("owner/name") whose releases the app updates from.
+REPO=${DARPAN_REPO:-$(git -C "$ROOT" remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')}
+[[ $REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "can't tell the GitHub repository (set DARPAN_REPO=owner/name)"; exit 1; }
 
 cd "$MAC"
 
@@ -56,6 +59,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD</string>
+    <key>DarpanRepository</key><string>$REPO</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
