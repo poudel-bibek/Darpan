@@ -22,6 +22,9 @@ final class ConnectModel: ObservableObject {
     @Published private(set) var focusPassword = 0
     /// The computer picked in the list that still needs its password.
     @Published private(set) var selected: String?
+    /// Decided once, before the window starts the tailnet (which creates its state file even before
+    /// anyone signs in): nothing signed in and nothing used yet.
+    let firstRun: Bool
 
     weak var handler: ConnectHandler?
     private let settings = Settings.shared
@@ -33,6 +36,7 @@ final class ConnectModel: ObservableObject {
     private var launched = false
 
     init() {
+        firstRun = Settings.shared.hosts.isEmpty && !Tailnet.hasState
         address = settings.hosts.first ?? ""
         refreshSavedKey()
     }
@@ -253,7 +257,7 @@ struct ConnectView: View {
         #if DEBUG
         if ProcessInfo.processInfo.environment["DARPAN_DEBUG_WELCOME"] != nil { return true }   // for screenshots
         #endif
-        return !settings.welcomed && settings.network == .builtIn && settings.hosts.isEmpty && !Tailnet.hasState
+        return model.firstRun && !settings.welcomed && settings.network == .builtIn
     }
 
     var body: some View {
