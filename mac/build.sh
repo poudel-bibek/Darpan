@@ -14,7 +14,7 @@ ROOT="$(dirname "$MAC")"
 DIST="$ROOT/dist"
 NAME=Darpan
 VERSION=$(sed -n 's/.*static let string = "\(.*\)"/\1/p' "$MAC/Sources/DarpanCore/Auth.swift")   # DarpanVersion
-BUILD=7
+BUILD=8
 APP="$DIST/$NAME.app"
 # The GitHub repository ("owner/name") whose releases the app updates from.
 REPO=${DARPAN_REPO:-$(git -C "$ROOT" remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')}
