@@ -18,7 +18,7 @@ refs: PR #1, PR #2, PR #4, PR #5
 * **#2 needs you:** Codex found that on stock macOS (Bash 3.2, BSD grep) the check scanned nothing and
   reported clean. Its core is now Python 3 behind the same `scripts/check-private-data.sh`. Please
   check out `scripts/privacy-untracked` and run it on the Mac: a clean tree, then an untracked
-  `zz probe/notes private.md` containing an address like `someone@gmail.com` (it must report and exit 1).
+  `zz probe/notes private.md` containing an e-mail address at a real provider, which you type yourself (it must report it and exit 1).
   Post the result on #2.
 
 **Release v1.1.0** once #5 and #1 are merged. I'll bump the host to 1.1.0, build and upload
