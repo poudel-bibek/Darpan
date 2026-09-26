@@ -50,7 +50,7 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 <td width="33%" valign="top"><img src="docs/feature-private.svg" width="100%" alt="Another device trying to reach the Linux computer is refused"><br>
 <b>Private</b><br>Only your own devices can reach it: encrypted end to end, no open ports, and a password that never crosses the network.</td>
 <td width="33%" valign="top"><img src="docs/feature-light.svg" width="100%" alt="Darpan's CPU use drops to zero when the Mac disconnects, while the GPU keeps training"><br>
-<b>Light</b><br>0 % CPU while nobody's connected. While you are, about 0.3 % of one core on a quiet screen and 5 % during video with sound.</td>
+<b>Light</b><br>On the Linux computer: 0 % CPU while nobody's connected, about 0.3 % of one core on a quiet screen, and 5 % during video with sound.</td>
 </tr>
 <tr>
 <td valign="top"><img src="docs/feature-sound.svg" width="100%" alt="A video plays on the Linux computer and its sound comes out of the Mac"><br>
@@ -62,7 +62,7 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 </tr>
 </table>
 
-Plus full screen, a screen resolution that follows your window, and a toolbar that tucks away.
+Plus full screen, screen resolutions to match your window, and a toolbar that tucks away.
 **Free:** open source (MIT), no subscription, and no account with us.
 
 ## Everyday use
