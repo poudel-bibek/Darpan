@@ -1,0 +1,27 @@
+{
+ "frames": 159,
+ "idr": [
+  0
+ ],
+ "nonref": [
+  57,
+  60,
+  63,
+  66,
+  69,
+  72,
+  75,
+  137,
+  140,
+  143,
+  146,
+  149,
+  152,
+  155
+ ],
+ "bytes": 15329,
+ "api": "vulkan",
+ "decoded": 159,
+ "decoder_problems": [],
+ "last_picture_psnr_db": 40.5
+}
