@@ -54,7 +54,15 @@ final class Tailnet: ObservableObject {
     }
 
     /// Starts the node (idempotent). Completion runs on main once the proxy exists or starting failed.
+    #if DEBUG
+    /// DARPAN_DEBUG_DEMO: pretend to be signed in, with no node at all (screenshots with sample data).
+    static let demo = ProcessInfo.processInfo.environment["DARPAN_DEBUG_DEMO"] != nil
+    #endif
+
     func start(_ done: ((SOCKSProxy?) -> Void)? = nil) {
+        #if DEBUG
+        if Self.demo { phase = .running; done?(nil); return }
+        #endif
         if let proxy { done?(proxy); return }
         switch phase {
         case .off, .failed: phase = .starting
@@ -108,6 +116,9 @@ final class Tailnet: ObservableObject {
 
     /// Poll the status while a view shows it (connect window, sign-in). Balanced with `unwatch`.
     func watch() {
+        #if DEBUG
+        if Self.demo { return }
+        #endif
         pollers += 1
         refresh()
         guard timer == nil else { return }

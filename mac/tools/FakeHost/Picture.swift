@@ -6,6 +6,9 @@ import Foundation
 import ImageIO
 import VideoToolbox
 
+/// `--image`: shown as it is instead of the test pattern (screenshots with sample data).
+var stillImage: CGImage?
+
 /// What the test pattern shows besides motion: the last input the host received.
 struct Scene {
     var pointer: (x: Int, y: Int)?
@@ -125,6 +128,10 @@ final class Encoder {
                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
         else { return }
         let W = CGFloat(width), H = CGFloat(height)
+        if let stillImage {
+            ctx.draw(stillImage, in: CGRect(x: 0, y: 0, width: W, height: H))
+            return
+        }
         ctx.translateBy(x: 0, y: H)                      // top-left origin, like the remote screen
         ctx.scaleBy(x: 1, y: -1)
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
