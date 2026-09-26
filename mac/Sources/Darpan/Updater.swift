@@ -49,11 +49,19 @@ final class Updater: ObservableObject {
         // DARPAN_DEBUG_UPDATE_DMG=<Darpan.dmg>: install that image as if it had been downloaded.
         if let dmg = ProcessInfo.processInfo.environment["DARPAN_DEBUG_UPDATE_DMG"], state == .idle {
             state = .installing
-            DispatchQueue.global().async {
+            let delay = Double(ProcessInfo.processInfo.environment["DARPAN_DEBUG_UPDATE_DELAY"] ?? "") ?? 0
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
                 let r = Self.replaceBundle(from: URL(fileURLWithPath: dmg))
                 FileHandle.standardError.write(Data("[update] \(r)\n".utf8))
                 DispatchQueue.main.async { if case .success(let app?) = r { self.relaunch(app) } }
             }
+            return
+        }
+        // DARPAN_DEBUG_UPDATE_OFFER=<version>: show the update dialog for a made-up release.
+        if let v = ProcessInfo.processInfo.environment["DARPAN_DEBUG_UPDATE_OFFER"], state == .idle {
+            let m = UpdateManifest(version: v, build: 99, url: URL(string: "https://github.com/x/y/releases/download/v\(v)/Darpan.dmg")!,
+                                   sha256: String(repeating: "0", count: 64), minMacOS: "14.0")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { self.state = .available(m); self.offer(m, manual: false) }
             return
         }
         #endif
@@ -86,8 +94,11 @@ final class Updater: ObservableObject {
         defer {
             // An offered update isn't stamped: the next launch offers it again, in case it went
             // unseen (a saved computer connects at launch and hides the connect window).
-            if case .available = state {} else { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckKey) }
-            start()
+            // Found one: no more checks this launch (it stays offered). Otherwise the next in a day.
+            if case .available = state {} else {
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckKey)
+                start()
+            }
         }
         guard let json, let sig else {
             state = .idle
@@ -100,7 +111,7 @@ final class Updater: ObservableObject {
                                               currentVersion: DarpanVersion.string, currentBuild: build,
                                               macOS: ProcessInfo.processInfo.operatingSystemVersion)
             state = .available(m)
-            if manual { NSApp.sendAction(#selector(AppDelegate.newConnection(_:)), to: nil, from: nil) }
+            offer(m, manual: manual)
         } catch UpdateManifest.Problem.notNewer {
             state = .idle
             if manual { alert("Darpan \(DarpanVersion.string) is the latest version.") }
@@ -113,10 +124,53 @@ final class Updater: ObservableObject {
         }
     }
 
+    /// Versions already offered in a dialog this launch ("Later" isn't asked again until relaunch).
+    private var offered = Set<String>()
+
+    /// A dialog on the front window: install now, or later (the connect window and the Darpan
+    /// menu keep offering it).
+    private func offer(_ m: UpdateManifest, manual: Bool) {
+        guard manual || !offered.contains(m.version) else { return }
+        // A background check never jumps in front of another app: it waits until Darpan is active.
+        if !manual && !NSApp.isActive {
+            var token: NSObjectProtocol?
+            token = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                if let token { NotificationCenter.default.removeObserver(token) }
+                if case .available(let now) = self?.state, now == m { self?.offer(m, manual: false) }
+            }
+            return
+        }
+        offered.insert(m.version)
+        let a = NSAlert()
+        a.messageText = "Darpan \(m.version) is available"
+        a.informativeText = "You have \(DarpanVersion.string). Darpan installs it and relaunches."
+        let install = a.addButton(withTitle: "Install & Relaunch")
+        let later = a.addButton(withTitle: "Later")
+        if !manual {
+            // Keystrokes meant for the remote computer must not install: no Return default.
+            install.keyEquivalent = ""
+            later.keyEquivalent = "\u{1b}"
+        }
+        let answer: (NSApplication.ModalResponse) -> Void = { [weak self] r in
+            if r == .alertFirstButtonReturn { self?.install(m) }
+        }
+        if let w = NSApp.keyWindow ?? NSApp.mainWindow, w.attachedSheet == nil {
+            a.beginSheetModal(for: w, completionHandler: answer)
+        } else {
+            if manual { NSApp.activate(ignoringOtherApps: true) }
+            answer(a.runModal())
+        }
+    }
+
     // MARK: - installing
 
     func install() {
         guard case .available(let m) = state else { return }
+        install(m)
+    }
+
+    private func install(_ m: UpdateManifest) {
+        if case .installing = state { return }
         state = .installing
         session.downloadTask(with: m.url) { file, response, _ in
             let ok = (response as? HTTPURLResponse)?.statusCode == 200
@@ -222,7 +276,10 @@ final class Updater: ObservableObject {
         p.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$2\"",
                        "sh", String(ProcessInfo.processInfo.processIdentifier), app.path]
         try? p.run()
-        NSApp.terminate(nil)
+        // The new copy is in place: this one must go. Quit normally (from the run loop, not from
+        // inside a queue block), and if that hasn't happened within 10 s, leave anyway.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(0) }
+        RunLoop.main.perform(inModes: [.common]) { NSApp.terminate(nil) }
     }
 
     // MARK: - helpers
