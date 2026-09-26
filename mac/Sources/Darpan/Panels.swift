@@ -100,9 +100,9 @@ struct DisplayPanel: View {
                 .pickerStyle(.segmented).labelsHidden()
             }
             PanelSection(title: "Encoding") {
-                Toggle("Full GPU on the Linux computer", isOn: $settings.fullGPU)
+                Toggle("Use more of the Linux computer’s GPU", isOn: $settings.fullGPU)
                     .toggleStyle(.switch).controlSize(.small).font(.system(size: 12))
-                Text("Sharpest and fastest video, using about 280 MB of the Linux computer’s GPU memory while you’re connected. Off: about 40 MB.")
+                Text("Sharper when scrolling fast.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }

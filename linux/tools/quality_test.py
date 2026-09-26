@@ -4,7 +4,7 @@ light panel with text, a gradient, saturated cards), scrolls them (20 px a frame
 and switches to another screen. It has darpan-capture encode each picture at 12 Mbit/s (one credit
 per frame, then the six refreshes after the screen settles), decodes the stream with FFmpeg's decoder
 (GStreamer avdec_h264) and compares every picture with its source (PSNR). Both encoder routes run:
-Vulkan Video (the default) and CUDA ("Full GPU on the Linux computer"). Vulkan's encoder searches a
+Vulkan Video (the default) and CUDA ("Use more of the Linux computer's GPU"). Vulkan's encoder searches a
 smaller range for motion, so fast scrolling is where CUDA is better. Full colour (4:4:4) runs at
 Higher Quality's 30 Mbit/s: 4:2:0 stops near 34.7 dB on this screen at any bitrate. The floors sit a
 little under what an RTX 4090 measures.

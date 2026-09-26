@@ -85,8 +85,8 @@ def _status(args):
         print("  Sessions     : %d" % len(ss))
         for s in ss:
             print("    • %s from %s since %s%s" % (s["client"], s["source"], time.strftime("%H:%M", time.localtime(s["since"])),
-                                              " — streaming %dx%d%s" % (s["w"], s["h"], {"vulkan": ", low-memory encoder",
-                                              "cuda": ", full GPU encoder", "software": ", software encoder"}.get(s.get("api"), ""))
+                                              " — streaming %dx%d%s" % (s["w"], s["h"], {"vulkan": ", standard encoder",
+                                              "cuda": ", more-GPU encoder", "software": ", software encoder"}.get(s.get("api"), ""))
                                               if s["streaming"] else ""))
 
 
