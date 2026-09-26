@@ -1,6 +1,7 @@
 """Darpan status window (GTK 4 + libadwaita): address, password, network sign-in and
 connected devices. All slow calls run on a worker thread; the UI never blocks."""
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -51,7 +52,12 @@ class Window(Adw.ApplicationWindow):
 
         self.toasts = Adw.ToastOverlay()
         view = Adw.ToolbarView()
-        view.add_top_bar(Adw.HeaderBar())
+        header = Adw.HeaderBar()
+        self.skip = Gtk.Button(label="Skip", visible=False, tooltip_text="Go to the settings")   # out of the steps
+        self.skip.add_css_class("flat")
+        self.skip.connect("clicked", self.on_onboarding_done)
+        header.pack_end(self.skip)
+        view.add_top_bar(header)
         self.update = Adw.Banner(button_label="Update")      # shown when APT knows a newer Darpan
         self.update.connect("button-clicked", self.on_update)
         view.add_top_bar(self.update)
@@ -209,14 +215,29 @@ class Window(Adw.ApplicationWindow):
 
     @staticmethod
     def _mac_download():
-        """The Mac app on the same GitHub releases this package updates from (its APT source)."""
+        """The Mac app on the releases of the repository this package updates from (its APT source
+        names it: the releases, or the repository's Pages site)."""
         try:
             for line in open("/etc/apt/sources.list.d/darpan.sources"):
-                if line.startswith("URIs:"):
-                    return line.split(":", 1)[1].strip().rstrip("/") + "/Darpan.dmg"
+                m = (re.match(r"URIs:\s*https://github\.com/([^/\s]+)/([^/\s]+)/", line) or
+                     re.match(r"URIs:\s*https://([^./\s]+)\.github\.io/([^/\s]+)/", line))
+                if m:
+                    return "https://github.com/%s/%s/releases/latest/download/Darpan.dmg" % m.groups()
         except OSError:
             pass
         return None
+
+    @staticmethod
+    def _first_run(ts, served):
+        """Onboarding or not, from what the network says; None while it can't tell yet."""
+        state = ts.get("state")
+        if state == "Running":
+            return not served                           # signed in: only publishing may be left
+        if state == "NoState":
+            return None                                 # still starting up
+        if state == "stopped":                          # its daemon isn't running: was it ever set up?
+            return not os.path.exists(os.path.join(config.data_dir(), "tailscale", "tailscaled.state"))
+        return state == "NeedsLogin"
 
     def _onboard(self, st, ts, served):
         """Which step to show while setting up; publishes by itself once signed in."""
@@ -230,6 +251,7 @@ class Window(Adw.ApplicationWindow):
             self.ready_mac.set_visible(bool(dmg))
             self.ready_addr.set_label(self.serve_url or "")
             self.stack.set_visible_child_name("ready")
+            self.skip.set_visible(False)                # "Done" is right there
         elif state == "Running":
             now = time.monotonic()
             if now >= self.publish_at:           # at most every 4 s, while Tailscale waits for the user
@@ -288,6 +310,7 @@ class Window(Adw.ApplicationWindow):
 
     def on_onboarding_done(self, _btn):
         self.onboarding = False
+        self.skip.set_visible(False)
         self.stack.set_visible_child_name("main")
 
     # ---------------------------------------------------------------- helpers
@@ -324,9 +347,10 @@ class Window(Adw.ApplicationWindow):
         st, ts, served = res
         self.last = res
         if self.onboarding is None:
-            self.onboarding = not (ts.get("state") == "Running" and served)
-            if not self.onboarding:
+            self.onboarding = self._first_run(ts, served)
+            if self.onboarding is False:
                 self.stack.set_visible_child_name("main")
+            self.skip.set_visible(bool(self.onboarding))
         store = auth.AuthStore()
         visible = store.visible_password()
         self.pw.set_subtitle((visible if self.reveal else "•" * 12) if visible else
