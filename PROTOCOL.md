@@ -233,14 +233,14 @@ its own HTTPS request to the same origin, so video, sound and input never wait b
 |---|---|
 | `GET /fs/list?path=P` | `200`, JSON `{"path":P,"entries":[{"name":"a.txt","type":"f","size":12,"mtime":1727350000,"link":false}],"more":false}`. `type`: `d` directory, `f` regular file, `o` anything else (socket, device…). `link`: it is a symbolic link, and `type` describes its target. Names that aren't valid UTF-8 are left out. At most 20 000 entries; `more` is `true` if there were more. |
 | `GET /fs/list?path=P&deep=1` | The same for everything below P, for sending a whole folder: `name` is relative to P with `/` separators, a directory comes before its contents, links to directories aren't followed, at most 50 000 entries. |
-| `GET /fs/file?path=P` (also `HEAD`) | `200` and the bytes, with `Content-Length`, `Last-Modified`, `ETag` and `Accept-Ranges: bytes`. `Range: bytes=N-` or `bytes=N-M` gives `206` with `Content-Range`, to resume. Regular files only. |
+| `GET /fs/file?path=P` (also `HEAD`) | `200` and the bytes, with `Content-Length`, `Last-Modified`, `ETag` and `Accept-Ranges: bytes`. `Range: bytes=N-` or `bytes=N-M` gives `206` with `Content-Range`. To resume, send it with `If-Range: <the ETag you got>`: if the file has changed since, the answer is `200` with the whole file, so a resumed download never mixes two versions. Regular files only. |
 | `PUT /fs/file?path=P&exists=fail` with a body (`Content-Length` required) | Writes a hidden temporary file next to P and renames it into place once complete, so an aborted upload leaves nothing behind. The parent directory must exist. If P exists: `exists=fail` (the default) answers `409 exists`, `replace` replaces it, `rename` picks `name (1).ext`, `name (2).ext`… `201`, JSON `{"path":<the final path>}`. |
 | `POST /fs/mkdir?path=P` | `201`, JSON `{"path":P}`. `409 exists` if it already exists. |
 | `POST /fs/ticket?path=P` | `200`, JSON `{"ticket":"…"}`: `GET /fs/file?ticket=…` then works once, within 60 s, without an `Authorization` header, and answers with `Content-Disposition: attachment`. For browsers, which can't add a header to a download. |
 
 3. **Errors** are JSON `{"e":"<code>"}` with the status: `400 invalid` (not an absolute path, bad
    query), `401 token`, `403 denied` (no permission), `404 notfound`, `409 exists`, `409 notdir`,
-   `409 isdir`, `416 range`, `429 busy` (more than 4 requests at once per session), `507 nospace`,
+   `409 isdir`, `409 notfile` (a socket, device or pipe), `416 range`, `429 busy` (more than 4 requests at once per session), `507 nospace`,
    `500 failed`.
 4. Everything runs as the logged-in user, like the desktop the client already controls. To send or
    receive a folder, a client lists it with `deep=1`, then uses `mkdir` and `PUT`, or `GET`.
