@@ -59,12 +59,36 @@ choose **Disable key expiry** (otherwise it drops off the network after 180 days
    enter the password. Tick *Remember this device* to skip the password next time.
    *Tip:* in Chrome use *Install Darpan* (address bar) for an app window; in full screen Chrome
    also forwards shortcuts like ⌘W to the remote computer.
-3. The native Mac app (`dist/Darpan.dmg`, see `mac/`) adds system-shortcut capture (⌘Tab, ⌘Space)
-   and seamless clipboard sync.
+3. Or use the native Mac app (below): hardware video decoding, every shortcut goes to the remote computer,
+   seamless clipboard sync.
 
 Keyboard: ⌘ acts as Ctrl on the remote computer by default (⌘C/⌘V copy and paste as you expect);
 switch it to Super in the keyboard menu. Keys are sent by position, so the Linux keyboard layout
 decides the characters; *Type it* in the clipboard menu types arbitrary text.
+
+## Mac app
+
+1. Download `Darpan.dmg` from the [latest release](https://github.com/OWNER/darpan/releases/latest),
+   open it and drag **Darpan** to **Applications**.
+2. First launch: the app isn't notarized, so macOS blocks it once. Open it, then go to
+   System Settings → Privacy & Security and click **Open Anyway**. Or run
+   `xattr -dr com.apple.quarantine /Applications/Darpan.app` once.
+3. Enter the address and password. With *Remember on this Mac*, only a key derived from the
+   password is kept, in the Keychain, and it never leaves this Mac.
+4. Optional: to send ⌘Tab, ⌘Space and Mission Control to the remote computer too, turn on *Send
+   ⌘Tab, ⌘Space…* in the viewer's keyboard panel. Then allow Darpan in System Settings → Privacy
+   & Security → Accessibility. The app is signed ad hoc, so after installing a new version macOS
+   treats it as a new app: remove Darpan from the Accessibility list, add it again and restart it.
+
+While the viewer is in front every key goes to the remote computer, ⌘Q and ⌘W included. These
+shortcuts stay on the Mac:
+* ⌃⌥⌘D disconnect
+* ⌃⌥⌘F full screen
+* ⌃⌥⌘⎋ release the keyboard (press again to capture it)
+
+A minimised or hidden viewer stops the video. More in [mac/README.md](mac/README.md).
+
+SHA-256 of `Darpan.dmg` 1.0.0: `b9c9670ec76449323028ab91497b06a31ea9a770670f8bd92989155c9fdf0e67`
 
 ## Everyday commands
 
