@@ -28,6 +28,13 @@ final class Discovery: ObservableObject {
     private var lastPeers: [Tailnet.Status.Peer] = []
 
     func start() {
+        #if DEBUG
+        if Tailnet.demo {
+            computers = [Computer(origin: "https://workstation.example.ts.net", name: "workstation", online: true)]
+            scanned = true
+            return
+        }
+        #endif
         guard timer == nil else { return }
         // Scan as soon as the node is up (it's usually still starting when the window appears).
         phaseWatch = net.$phase.removeDuplicates().sink { [weak self] p in

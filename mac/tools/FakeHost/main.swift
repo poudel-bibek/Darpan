@@ -3,6 +3,7 @@
 // pattern (VideoToolbox) that shows the input it receives, and logs every input message.
 //
 //   swift run FakeHost [--port 47491] [--password <pw>] [--size 1920x1080] [--max-sessions 2]
+//                      [--name workstation] [--image desktop.png]   (a still picture instead of the pattern)
 //   DARPAN_URL=http://localhost:47491 DARPAN_PASSWORD=<pw> swift run Darpan
 //
 // Commands on stdin: clip <text> · notice <text> · error <text> · kick · restart · drop ·
@@ -18,6 +19,7 @@ var port: UInt16 = 47491
 var password = ProcessInfo.processInfo.environment["FAKEHOST_PASSWORD"] ?? "darpan-test"
 var size = (1920, 1080)
 var maxSessions = 2
+var hostName = "fakehost"
 var args = CommandLine.arguments.dropFirst().makeIterator()
 while let a = args.next() {
     switch a {
@@ -27,6 +29,14 @@ while let a = args.next() {
         let p = (args.next() ?? "").split(separator: "x").compactMap { Int($0) }
         if p.count == 2 { size = (p[0], p[1]) }
     case "--max-sessions": maxSessions = Int(args.next() ?? "") ?? maxSessions
+    case "--name": hostName = args.next() ?? hostName
+    case "--image":
+        let url = URL(fileURLWithPath: args.next() ?? "") as CFURL
+        guard let src = CGImageSourceCreateWithURL(url, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
+            print("can't read the image"); exit(2)
+        }
+        stillImage = img
+        size = (img.width, img.height)
     default: print("unknown argument \(a)"); exit(2)
     }
 }
@@ -124,7 +134,7 @@ final class Session {
             switch st {
             case .ready:
                 log("connection \(sid) from \(conn.endpoint)")
-                sendText(json(["t": "hello", "proto": 1, "app": "darpan", "ver": "1.0.0", "host": "fakehost",
+                sendText(json(["t": "hello", "proto": 1, "app": "darpan", "ver": "1.0.0", "host": hostName,
                                "nonce": nonce.base64EncodedString(),
                                "kdf": ["alg": "pbkdf2-sha256", "salt": salt.base64EncodedString(), "iter": iterations]]))
                 receive()
