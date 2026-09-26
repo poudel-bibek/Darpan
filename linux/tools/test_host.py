@@ -928,6 +928,45 @@ async def run(args, tmp, probe_log):
     await asyncio.sleep(3.3)
     ok("close aborts a stuck peer", stuck.aborted, "after 3 s")
 
+    # at most 4 connections per source may wait unauthenticated; a 5th is told "busy"
+    waiting = []
+    for _ in range(4):
+        c = await WS.connect("127.0.0.1", args.port)
+        await c.recv()                         # hello
+        waiting.append(c)
+    extra = await WS.connect("127.0.0.1", args.port)
+    kind, m = await extra.recv()
+    ok("unauthenticated connections capped per source", kind == "text" and m.get("reason") == "busy", str(m)[:60])
+    for c in waiting + [extra]:
+        c.w.close()
+    await asyncio.sleep(0.3)
+    again = await WS.connect("127.0.0.1", args.port)
+    kind, m = await again.recv()
+    ok("cap frees up when they close", kind == "text" and m.get("t") == "hello", m.get("t"))
+    again.w.close()
+
+    # changing the password ends existing sessions
+    env = dict(os.environ, XDG_CONFIG_HOME=os.path.join(tmp, "config"), XDG_RUNTIME_DIR=os.path.join(tmp, "run"),
+               XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"), HOME=tmp,
+               PYTHONPATH=args.root)
+    subprocess.run([sys.executable, "-m", "darpan", "password", "--generate"], env=env, cwd=args.root,
+                   capture_output=True, timeout=20)
+    code = None
+    end = time.monotonic() + 4
+    while time.monotonic() < end and code is None:
+        try:
+            kind, m = await asyncio.wait_for(ws.recv(), 0.5)
+            if kind == "close":
+                code = m
+        except asyncio.TimeoutError:
+            pass
+        except (asyncio.IncompleteReadError, ConnectionError):
+            break
+    ok("password change ends sessions", code == 4003, "close code %s" % code)
+    ws.w.close()
+
+    pw = open(os.path.join(tmp, "config", "darpan", "password.txt")).read().strip()   # the new one
+
     # the screen to serve: the desktop's, else, once turned on, the login screen's (GDM's user runs it)
     from darpan import login_screen as darpan_login, x11 as darpan_x11
     me = pwd.getpwuid(os.getuid()).pw_name
@@ -980,6 +1019,14 @@ async def run(args, tmp, probe_log):
                 break
             except OSError:
                 await asyncio.sleep(0.1)
+        os.makedirs(os.path.join(tmp, "run3"), mode=0o700)
+        quit3 = subprocess.Popen([sys.executable, "-m", "darpan", "serve", "--port", str(port2 + 1)],
+                                 env=dict(env2, XDG_RUNTIME_DIR=os.path.join(tmp, "run3")), cwd=args.root,
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        await asyncio.sleep(1.5)
+        quit3.terminate()
+        out3 = quit3.communicate(timeout=10)[0].decode(errors="replace")
+        ok("no screen: stops cleanly", quit3.returncode == 0 and "Traceback" not in out3, out3.strip()[-120:])
         before = await sign_in(port2)
         xvfb2 = subprocess.Popen(["Xvfb", ":%d" % free[1], "-screen", "0", "800x600x24", "-nolisten", "tcp"],
                                  stderr=subprocess.DEVNULL)
@@ -1015,7 +1062,9 @@ async def run(args, tmp, probe_log):
                  lambda: lss.off("darpan-test-b")):
         step()
         conf.append(open(lss.GDM_CONF).read())
-    edits = (lss.xorg_on("[daemon]\nWaylandEnable=true\n") == "[daemon]\n%s\nWaylandEnable=false\n" % lss.MARK,
+    explicit = "[daemon]\nWaylandEnable=true\n"
+    edits = (lss.xorg_on(explicit) == "[daemon]\n%s\nWaylandEnable=false\n%sWaylandEnable=true\n" % (lss.MARK, lss.KEPT),
+             lss.xorg_off(lss.xorg_on(explicit)) == explicit,
              lss.xorg_on("[daemon]\nWaylandEnable=false\n") == "[daemon]\nWaylandEnable=false\n",
              lss.xorg_off(lss.xorg_on("[chooser]\n")) == "[chooser]\n\n[daemon]\n")
     ok("login-screen-setup: Xorg while anyone has it on, undone",
@@ -1023,43 +1072,6 @@ async def run(args, tmp, probe_log):
        and not os.path.exists(lss.DIR) and all(edits) and calls == [["enable-linger", "darpan-test-a"],
        ["enable-linger", "darpan-test-b"], ["disable-linger", "darpan-test-a"], ["disable-linger", "darpan-test-b"]],
        "%s %s" % (edits, calls))
-
-    # at most 4 connections per source may wait unauthenticated; a 5th is told "busy"
-    waiting = []
-    for _ in range(4):
-        c = await WS.connect("127.0.0.1", args.port)
-        await c.recv()                         # hello
-        waiting.append(c)
-    extra = await WS.connect("127.0.0.1", args.port)
-    kind, m = await extra.recv()
-    ok("unauthenticated connections capped per source", kind == "text" and m.get("reason") == "busy", str(m)[:60])
-    for c in waiting + [extra]:
-        c.w.close()
-    await asyncio.sleep(0.3)
-    again = await WS.connect("127.0.0.1", args.port)
-    kind, m = await again.recv()
-    ok("cap frees up when they close", kind == "text" and m.get("t") == "hello", m.get("t"))
-    again.w.close()
-
-    # changing the password ends existing sessions
-    env = dict(os.environ, XDG_CONFIG_HOME=os.path.join(tmp, "config"), XDG_RUNTIME_DIR=os.path.join(tmp, "run"),
-               XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"), HOME=tmp,
-               PYTHONPATH=args.root)
-    subprocess.run([sys.executable, "-m", "darpan", "password", "--generate"], env=env, cwd=args.root,
-                   capture_output=True, timeout=20)
-    code = None
-    end = time.monotonic() + 4
-    while time.monotonic() < end and code is None:
-        try:
-            kind, m = await asyncio.wait_for(ws.recv(), 0.5)
-            if kind == "close":
-                code = m
-        except asyncio.TimeoutError:
-            pass
-        except (asyncio.IncompleteReadError, ConnectionError):
-            break
-    ok("password change ends sessions", code == 4003, "close code %s" % code)
-    ws.w.close()
     return all(r for _, r in results), results
 
 

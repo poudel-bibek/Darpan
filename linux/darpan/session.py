@@ -1011,7 +1011,7 @@ class Hub:
                     log.exception("tick failed")
 
     async def session_ended(self):
-        if self.sessions:
+        if self.sessions or not self.x:
             return
         if self._repeat_off:
             self.x.set_autorepeat(True)

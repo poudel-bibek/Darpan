@@ -15,6 +15,7 @@ import sys
 DIR = "/etc/darpan/login-screen.d"
 GDM_CONF = "/etc/gdm3/custom.conf"
 MARK = "# Darpan: an Xorg login screen, so Darpan can show it (darpan login-screen off undoes this)"
+KEPT = "# Darpan kept: "                 # an admin's own WaylandEnable= line, put back by "off"
 
 
 def xorg_on(text):
@@ -23,8 +24,8 @@ def xorg_on(text):
         return text
     out, done = [], False
     for l in lines:
-        if re.match(r"\s*WaylandEnable\s*=", l):     # an explicit "true": ours replaces it
-            continue
+        if re.match(r"\s*WaylandEnable\s*=", l):     # an explicit "true": set aside until "off"
+            l = KEPT + l
         out.append(l)
         if not done and l.strip() == "[daemon]":
             out += [MARK, "WaylandEnable=false"]
@@ -41,7 +42,7 @@ def xorg_off(text):
             mark = True
             continue
         if not (mark and l == "WaylandEnable=false"):
-            out.append(l)
+            out.append(l[len(KEPT):] if l.startswith(KEPT) else l)
         mark = False
     return "\n".join(out) + "\n" if out else ""
 
