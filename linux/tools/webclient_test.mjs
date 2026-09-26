@@ -2,7 +2,7 @@
 // No npm dependencies: speaks the Chrome DevTools Protocol over Node's built-in WebSocket.
 //   node tools/webclient_test.mjs
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, existsSync, truncateSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -260,6 +260,34 @@ try {
   await ev(receiveSub);
   const both = await until(opfs(`await r.getDirectoryHandle('sub (1)'); return 'yes';`), 8000);
   ok('receive it again: keeps both', both === 'yes', JSON.stringify(both));
+
+  // a folder on its way can be cancelled, and nothing half-written is kept
+  mkdirSync(join(xdir, 'big'));
+  writeFileSync(join(xdir, 'big', 'huge.bin'), '');
+  truncateSync(join(xdir, 'big', 'huge.bin'), 1 << 30);
+  mkdirSync(join(xdir, 'two'));
+  writeFileSync(join(xdir, 'two', 'one.txt'), 'first\n');
+  writeFileSync(join(xdir, 'two', 'two.txt'), 'second\n');
+  await ev(`(() => { const p = document.getElementById('fsPath'); p.value = ${JSON.stringify(xdir)};
+    p.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()`);
+  await until(`[...document.querySelectorAll('#fsList .file .name span')].some(s => s.textContent === 'two')`);
+  const receiveOne = (n) => `(() => { const row = [...document.querySelectorAll('#fsList .file')].find(r => r.textContent.startsWith(${JSON.stringify(n)})); row.click();
+    document.getElementById('fsReceive').click(); })()`;
+  const line = (n) => `[...document.querySelectorAll('#fsXfers .xfer')].find(x => x.querySelector('.name').textContent.startsWith(${JSON.stringify(n)}))`;
+  await ev(receiveOne('big'));
+  await until(`(${line('big')}) && parseInt((${line('big')}).querySelector('.pct').textContent) > 0`, 8000);
+  await ev(`(${line('big')}).querySelector('.x').click()`);
+  const cancelled = await until(`(${line('big')})?.classList.contains('cancelled') && (${line('big')}).textContent`, 5000);
+  const partial = await ev(opfs(`const d = await r.getDirectoryHandle('big'); return String((await (await d.getFileHandle('huge.bin')).getFile()).size);`));
+  ok('receive a folder: Cancel stops it, no half-written file', /Cancelled: 0 of 1/.test(cancelled || '') && partial === '0',
+     JSON.stringify({ cancelled, partial }));
+  // the session reconnected mid-folder: its old file token is dead, and a new one is fetched
+  await ev(`(() => { const f = window.fetch; let first = true;
+    window.fetch = (u, o) => { if (first && String(u).startsWith('/fs/file?path=')) { first = false; window.__darpan.fs.token = 'stale';
+      o = { ...o, headers: { Authorization: 'Bearer stale' } }; } return f(u, o); }; })()`);
+  await ev(receiveOne('two'));
+  const second = await until(opfs(`const d = await r.getDirectoryHandle('two'); return (await (await (await d.getFileHandle('one.txt')).getFile()).text()) + (await (await (await d.getFileHandle('two.txt')).getFile()).text());`), 8000);
+  ok('receive a folder: a new token after a reconnect', second === 'first\nsecond\n', JSON.stringify(second));
 
   await ev(`(() => { const dt = new DataTransfer(); dt.items.add(new File(['into the folder'], 'dropped-here.txt'));
     document.getElementById('fsList').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); })()`);
