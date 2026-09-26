@@ -58,7 +58,7 @@ enum DebugHooks {
         case "state":
             let m = app?.debugConnectModel
             say("connect: \"\(m?.message ?? "")\" connecting=\(m?.connecting ?? false) countdown=\(m?.countdown ?? 0) "
-                + "session=\(s.map { "\($0.client.state)" } ?? "none")")
+                + "session=\(s.map { "\($0.client.state)" } ?? "none") tailnet=\(Tailnet.shared.phase)")
         case "key":                                       // key <keyCode> <mods|none> [down|up|tap] [repeat]
             guard let w, a.count > 1, let code = UInt16(a[1]) else { return }
             let f = flags(a.count > 2 ? a[2] : "none")

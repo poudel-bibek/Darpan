@@ -30,6 +30,7 @@ final class Tailnet: ObservableObject {
 
     private let queue = DispatchQueue(label: "dev.darpan.Darpan.tailnet", qos: .userInitiated)
     private var handle: tailscale = -1                 // queue
+    private var lockFD: Int32 = -1                     // queue
     private var pollers = 0
     private var timer: Timer?
 
@@ -156,7 +157,17 @@ final class Tailnet: ObservableObject {
             } catch {
                 return .failure(CError(message: "Can’t create \(dir.path): \(error.localizedDescription)"))
             }
-            setenv("TS_NO_LOGS_NO_SUPPORT", "true", 1)     // don't upload logs to Tailscale
+            // One node per state directory: a second Darpan process running the same node key
+            // would take over its WireGuard path and stall the first one's session.
+            if lockFD < 0 {
+                let fd = open(dir.appendingPathComponent("darpan.lock").path, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
+                guard fd >= 0, flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+                    if fd >= 0 { close(fd) }
+                    return .failure(CError(message: "Another copy of Darpan is using the private network. "
+                                           + "Quit it, or switch this one to “This Mac’s”."))
+                }
+                lockFD = fd                                  // held until the process exits
+            }
             let h = tailscale_new()
             guard h >= 0 else { return .failure(CError(message: "Couldn’t create the network node.")) }
             tailscale_set_dir(h, dir.path)
