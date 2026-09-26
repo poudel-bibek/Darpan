@@ -65,7 +65,10 @@ def _status(args):
     state = ts.get("state")
     if state == "Running":
         print("  Network      : Tailscale connected%s" % (" as " + ts["user"] if ts.get("user") else ""))
-        print("  Address      : %s" % (ts.get("url") or "?"))
+        if tailscale.serving(config.load()["port"]):
+            print("  Address      : %s" % (ts.get("url") or "?"))
+        else:
+            print("  Address      : not published yet — run `porthole setup` (or click Publish in the app)")
     elif state == "stopped":
         print("  Network      : Tailscale not running  (systemctl --user start porthole-net)")
     else:
