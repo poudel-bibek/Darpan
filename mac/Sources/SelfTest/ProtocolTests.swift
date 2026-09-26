@@ -42,6 +42,10 @@ func protocolTests() {
         check(huge.int("id") == nil && huge.int("w") == nil && huge.int("h") == Int.min, "out-of-range numbers are nil, not a trap")
         eq(Incoming(Data(Msg.txt("héllo ✓\n\"x\"")!.utf8))!.string("s"), "héllo ✓\n\"x\"", "txt round trip")
         eq(Incoming(Data(Msg.cfg(fps: 60, bitrate: 0).utf8))!.int("bitrate"), 0, "cfg.bitrate")
+        let authCaps = try? JSONSerialization.jsonObject(with: Data(Msg.auth(proof: Data([1]), client: "x", caps: ["h264-444"])!.utf8)) as? [String: Any]
+        eq(authCaps?["caps"] as? [String], ["h264-444"], "auth.caps")
+        let authPlain = try? JSONSerialization.jsonObject(with: Data(Msg.auth(proof: Data([1]), client: "x")!.utf8)) as? [String: Any]
+        check(authPlain?["caps"] == nil, "no caps: no field")
         eq(Incoming(Data(Msg.start(fps: 60, bitrate: 15000).utf8))!.string("gpu"), "lean", "start: lean by default")
         eq(Incoming(Data(Msg.start(fps: 60, bitrate: 15000, fullGPU: true).utf8))!.string("gpu"), "full", "start: full GPU")
         eq(Incoming(Data(Msg.cfg(fullGPU: true).utf8))!.string("gpu"), "full", "cfg.gpu")
