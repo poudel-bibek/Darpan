@@ -5,6 +5,8 @@ import SwiftUI
 
 protocol SessionOwner: AnyObject {
     func sessionDidConnect(_ session: Session)
+    /// Not signed in yet, and the host says it's (re)starting: it keeps retrying on its own.
+    func sessionWaitingForHost(_ session: Session)
     /// The session is over (window closed). `failure` nil: the user disconnected.
     func sessionDidEnd(_ session: Session, failure: Client.Failure?)
 }
@@ -500,7 +502,10 @@ extension Session: ClientDelegate {
             updateTicker()
             updateTap()
         case .reconnecting(let restarting):
-            guard wasConnected else { return }
+            guard wasConnected else {
+                if restarting { owner?.sessionWaitingForHost(self) }
+                return
+            }
             _ = keyboard.reset()                         // that host session is gone, and with it what it held
             _ = video.releaseButtons()
             content.overlay.show(restarting ? "Remote computer restarting…" : "Reconnecting…")
