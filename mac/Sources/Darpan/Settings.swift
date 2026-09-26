@@ -29,7 +29,7 @@ final class Settings: ObservableObject {
     /// Maximum bitrate in kbit/s (one of `qualities`).
     @Published var quality: Int { didSet { d.set(quality, forKey: "quality") } }
     @Published var fps: Int { didSet { d.set(fps, forKey: "fps") } }
-    /// Let the Linux computer use its full GPU (about 280 MB of its GPU memory) for sharper, faster video.
+    /// Let the Linux computer use more of its GPU (NVENC through CUDA), for sharper fast scrolling.
     @Published var fullGPU: Bool { didSet { d.set(fullGPU, forKey: "fullGPU") } }
     @Published var command: CommandKey { didSet { d.set(command.rawValue, forKey: "command") } }
     @Published var scrollSpeed: Double { didSet { d.set(scrollSpeed, forKey: "scrollSpeed") } }
