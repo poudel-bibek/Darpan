@@ -55,7 +55,7 @@ Darpan shows on it. That's it.
 <tr>
 <td width="33%" valign="top">
 <p><img src="docs/feature-local.svg" width="100%" alt="Typing on the Mac shows up on the Linux computer at once"></p>
-<p><b>Feels local</b><br>Screen to screen in 27 ms,<br>even over the internet.<br><sub>&nbsp;</sub></p>
+<p><b>Feels local</b><br>~20–30 ms screen to screen,<br>even Wi-Fi to Wi-Fi.<br><sub>&nbsp;</sub></p>
 </td>
 <td width="33%" valign="top">
 <p><img src="docs/feature-private.svg" width="100%" alt="Another device trying to reach the Linux computer is refused"></p>
