@@ -163,9 +163,12 @@ static void rc_set(RateControl *r, uint32_t kbps, uint32_t fps, uint32_t vbv_fra
     r->layer.frameRateNumerator = fps;
     r->layer.frameRateDenominator = 1;
     r->h264.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR;
-    r->h264.flags = VK_VIDEO_ENCODE_H264_RATE_CONTROL_REFERENCE_PATTERN_FLAT_BIT_KHR;
-    r->h264.gopFrameCount = 0;          // open-ended: key frames only on request
-    r->h264.idrPeriod = 0;
+    // An endless GOP with one reference each (UINT32_MAX is endless; 0 would leave it to the driver):
+    // key frames only on request.
+    r->h264.flags = VK_VIDEO_ENCODE_H264_RATE_CONTROL_REGULAR_GOP_BIT_KHR |
+                    VK_VIDEO_ENCODE_H264_RATE_CONTROL_REFERENCE_PATTERN_FLAT_BIT_KHR;
+    r->h264.gopFrameCount = UINT32_MAX;
+    r->h264.idrPeriod = UINT32_MAX;
     r->h264.temporalLayerCount = 1;
     r->rc.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR;
     r->rc.rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_CBR_BIT_KHR;
@@ -173,7 +176,8 @@ static void rc_set(RateControl *r, uint32_t kbps, uint32_t fps, uint32_t vbv_fra
     // A few frames of VBV: small edits are tiny anyway; a full-screen change may borrow a little
     // so it arrives sharp instead of smeared, without a long burst.
     uint32_t ms = vbv_frames * 1000u / (fps ? fps : 60);
-    r->rc.virtualBufferSizeInMs = r->rc.initialVirtualBufferSizeInMs = ms ? ms : 1;
+    r->rc.initialVirtualBufferSizeInMs = ms ? ms : 1;
+    r->rc.virtualBufferSizeInMs = r->rc.initialVirtualBufferSizeInMs + 1;   // (the spec wants the start below the size)
     rc_wire(r);
 }
 
