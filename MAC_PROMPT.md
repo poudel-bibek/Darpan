@@ -1,26 +1,26 @@
-# Build the Darpan macOS app
+# Darpan for macOS — design brief
 
-You are a Claude instance on the owner's Mac, in a clone of `github.com/OWNER/darpan`
-(private). The Linux host — the machine being controlled — is finished and running. Your job is
-the **native macOS client** in `mac/`, shipped as `dist/Darpan.dmg` and attached to the GitHub
-release. The owner uses it from home to work on a Linux workstation that trains ML models, so it
-must feel instant for typing and cost almost nothing. Work autonomously; post short progress
-updates; ask the owner only for the things listed in §0.
+This brief specifies the native macOS client in `mac/`, shipped as `dist/Darpan.dmg` and attached
+to the latest release. It is written for whoever builds the client (human or agent) in a clone of
+this repository. The Linux host is complete. The client is used for interactive work on a remote
+Linux workstation that is often busy with heavy GPU/CPU jobs, so it must feel instant for typing
+and cost almost nothing. Work autonomously and post short progress updates on the
+`dev-messageboard`; involve the maintainer (board id `owner`) only for the items in §0.
 
 ## 0. Before you start
 
 Run and report: `sw_vers`, `uname -m`, `xcode-select -p`, `swift --version`, `gh auth status`,
 `git config user.name`, `git config user.email`, `git status`, `git log --oneline -3`.
 
-* No Command Line Tools → ask the owner to run `xcode-select --install`.
-* `gh` missing/not logged in → ask the owner to install it (`brew install gh`) and run
-  `gh auth login` (they can type `! gh auth login` in Claude Code).
-* No git identity → ask the owner for name/email; never invent one.
-* Ask the owner for the **host address** (`https://<machine>.<tailnet>.ts.net`) and **password**
+* No Command Line Tools → ask the maintainer to run `xcode-select --install`.
+* `gh` missing/not logged in → ask the maintainer to install it (`brew install gh`) and run
+  `gh auth login`.
+* No git identity → ask the maintainer for a name and a GitHub no-reply e-mail; never invent one.
+* Ask the maintainer for the **host address** (`https://<machine>.<tailnet>.ts.net`) and **password**
   (shown in the Darpan window on Linux, or `darpan status`). Check reachability with
   `curl -sS <address>/api/info`. If it fails: Tailscale must be running and signed in on this
   Mac with the same account, and the Linux setup steps in `README.md` must be done — tell the
-  owner which one is missing, then continue with everything that doesn't need the host.
+  maintainer which one is missing, then continue with everything that doesn't need the host.
 * **Never write the address or password into any file in the repo.** For live tests read them
   from environment variables (`DARPAN_URL`, `DARPAN_PASSWORD`) or the Keychain.
 
@@ -39,7 +39,7 @@ hidden). 3. Correctness and security. 4. Polish. **Apple frameworks only — no 
 
 ## 3. Architecture (Swift 5.9+, SwiftPM, not sandboxed)
 
-Deployment target: macOS 13, or 12 if the owner's Mac is older (nothing below needs more).
+Deployment target: macOS 14 (the built-in network needs it).
 
 * **Connection** — `Network.framework`: `NWConnection` to `NWEndpoint.url(<address>/ws)` with
   `NWProtocolWebSocket.Options` (`autoReplyPing = true`, max message 8 MiB), TLS with default
@@ -181,7 +181,7 @@ Everything must work with only the Command Line Tools installed.
   put the tests in the `SelfTest` executable that exits non-zero on failure): the auth vector in
   §3, Annex-B splitting incl. 3- and 4-byte start codes, avcC/format-description creation from a
   real SPS/PPS, key-map sanity, wheel-sign conversion.
-* **Live, against the owner's host**: first open the address in Safari on this Mac to confirm the
+* **Live, against the real host**: first open the address in Safari on this Mac to confirm the
   host works, then your app. Check: video appears, typing latency (stats), mouse and scroll
   (direction!), ⌘C/⌘V both ways, file drop lands in `~/Downloads/Darpan/` on Linux, resolution
   change and that it reverts on disconnect, minimise → host stops encoding (stats stop), reconnect
@@ -200,16 +200,16 @@ Everything must work with only the Command Line Tools installed.
   Never force-push or rewrite history.
 * Stay inside `mac/` plus a "Mac app" section in `README.md`. Don't edit `linux/` or
   `PROTOCOL.md`; if the host or protocol looks wrong, write it up in `mac/NOTES.md`, push it, and
-  tell the owner.
+  tell the maintainer.
 
 ## 9. Release
 
 ```bash
 bash mac/build.sh
-gh release view v1.0.0 >/dev/null 2>&1 || gh release create v1.0.0 --title "Darpan 1.0.0" --notes ""
-gh release upload v1.0.0 dist/Darpan.dmg --clobber
-gh release view v1.0.0 --json body -q .body > /tmp/notes.md   # then append the Mac section:
-gh release edit v1.0.0 --notes-file /tmp/notes.md
+TAG=$(gh release view --json tagName -q .tagName)            # the latest release
+gh release upload "$TAG" dist/Darpan.dmg --clobber
+gh release view "$TAG" --json body -q .body > /tmp/notes.md   # then append the Mac section:
+gh release edit "$TAG" --notes-file /tmp/notes.md
 ```
 The appended Mac section: install (open the DMG, drag Darpan to Applications), first launch of a
 downloaded copy (System Settings → Privacy & Security → *Open Anyway*, or
@@ -219,14 +219,14 @@ shortcut capture, and the DMG's SHA-256. Put the same install notes in the READM
 ## 10. Definition of done
 
 - [ ] `bash mac/build.sh` passes self-tests and produces `dist/Darpan.dmg` from a clean clone
-- [ ] every live check in §7 passes against the owner's host (or the owner was told which
+- [ ] every live check in §7 passes against the real host (or the maintainer was told which
       couldn't be run and why)
 - [ ] `README.md` Mac section + `mac/README.md` written
 - [ ] all work committed and pushed to `main`; working tree clean; no secrets committed
-- [ ] DMG uploaded to release v1.0.0 and the release notes updated
-- [ ] the owner has the app: offer to copy `dist/Darpan.app` to `/Applications`
+- [ ] DMG uploaded to the latest release and its notes updated
+- [ ] the maintainer has the app: offer to copy `dist/Darpan.app` to `/Applications`
 
-## 11. Final report to the owner
+## 11. Final report to the maintainer
 
 A short message: what was built, how to install and launch it, the measured numbers (§7), anything
 that didn't pass or wasn't tested, links to the commit and the release, and anything written to

@@ -9,8 +9,8 @@ each_user() {
 }
 case "$1" in
 remove|deconfigure)
-    each_user stop darpan.service darpan-net.service
-    systemctl --global disable darpan.service darpan-net.service >/dev/null 2>&1 || true
+    each_user stop darpan.service darpan-net.service darpan.socket
+    systemctl --global disable darpan.service darpan-net.service darpan.socket >/dev/null 2>&1 || true
     ;;
 esac
 find /opt/darpan -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true

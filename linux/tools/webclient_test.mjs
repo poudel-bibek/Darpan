@@ -1,14 +1,24 @@
 // Browser end-to-end test: headless Chrome ↔ real host on a private Xvfb display.
 // No npm dependencies: speaks the Chrome DevTools Protocol over Node's built-in WebSocket.
 //   node tools/webclient_test.mjs
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const CHROME = process.env.CHROME || '/home/user/.omp/puppeteer/chrome/linux-150.0.7871.24/chrome-linux64/chrome';
+// Chrome/Chromium: $CHROME, else the first browser found in PATH or a puppeteer/playwright cache.
+const CHROME = process.env.CHROME || findChrome();
+function findChrome() {
+  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+    const r = spawnSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' });
+    if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
+  }
+  const r = spawnSync('sh', ['-c', 'ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux*/chrome "$HOME"/.*/puppeteer/chrome/linux-*/chrome-linux64/chrome 2>/dev/null | tail -1'], { encoding: 'utf8' });
+  if (r.stdout.trim()) return r.stdout.trim();
+  throw new Error('no Chrome/Chromium found: set CHROME=/path/to/chrome');
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 const ok = (name, cond, detail = '') => { results.push(!!cond); console.log(`  ${cond ? 'PASS' : 'FAIL'} ${name.padEnd(36)} ${detail}`); };
@@ -19,7 +29,8 @@ function lines(stream, onLine) {
 }
 
 const procs = [];
-const cleanup = () => { for (const p of procs.reverse()) { try { p.kill('SIGINT'); } catch {} } };
+// Runs once: a second SIGINT would interrupt the host harness's own cleanup (leaking Xvfb).
+const cleanup = () => { for (const p of procs.splice(0).reverse()) { try { p.kill('SIGINT'); } catch {} } };
 process.on('exit', cleanup);
 process.on('SIGINT', () => process.exit(2));
 
@@ -134,6 +145,20 @@ try {
   lat.sort((a, b) => a - b);
   ok('key → decoded frame in browser', lat[4] < 60, `median ${lat[4]} ms incl. CDP polling overhead (min ${lat[0]})`);
 
+  // a drag interrupted by losing focus must not leave the button held on the host
+  await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: cx, y: cy, button: 'left', buttons: 1, clickCount: 1 }, sid);
+  await sleep(150);
+  const presses = probeLog().filter((l) => l === 'BUTTON press 1').length;
+  await ev(`window.dispatchEvent(new Event('blur')); 1`);
+  await sleep(400);
+  log = probeLog();
+  ok('blur mid-drag releases the button', log.filter((l) => l === 'BUTTON release 1').length >= presses,
+     `${presses} presses, ${log.filter((l) => l === 'BUTTON release 1').length} releases`);
+  await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: cx, y: cy, button: 'left', buttons: 0, clickCount: 1 }, sid);
+
+  const cur = await ev(`({css: document.getElementById('screen').style.cursor, scale: window.__darpan.cssScale})`);
+  ok('pointer drawn at display scale', /^(url|image-set)\(/.test(cur.css) && cur.scale < 1, `scale ${cur.scale.toFixed(2)}, ${cur.css.slice(0, 40)}…`);
+
   const st = await ev(`({fps: window.__darpan.fps, lat: window.__darpan.latency, dec: window.__darpan.decodeMs, rtt: window.__darpan.rtt, enc: window.__darpan.stream.enc})`);
   ok('stats populated', st.rtt != null, JSON.stringify(st));
 
@@ -154,6 +179,21 @@ try {
 
   // hidden tab → host stops encoding; visible → resumes with a fresh key frame
   await call('Emulation.setFocusEmulationEnabled', { enabled: true }, sid).catch(() => {});
+  // host restart (it says bye + closes 4004): the client must come back by itself
+  const f0 = await ev('window.__darpan.frames');
+  process.kill(host.pid, 'SIGUSR1');
+  let down = false, back = false;
+  for (let i = 0; i < 60 && !back; i++) {
+    await sleep(250);
+    const c = await ev('window.__darpan.connected');
+    if (!c) down = true;
+    else if (down) back = true;
+  }
+  await sleep(1500);
+  const f1 = await ev('window.__darpan.frames');
+  ok('reconnects after host restart', down && back && f1 > f0 && await ev(`document.getElementById('login').hidden`),
+     `down=${down} back=${back} frames ${f0}→${f1}`);
+
   const hostLog = () => readFileSync(env.host_log, 'utf8');
   ok('no host errors', !/Traceback|ERROR|E tc/.test(hostLog()), hostLog().split('\n').filter((l) => /Traceback|E tc/.test(l)).slice(0, 3).join(' | '));
 } catch (e) {

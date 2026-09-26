@@ -32,8 +32,10 @@ async def _client(hub, reader, writer):
         elif cmd == "kick":
             resp = {"kicked": hub.kick(req.get("sid"))}
         elif cmd == "reload":
+            old = hub.auth.key
             hub.auth.reload()
-            resp = {"ok": True}
+            kicked = hub.kick(reason="password changed") if hub.auth.key != old else 0
+            resp = {"ok": True, "kicked": kicked}
         else:
             resp = {"error": "unknown command"}
         writer.write(json.dumps(resp).encode() + b"\n")

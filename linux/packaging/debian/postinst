@@ -9,11 +9,14 @@ each_user() {  # run "$@" as the systemd user manager of every logged-in user
 }
 case "$1" in
 configure)
-    python3 -m compileall -q -f /opt/darpan/host >/dev/null 2>&1 || true
-    systemctl --global enable darpan-net.service darpan.service >/dev/null 2>&1 || true
+    python3 -m compileall -q -f /opt/darpan/darpan >/dev/null 2>&1 || true
+    # reenable: drop links from an older [Install] section, create the current ones
+    systemctl --global reenable darpan.socket darpan-net.service darpan.service >/dev/null 2>&1 || true
     each_user daemon-reload
+    each_user stop darpan.service          # an older host may hold the port itself
+    each_user restart darpan.socket        # systemd takes the port for the whole login
     each_user restart darpan-net.service
-    each_user restart darpan.service
+    each_user start darpan.service
     echo
     echo "  Darpan is installed."
     echo "  Finish setup: open \"Darpan\" from your apps, or run:  darpan setup"

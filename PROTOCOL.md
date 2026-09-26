@@ -112,7 +112,8 @@ it down completely. Clients SHOULD send `stop` when their window is hidden/minim
 Mid-stream changes: `{"t":"cfg","fps":30,"bitrate":8000}` (any subset of the `start`
 fields). If the change needs a new encoder the host announces a new `stream`.
 
-`{"t":"kf"}` asks for a key frame (e.g. after a decoder error). Rate-limited by the host.
+`{"t":"kf"}` asks for a key frame (e.g. after a decoder error). The host forces at most one per
+second but never drops a request: a second one within that second is served when it's up.
 
 ### 3.2 VIDEO frame (binary, host → client), big-endian
 
@@ -171,6 +172,8 @@ itself, using the real shape from the host:
 * First time an `id` is used the message contains the image; afterwards the host may
   send just `{"t":"cur","id":7}` to switch back to a cached shape.
 * `{"t":"cur","id":0}` means the pointer is hidden.
+* The host sends each image to a session at most once: clients must cache images by id for the
+  whole session.
 * Image and hotspot are in **host screen pixels**; scale them by the same factor used to
   display the video.
 
@@ -202,7 +205,8 @@ key-up for keys pressed while ⌘ is held: send those as an immediate down+up pa
 ## 6. Clipboard (text)
 
 `{"t":"clip","text":"…"}` in either direction, max 1 MiB of UTF-8.
-* Host → client: sent when the host clipboard changes, and once after `ok`.
+* Host → client: sent when the host clipboard changes, and always once right after `ok` (the
+  current contents, possibly empty — clients don't apply this snapshot to the local clipboard).
 * Client → host: the host becomes the clipboard owner with this text. Clients should send
   it right before sending a paste shortcut, or whenever the local clipboard changes.
 * Neither side echoes back text it just received.
@@ -246,7 +250,8 @@ change produces `screen`, `modes` and a new `stream`.
 * `{"t":"screen","w":3840,"h":2160}` — host screen size changed (a new `stream` follows
   if streaming).
 * `{"t":"notice","level":"info|warn|error","text":"…"}` — show to the user.
-* `{"t":"bye","reason":"…"}` — sent right before the host closes the socket.
+* `{"t":"bye","reason":"…"}` — sent right before the host closes the socket. Show the reason, but
+  act on the close code that follows (4003: stay disconnected; 4004: reconnect).
 
 ---
 

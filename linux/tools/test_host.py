@@ -45,6 +45,7 @@ x.XFlush.argtypes = [ctypes.c_void_p]
 x.XNextEvent.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
 x.XLookupKeysym.restype = ctypes.c_ulong; x.XLookupKeysym.argtypes = [ctypes.c_void_p, ctypes.c_int]
 x.XLookupString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p]
+x.XRefreshKeyboardMapping.argtypes = [ctypes.c_void_p]
 # Colour bars for the colour-accuracy check (left half), a key-press flash area (right half)
 BARS = [0xff0000, 0x00ff00, 0x0000ff, 0xffffff, 0x808080, 0x300a24, 0xffff00, 0x00ffff]
 def paint(flash):
@@ -74,6 +75,8 @@ while True:
     elif t in (4, 5):
         b = ctypes.cast(ctypes.byref(ev), ctypes.POINTER(ctypes.c_uint * 22)).contents[21]
         print("BUTTON %s %d" % ("press" if t == 4 else "release", b), flush=True)
+    elif t == 34:  # MappingNotify: refresh the keymap, as every real toolkit does
+        x.XRefreshKeyboardMapping(ctypes.byref(ev))
     elif t == 6:
         xy = ctypes.cast(ctypes.byref(ev), ctypes.POINTER(ctypes.c_int * 24)).contents
         print("MOTION %d %d" % (xy[16], xy[17]), flush=True)
@@ -235,6 +238,7 @@ async def run(args, tmp, probe_log):
     ok("first frame is key frame", frames and frames and keyframes >= 1, "sizes %s" % sizes[:5])
     ok("pong", pong is not None)
     ok("modes (xrandr)", "modes" in msgs, str(msgs.get("modes", ""))[:80])
+    ok("clipboard snapshot always sent", msgs.get("clip", {}).get("text") == "", repr(msgs.get("clip")))
 
     # decode + colour accuracy on the bars
     img = decode_frames(frames, os.path.join(tmp, "frame.png"))
@@ -300,6 +304,15 @@ async def run(args, tmp, probe_log):
     typed = [l for l in lines if l.startswith("KEY press")]
     ok("txt typing", any("text='H'" in l for l in typed) and any("text='i'" in l for l in typed), typed[-4:])
 
+    # > 8 distinct non-layout characters: every spare keycode gets reused along the way
+    greek = "αβγδεζηθικλμα"
+    mark = len(log_lines())
+    ws.send({"t": "txt", "s": greek})
+    await pump(ws, 1.0)
+    typed = "".join(l.split("text=", 1)[1][1:-1].encode("latin-1").decode("utf-8", "replace")
+                    for l in log_lines()[mark:] if l.startswith("KEY press") and "text=''" not in l)
+    ok("typing reuses spare keycodes safely", typed == greek, repr(typed))
+
     # repeat: down, down, down, up  → three presses delivered
     before = sum(1 for l in log_lines() if "KEY press" in l)
     for _ in range(3):
@@ -315,6 +328,14 @@ async def run(args, tmp, probe_log):
     out = subprocess.run(["xclip", "-o", "-selection", "clipboard"], env=dict(os.environ, DISPLAY=args.display),
                          capture_output=True, text=True, timeout=3).stdout
     ok("clipboard client→host", out == "hello from test ✓", repr(out))
+
+    # paste ordering: a clip must be applied before any later message (e.g. the paste key)
+    ws.send({"t": "clip", "text": "ordered paste 7"})
+    ws.send({"t": "ping", "c": 1})
+    _, pong2 = await pump(ws, 3, want="pong")
+    out2 = subprocess.run(["xclip", "-o", "-selection", "clipboard"], env=dict(os.environ, DISPLAY=args.display),
+                          capture_output=True, text=True, timeout=3).stdout
+    ok("clip applied before next message", pong2 is not None and out2 == "ordered paste 7", repr(out2))
 
     # clipboard host → client
     subprocess.run(["xclip", "-i", "-selection", "clipboard"], input="from host 42", text=True,
@@ -344,8 +365,92 @@ async def run(args, tmp, probe_log):
     n, _ = await pump(ws, 1.5)
     ok("static screen sends nothing", n == 0, "%d frames in 1.5 s" % n)
 
-    ws.send({"t": "stop"})
+    # kf twice within a second: the second is deferred, not dropped
+    await pump(ws, 0.8)
+    ws.send({"t": "kf"})
     await asyncio.sleep(0.2)
+    ws.send({"t": "kf"})
+    keys, end = 0, time.monotonic() + 2.0
+    while time.monotonic() < end:
+        try:
+            kind, m = await asyncio.wait_for(ws.recv(), 0.3)
+        except asyncio.TimeoutError:
+            continue
+        if kind == "binary":
+            _, flags, sid, seq, _ = struct.unpack(">BBHIQ", m[:16])
+            ws.send({"t": "ack", "id": sid, "n": seq})
+            keys += flags & 1
+    ok("key-frame requests coalesce, never drop", keys >= 2, "%d key frames" % keys)
+
+    # a long non-ASCII name (> 255 bytes) must save cleanly and leave no temp file behind
+    long_name = "日本語のファイル" * 20 + ".txt"
+    ws.send({"t": "fput", "id": 9, "name": long_name, "size": 5})
+    ws.send(binary=struct.pack(">BI", 2, 9) + b"hello")
+    _, done = await pump(ws, 3, want="fdone")
+    dl = os.path.join(tmp, "Downloads", "Darpan")
+    leftovers = [f for f in os.listdir(dl) if f.endswith(".part")]
+    ok("long non-ASCII upload name", done and os.path.exists(done["path"]) and not leftovers
+       and len(os.path.basename(done["path"]).encode()) <= 255, (done or {}).get("path", "")[-40:])
+
+    def capture_pids():
+        r = subprocess.run(["pgrep", "-f", "darpan-capture .*--display %s" % args.display], capture_output=True, text=True)
+        return [int(p) for p in r.stdout.split()]
+
+    ws.send({"t": "stop"})
+    await pump(ws, 0.5)
+    for p in capture_pids():
+        os.kill(p, 9)                     # encoder dies while the viewer is hidden
+    await pump(ws, 3)
+    ok("paused viewer: encoder stays down", not capture_pids(), "pids %s" % capture_pids())
+    ws.send({"t": "start", "codec": "h264", "fps": 60, "bitrate": 0})
+    got_stream, frames2 = None, 0
+    end = time.monotonic() + 4
+    while time.monotonic() < end and not frames2:
+        try:
+            kind, m = await asyncio.wait_for(ws.recv(), 0.5)
+        except asyncio.TimeoutError:
+            continue
+        if kind == "text" and m["t"] == "stream":
+            got_stream = m
+        elif kind == "binary":
+            _, flags, sid, seq, _ = struct.unpack(">BBHIQ", m[:16])
+            ws.send({"t": "ack", "id": sid, "n": seq})
+            frames2 += flags & 1
+    ok("start after pause brings it back", got_stream is not None and frames2 >= 1 and len(capture_pids()) == 1,
+       "stream %s, key frames %d" % (got_stream and got_stream["id"], frames2))
+
+    # start/stop/start in one burst must leave exactly one encoder
+    for t in ("start", "stop", "start"):
+        ws.send({"t": t, "codec": "h264", "fps": 60, "bitrate": 0})
+    await pump(ws, 2.5)
+    ok("start/stop/start burst: one encoder", len(capture_pids()) == 1, "pids %s" % capture_pids())
+
+    # Origin: null (sandboxed iframe / data: URL) must be refused
+    r, w = await asyncio.open_connection("127.0.0.1", args.port)
+    w.write(("GET /ws HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+             "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nOrigin: null\r\n\r\n" % args.port).encode())
+    line = (await r.readline()).decode().strip()
+    w.close()
+    ok("Origin: null refused", " 403 " in line, line)
+
+    # changing the password ends existing sessions
+    env = dict(os.environ, XDG_CONFIG_HOME=os.path.join(tmp, "config"), XDG_RUNTIME_DIR=os.path.join(tmp, "run"),
+               XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"), HOME=tmp,
+               PYTHONPATH=args.root)
+    subprocess.run([sys.executable, "-m", "darpan", "password", "--generate"], env=env, cwd=args.root,
+                   capture_output=True, timeout=20)
+    code = None
+    end = time.monotonic() + 4
+    while time.monotonic() < end and code is None:
+        try:
+            kind, m = await asyncio.wait_for(ws.recv(), 0.5)
+            if kind == "close":
+                code = m
+        except asyncio.TimeoutError:
+            pass
+        except (asyncio.IncompleteReadError, ConnectionError):
+            break
+    ok("password change ends sessions", code == 4003, "close code %s" % code)
     ws.w.close()
     return all(r for _, r in results), results
 
@@ -357,6 +462,7 @@ def main():
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--root", default=ROOT, help="tree to test (e.g. an extracted .deb's opt/darpan)")
     ap.add_argument("--serve", action="store_true", help="set everything up, print JSON, wait (for browser tests)")
+    ap.add_argument("--socket-activate", action="store_true", help="hand the host its socket like systemd does")
     args = ap.parse_args()
     args.probe_w, args.probe_h = 1280, 720
     tmp = tempfile.mkdtemp(prefix="darpan-test-")
@@ -382,9 +488,22 @@ def main():
                                  stdout=open(probe_log, "w"), stderr=subprocess.STDOUT)
         procs.append(probe)
         host_log = open(os.path.join(tmp, "host.log"), "w")
-        host = subprocess.Popen([sys.executable, "-m", "darpan", "serve", "--port", str(args.port), "-v"], env=env,
+        cmd = [sys.executable, "-m", "darpan", "serve", "--port", str(args.port), "-v"]
+        if args.socket_activate:   # exercise the sd_listen_fds path (darpan.socket in production)
+            keep = ["DISPLAY", "HOME", "PATH", "PYTHONPATH", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME",
+                    "XDG_RUNTIME_DIR"]            # it starts children with a clean environment
+            cmd = ["systemd-socket-activate", "-l", "127.0.0.1:%d" % args.port] + [a for k in keep for a in ("-E", k)] + cmd
+        host = subprocess.Popen(cmd, env=env,
                                 stdout=host_log, stderr=subprocess.STDOUT, cwd=args.root)
         procs.append(host)
+        if args.socket_activate:   # the socket exists before the host: the first connection starts it
+            import socket as _s
+            for _ in range(50):
+                try:
+                    _s.create_connection(("127.0.0.1", args.port), 0.5).close()
+                    break
+                except OSError:
+                    time.sleep(0.1)
         for _ in range(50):
             time.sleep(0.2)
             if os.path.exists(os.path.join(tmp, "config", "darpan", "password.txt")):
@@ -399,14 +518,25 @@ def main():
             print(json.dumps({"port": args.port, "password": pw, "display": args.display, "probe_log": probe_log,
                               "tmp": tmp, "host_log": os.path.join(tmp, "host.log")}), flush=True)
             signal.signal(signal.SIGINT, lambda *a: sys.exit(0))
-            while host.poll() is None:
-                time.sleep(0.5)
-            return 1
+            restart = []
+            signal.signal(signal.SIGUSR1, lambda *a: restart.append(1))
+            while True:
+                if restart:                      # browser test: host restart → client must reconnect
+                    restart.clear()
+                    host.terminate()
+                    host.wait(10)
+                    host = subprocess.Popen(cmd, env=env, stdout=host_log, stderr=subprocess.STDOUT, cwd=args.root)
+                    procs.append(host)
+                elif host.poll() is not None:
+                    return 1
+                time.sleep(0.2)
         print("Darpan host test on %s (tmp %s)" % (args.display, tmp))
         good, _ = asyncio.run(run(args, tmp, probe_log))
         print("\nRESULT:", "ALL PASS" if good else "FAILURES")
         return 0 if good else 1
     finally:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)     # a repeated Ctrl-C must not cut cleanup short
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         for p in reversed(procs):
             p.terminate()
             try:

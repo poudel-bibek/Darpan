@@ -80,9 +80,16 @@ class Screen:
                 seen.add((w, h))
                 lst.append([w, h])
         lst.sort(key=lambda m: -m[0] * m[1])
+        # "native" = what {"t":"res","native":true} restores: the mode saved before the first
+        # remote change, else the current mode (not simply the largest one offered).
+        try:
+            with open(self.state_file) as f:
+                orig = json.load(f)
+            native = [orig["w"], orig["h"]]
+        except (OSError, ValueError, KeyError):
+            native = list(current[:2]) if current else (lst[0] if lst else None)
         return {"output": name, "current": list(current[:2]) if current else None,
-                "native": lst[0] if lst else None, "modes": lst[:24],
-                "changed": os.path.exists(self.state_file)}
+                "native": native, "modes": lst[:24], "changed": os.path.exists(self.state_file)}
 
     async def set_mode(self, w, h):
         name, current, modes = _parse(await _xrandr(self.display, "--query"))

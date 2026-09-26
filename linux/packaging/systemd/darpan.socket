@@ -1,0 +1,15 @@
+[Unit]
+Description=Darpan host socket (held by systemd for the whole login)
+Documentation=file:///usr/share/doc/darpan/README.md
+
+[Socket]
+# Bound once when you log in and kept while the host restarts, so no other local user can
+# take the port. darpan-net (Tailscale) is bound to this unit: if the port can't be held,
+# nothing is published.
+ListenStream=127.0.0.1:47470
+NoDelay=yes
+Backlog=64
+Service=darpan.service
+
+[Install]
+WantedBy=sockets.target
