@@ -12,10 +12,22 @@ set -euo pipefail
 if security find-identity -p codesigning | grep -qF '"Darpan"'; then echo "a Darpan identity exists already"; exit 0; fi
 D=$(mktemp -d)
 trap 'rm -rf "$D"' EXIT
-openssl req -x509 -newkey rsa:2048 -keyout "$D/k.pem" -out "$D/c.pem" -days 3650 -nodes -subj "/CN=Darpan" \
-    -addext "keyUsage=critical,digitalSignature" -addext "extendedKeyUsage=critical,codeSigning" \
-    -addext "basicConstraints=critical,CA:false" 2>/dev/null
+# A config file rather than -addext, so macOS's own LibreSSL works as well as OpenSSL 3.
+cat > "$D/cfg" <<'CFG'
+[req]
+distinguished_name = dn
+prompt = no
+[dn]
+CN = Darpan
+[v3]
+keyUsage = critical, digitalSignature
+extendedKeyUsage = critical, codeSigning
+basicConstraints = critical, CA:false
+CFG
+openssl req -x509 -newkey rsa:2048 -keyout "$D/k.pem" -out "$D/c.pem" -days 3650 -nodes -config "$D/cfg" -extensions v3 2>/dev/null
 P=$(openssl rand -hex 16)
-openssl pkcs12 -export -legacy -inkey "$D/k.pem" -in "$D/c.pem" -name Darpan -out "$D/d.p12" -passout "pass:$P" 2>/dev/null
+# OpenSSL 3 needs -legacy for a PKCS#12 the Keychain can import; LibreSSL has no such option.
+LEGACY=$(openssl pkcs12 -help 2>&1 | grep -q -- -legacy && echo -legacy || true)
+openssl pkcs12 -export $LEGACY -inkey "$D/k.pem" -in "$D/c.pem" -name Darpan -out "$D/d.p12" -passout "pass:$P" 2>/dev/null
 security import "$D/d.p12" -k "$HOME/Library/Keychains/login.keychain-db" -P "$P" -T /usr/bin/codesign >/dev/null
 security find-identity -p codesigning | grep -F '"Darpan"'
