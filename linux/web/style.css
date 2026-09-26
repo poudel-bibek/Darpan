@@ -84,6 +84,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .seg button { flex: 1; height: 28px; border: 0; border-radius: 7px; background: transparent; font-size: 12px; white-space: nowrap; }
 .seg button:hover { background: var(--hover); }
 .seg button.on { background: var(--on); font-weight: 600; }
+.seg.tall button { height: 40px; line-height: 1.2; }
 .list { display: flex; flex-direction: column; gap: 2px; max-height: 196px; overflow: auto; }
 .list button { height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; text-align: left;
   font-size: 13px; display: flex; justify-content: space-between; align-items: center; }

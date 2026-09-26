@@ -204,8 +204,8 @@ try {
   const modes = await ev(`(document.querySelector('[data-panel=display]').click(), new Promise(r => setTimeout(() => r(document.querySelectorAll('#modes button').length), 600)))`);
   ok('resolution list rendered', modes >= 1, `${modes} option(s)`);
   const shot2 = await call('Page.captureScreenshot', { format: 'png' }, sid);
-  writeFileSync(join(env.tmp, 'browser-toolbar.png'), Buffer.from(shot2.data, 'base64'));
-  console.log('  screenshot:', join(env.tmp, 'browser-toolbar.png'));
+  writeFileSync(join(process.env.DARPAN_TEST_SHOTS || env.tmp, 'browser-toolbar.png'), Buffer.from(shot2.data, 'base64'));
+  console.log('  screenshot:', join(process.env.DARPAN_TEST_SHOTS || env.tmp, 'browser-toolbar.png'));
 
   // files (PROTOCOL.md §7.1): the transfer window lists the Linux side, sends, asks before replacing, receives
   ok('no clipboard panel', await ev(`!document.getElementById('panel-clip') && !document.querySelector('[data-panel=clip]')`));
