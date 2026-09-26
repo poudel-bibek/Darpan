@@ -9,6 +9,11 @@ enum AppInfo {
     static let website = URL(string: "https://github.com/OWNER/darpan")!
 }
 
+enum NetworkMode: String, CaseIterable {
+    case builtIn
+    case system
+}
+
 /// Viewer preferences (UserDefaults) and the list of computers connected to before.
 final class Settings: ObservableObject {
     static let shared = Settings()
@@ -32,6 +37,9 @@ final class Settings: ObservableObject {
     /// Horizontal position of the toolbar pill, as a fraction of the window width.
     @Published var pillX: Double { didSet { d.set(pillX, forKey: "pillX") } }
     @Published var remember: Bool { didSet { d.set(remember, forKey: "remember") } }
+    /// How to reach the tailnet: the node built into the app, or whatever this Mac provides
+    /// (the Tailscale app, another VPN, a LAN).
+    @Published var network: NetworkMode { didSet { d.set(network.rawValue, forKey: "network") } }
     /// Origins, most recent first.
     @Published private(set) var hosts: [String] { didSet { d.set(hosts, forKey: "hosts") } }
 
@@ -49,6 +57,7 @@ final class Settings: ObservableObject {
         captureSystemKeys = d.bool(forKey: "captureSystemKeys")
         pillX = min(0.95, max(0.05, d.double(forKey: "pillX")))
         remember = d.bool(forKey: "remember")
+        network = NetworkMode(rawValue: d.string(forKey: "network") ?? "") ?? .builtIn
         hosts = (d.stringArray(forKey: "hosts") ?? []).filter { (try? HostAddress(parsing: $0)) != nil }
     }
 

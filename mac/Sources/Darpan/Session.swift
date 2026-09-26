@@ -35,14 +35,14 @@ final class Session: NSObject {
     private var uploadToasts: [String: ToastStack.Toast] = [:]
     private let logStats = ProcessInfo.processInfo.environment["DARPAN_LOG_STATS"] != nil
 
-    init(address: HostAddress, remember: Bool, owner: SessionOwner) {
+    init(address: HostAddress, proxy: SOCKSProxy?, remember: Bool, owner: SessionOwner) {
         self.address = address
         self.remember = remember
         self.owner = owner
         window = NSWindow(contentRect: content.frame, styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: true)
         super.init()
-        client = Client(address: address, sink: video)
+        client = Client(address: address, sink: video, proxy: proxy)
         client.delegate = self
         keyboard = KeyboardCapture(video: video)
         clipboard = ClipboardSync { [weak self] text in self?.client.send(Msg.clip(text)) }

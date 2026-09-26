@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        if Settings.shared.network == .builtIn && Tailnet.hasState { Tailnet.shared.start() }
         connectWindow = ConnectWindowController()
         connectWindow.model.handler = self
         connectWindow.showWindow(nil)
@@ -36,6 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let s = session, s.isConnected { s.window.makeKeyAndOrderFront(nil) } else { connectWindow.showWindow(nil) }
         }
         return true
+    }
+
+    func applicationWillTerminate(_ n: Notification) {
+        Tailnet.shared.stop()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -77,11 +82,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: ConnectHandler {
-    func connect(to address: HostAddress, password: String?, saved: SavedKey?, remember: Bool) {
+    func connect(to address: HostAddress, proxy: SOCKSProxy?, password: String?, saved: SavedKey?, remember: Bool) {
         let old = session
         session = nil
         old?.end()
-        let s = Session(address: address, remember: remember, owner: self)
+        let s = Session(address: address, proxy: proxy, remember: remember, owner: self)
         session = s
         s.start(password: password, saved: saved)
     }

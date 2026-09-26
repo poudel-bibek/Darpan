@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds dist/Darpan.app and dist/Darpan.dmg (universal: arm64 + x86_64) with the Command Line
-# Tools alone: self-tests, per-architecture release builds joined with lipo, the app bundle
-# and its icon, signing, the disk image.
+# Tools and Go: libtailscale, self-tests, per-architecture release builds joined with lipo, the
+# app bundle and its icon, signing, the disk image. Go comes from PATH or ~/.local/go.
 #
 #   bash mac/build.sh
 #
@@ -18,6 +18,9 @@ BUILD=1
 APP="$DIST/$NAME.app"
 
 cd "$MAC"
+
+echo "==> libtailscale"
+bash "$MAC/tailscale/build-libtailscale.sh"
 
 echo "==> self-tests"
 swift run -c release SelfTest
@@ -50,7 +53,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
-    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -60,6 +63,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </plist>
 EOF
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
+cp "$MAC/.build/libtailscale/LICENSE" "$APP/Contents/Resources/libtailscale-LICENSE.txt"
 
 echo "==> icon"
 ICONSET="$(mktemp -d)/AppIcon.iconset"
