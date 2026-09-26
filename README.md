@@ -45,15 +45,17 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 | **Feels local** | About 27 ms from a change on the Linux screen to your Mac, over the internet. Typing and scrolling keep up. |
 | **Private** | Only your own devices can reach it. The connection is encrypted end to end, no ports are opened, and on top of that there's a password that never crosses the network. |
 | **Light** | On the Linux computer, nothing runs until you connect: 0 % CPU while idle, and about 0.3 % of one CPU core while you're connected. Your long GPU jobs keep the machine. |
-| **Complete** | Clipboard in both directions, drag-and-drop file transfer, screen resolution changes, full screen, and a toolbar that tucks away. |
+| **Complete** | Sound, clipboard in both directions, drag-and-drop file transfer, screen resolution changes, full screen, and a toolbar that tucks away. |
 | **Free** | Open source (MIT). No subscription, and no account with us. |
 
 ## Everyday use
 
-* **Copy and paste** with ⌘C and ⌘V. The clipboard syncs both ways. In a Linux terminal, use ⌘⇧C and ⌘⇧V.
+* **Copy and paste** with ⌘C and ⌘V. The clipboard syncs both ways. In Linux terminals, ⌘ acts on the terminal
+  (⌘C copies, ⌘V pastes, ⌘T opens a tab) and ⌃ goes to the shell (⌃C interrupts, ⌃R searches).
+* **Sound** from the Linux computer plays on your Mac, or in the browser. The speaker button in the toolbar mutes it.
 * **Send files** by dropping them on the window. They land in `~/Downloads/Darpan` on the Linux computer.
 * **The toolbar** is the small tab at the top of the window. Hover over it for full screen, display and
-  quality, keyboard, clipboard and files. Drag it sideways if it's in the way.
+  quality, keyboard, clipboard, files and sound. Drag it sideways if it's in the way.
 * **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
   screen, ⌃⌥⌘D disconnect, and ⌃⌥⌘⎋ to release the keyboard (press it again to capture). System shortcuts
   (⌘Tab, ⌘Space, Mission Control) stay on the Mac unless you turn on *Send ⌘Tab, ⌘Space…* in the
@@ -63,7 +65,8 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 <summary><b>Requirements and limitations</b></summary>
 
 * **Linux:** Ubuntu 24.04 (or similar) in an **X11 session**; on the login screen, choose
-  *Ubuntu on Xorg*. Wayland isn't supported yet. With an NVIDIA GPU, video is encoded in hardware;
+  *Ubuntu on Xorg*. Wayland isn't supported yet. Sound uses PipeWire, the default since Ubuntu 22.10.
+  With an NVIDIA GPU, video is encoded in hardware;
   without one, Darpan falls back to software encoding, which uses several CPU cores while you're
   connected.
 * **After a reboot**, someone has to log in on the Linux computer before Darpan can show its screen,
@@ -72,7 +75,6 @@ it the first time, go to System Settings → Privacy & Security and click **Open
   [Tailscale admin console](https://login.tailscale.com/admin/machines) and choose
   **Disable key expiry** for the Linux computer and for Darpan on your Mac.
 * **After an update**, macOS may ask once whether Darpan can use its saved sign-in. Choose **Always Allow**.
-* **No sound yet.** Audio from the Linux computer is coming next.
 
 </details>
 
