@@ -17,7 +17,7 @@ Install and first launch: see *Mac app* in the [main README](../README.md#mac-ap
 * **Connect window**: *Your computers* lists the Linux computers on your tailnet that run Darpan,
   found by themselves, plus the ones you've used. Click one to connect. The first time, enter the
   password Darpan shows on that computer (or `darpan password` there); with *Remember on this
-  Mac* it's one click from then on. Right-click a computer to remove it from the list.
+  Mac* it's one click from then on. Right-click a computer you've used to forget it (a computer that's found by itself stays while it's online).
   *Other address…* takes an address by hand. A remembered computer connects at launch.
 * **Viewer**: the small capsule at the upper right opens the toolbar when you point at it; drag it
   by its grip to move it anywhere. It has full screen, display (remote resolution, Fit / Actual
