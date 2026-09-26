@@ -20,11 +20,12 @@ typedef struct {
 // NULL if Vulkan Video can't be used here (the reason is logged); then use NVENC through CUDA.
 // *params gets the SPS and PPS, Annex B, which every key frame starts with.
 VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **params, uint32_t *params_len);
-// Converts the frame buffer's current pixels into the next picture to encode.
+// Converts the frame buffer's current pixels into the next picture to encode: 1 if it differs
+// from the last one, 0 if it's the same, -1 on failure. Then vkenc_encode, or vkenc_skip.
 int vkenc_convert(VkEnc *e);
-// Encodes the last converted picture: a key frame (IDR), a reference P frame, or a non-reference
-// P frame (reference 0) that leaves the decoder's state as it was. *out stays valid until the
-// next call.
-int vkenc_encode(VkEnc *e, int idr, int reference, const uint8_t **out, uint32_t *len);
+int vkenc_skip(VkEnc *e);
+// Encodes the last converted picture as a key frame (IDR) or a P frame; the next one refers to
+// it. *out stays valid until the next call.
+int vkenc_encode(VkEnc *e, int idr, const uint8_t **out, uint32_t *len);
 int vkenc_set_bitrate(VkEnc *e, uint32_t kbps);
 void vkenc_close(VkEnc *e);

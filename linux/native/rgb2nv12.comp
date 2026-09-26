@@ -1,11 +1,13 @@
 // BGRx (the X server's 32-bit pixels) → NV12, limited range, for the Vulkan encoder (vkenc.c).
 // One invocation converts a 4×2 block: two words of luma and one of interleaved chroma. Pixels
-// past the visible size (the coded size is a multiple of 16) repeat the edge.
+// past the visible size (the coded size is a multiple of 16) repeat the edge. The buffer still
+// holds the last frame, so only words that differ are written, and any such word sets `changed`.
 // Rebuild rgb2nv12.h after changing this: make shader (needs glslangValidator).
 #version 450
 layout(local_size_x = 16, local_size_y = 8) in;
 layout(std430, binding = 0) readonly buffer Src { uint px[]; };
-layout(std430, binding = 1) writeonly buffer Dst { uint nv12[]; };
+layout(std430, binding = 1) buffer Dst { uint nv12[]; };
+layout(std430, binding = 2) buffer Changed { uint changed; };           // set to 0 before each frame
 layout(push_constant) uniform P { uint w, h, pitch, cw, ch, m601; };    // pitch in pixels
 
 vec3 rgb(uint x, uint y) {
@@ -14,6 +16,12 @@ vec3 rgb(uint x, uint y) {
 }
 
 uint byte(float v) { return uint(clamp(v + 0.5, 0.0, 255.0)); }
+
+uint put(uint i, uint v) {                     // 1 if the word differed
+    if (nv12[i] == v) return 0u;
+    nv12[i] = v;
+    return 1u;
+}
 
 void main() {
     uint bx = gl_GlobalInvocationID.x, by = gl_GlobalInvocationID.y;
@@ -36,7 +44,7 @@ void main() {
         uv |= byte(dot(kv, s) + 128.0) << (16u * j + 8u);
     }
     uint row = cw / 4u;                        // words per luma row, and per chroma row
-    nv12[by * 2u * row + bx] = y0;
-    nv12[(by * 2u + 1u) * row + bx] = y1;
-    nv12[ch * row + by * row + bx] = uv;       // the chroma plane follows the luma plane
+    uint d = put(by * 2u * row + bx, y0) | put((by * 2u + 1u) * row + bx, y1) |
+             put(ch * row + by * row + bx, uv);  // the chroma plane follows the luma plane
+    if (d != 0u) changed = 1u;
 }

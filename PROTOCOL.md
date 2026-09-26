@@ -113,7 +113,7 @@ it down completely. Clients SHOULD send `stop` when their window is hidden/minim
 `start` again when visible.
 
 `gpu` (optional): `"lean"` (the default) or `"full"`. The host encodes on its GPU either way; `"full"`
-lets it take more of that GPU's memory for sharper, faster video (NVENC through CUDA, about 250 MB),
+lets it take more of that GPU's memory for sharper, faster video (NVENC through CUDA, about 280 MB),
 `"lean"` keeps to about 40 MB (Vulkan Video). A host without either ignores it. When the GPU's memory is
 too full for `"full"`, the host uses `"lean"` for the rest of that connection and sends a `notice`.
 
@@ -136,7 +136,7 @@ second but never drops a request: a second one within that second is served when
 
 For `h264` the payload is exactly one **access unit in Annex-B format** (start codes
 `00 00 00 01` / `00 00 01`). Key frames carry SPS and PPS in-band. Profile is High or
-Main, **no B-frames** (decode order == display order; some P frames are non-reference
+Main, **no B-frames** (decode order == display order; P frames may be non-reference
 pictures), 4:2:0, 8-bit. Colour: BT.709,
 limited range unless the VUI says otherwise. Resolution == the `stream` message's w×h.
 

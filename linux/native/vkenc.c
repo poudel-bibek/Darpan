@@ -5,8 +5,8 @@
 // the shared-memory segment, which the GPU imports (VK_EXT_external_memory_host): no CPU copy.
 //
 // The stream matches the CUDA path's: High profile, CABAC, one reference frame, IDR only on
-// request with SPS/PPS in front, CBR with a few frames of VBV, and non-reference P frames
-// ("probes") that the caller may drop.
+// request with SPS/PPS in front, CBR with a few frames of VBV. The conversion also tells whether
+// the picture changed, so an identical one is never encoded.
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
 #include "vkenc.h"
@@ -86,8 +86,9 @@ struct VkEnc {
     VkVideoProfileInfoKHR profile;
     VkVideoProfileListInfoKHR profiles;
 
-    VkBuffer src, nv12, bs;
-    VkDeviceMemory src_mem, nv12_mem, bs_mem, pic_mem, dpb_mem;
+    VkBuffer src, nv12, bs, flag;
+    VkDeviceMemory src_mem, nv12_mem, bs_mem, pic_mem, dpb_mem, flag_mem;
+    volatile uint32_t *changed;          // the shader sets it when a word of the picture differs
     VkDeviceMemory session_mem[16];
     uint32_t session_mem_n;
     uint8_t *bs_ptr;
@@ -100,7 +101,7 @@ struct VkEnc {
     VkCommandPool cpool, epool;
     VkCommandBuffer ccb, ecb;
     VkSemaphore converted;
-    VkFence done;
+    VkFence done, cdone;
     VkShaderModule shader;
     VkDescriptorSetLayout dsl;
     VkPipelineLayout layout;
@@ -309,14 +310,13 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     // the video profile and what the encoder can do with it
     e->h264_profile = (VkVideoEncodeH264ProfileInfoKHR){VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR, NULL,
                                                          STD_VIDEO_H264_PROFILE_IDC_HIGH};
-    // LOW_LATENCY: single-pass rate control. ULTRA_LOW_LATENCY is NVENC's two-pass, about 1.6 dB
-    // sharper on text (quality_test.py) for 1.6 ms more per 2560×1440 frame, but it never encodes an
-    // unchanged picture as all P_Skip, so the probe can't tell a repaint of the same pixels from a change
-    // and every one of them would be sent. Higher quality levels add only a tenth of a dB for 1.3 ms.
+    // ULTRA_LOW_LATENCY: NVENC's two-pass rate control, like the CUDA path. The other tunings are
+    // single-pass on NVIDIA's driver, about 1.6 dB softer on text (quality_test.py); two-pass costs
+    // about 1.6 ms more per 2560×1440 frame. Higher quality levels add only a tenth of a dB for 1.3 ms.
     e->usage = (VkVideoEncodeUsageInfoKHR){VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR, &e->h264_profile,
                                            VK_VIDEO_ENCODE_USAGE_STREAMING_BIT_KHR,
                                            VK_VIDEO_ENCODE_CONTENT_DESKTOP_BIT_KHR,
-                                           VK_VIDEO_ENCODE_TUNING_MODE_LOW_LATENCY_KHR};
+                                           VK_VIDEO_ENCODE_TUNING_MODE_ULTRA_LOW_LATENCY_KHR};
     e->profile = (VkVideoProfileInfoKHR){VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR, &e->usage,
                                          VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
                                          VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR,
@@ -372,6 +372,13 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     vkGetBufferMemoryRequirements(e->dev, e->nv12, &mr);
     if (alloc(e, mr, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, 0, &e->nv12_mem)) goto fail;
     VK(vkBindBufferMemory(e->dev, e->nv12, e->nv12_mem, 0));
+    if (make_buffer(e, 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, NULL, &e->flag)) goto fail;
+    vkGetBufferMemoryRequirements(e->dev, e->flag, &mr);
+    if (alloc(e, mr, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, &e->flag_mem))
+        goto fail;
+    VK(vkBindBufferMemory(e->dev, e->flag, e->flag_mem, 0));
+    VK(vkMapMemory(e->dev, e->flag_mem, 0, VK_WHOLE_SIZE, 0, (void **)&e->changed));
     if (make_image(e, 1, VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 1, &e->pic)) goto fail;
     vkGetImageMemoryRequirements(e->dev, e->pic, &mr);
     if (alloc(e, mr, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, 0, &e->pic_mem)) goto fail;
@@ -485,11 +492,12 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     // the conversion pipeline
     VkShaderModuleCreateInfo smci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, NULL, 0, sizeof rgb2nv12_spv, rgb2nv12_spv};
     VK(vkCreateShaderModule(e->dev, &smci, NULL, &e->shader));
-    VkDescriptorSetLayoutBinding b[2] = {
+    VkDescriptorSetLayoutBinding b[3] = {
         {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL},
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL},
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL},
     };
-    VkDescriptorSetLayoutCreateInfo dslci = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, NULL, 0, 2, b};
+    VkDescriptorSetLayoutCreateInfo dslci = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, NULL, 0, 3, b};
     VK(vkCreateDescriptorSetLayout(e->dev, &dslci, NULL, &e->dsl));
     VkPushConstantRange pcr = {VK_SHADER_STAGE_COMPUTE_BIT, 0, 6 * sizeof(uint32_t)};
     VkPipelineLayoutCreateInfo plci = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0, 1, &e->dsl, 1, &pcr};
@@ -499,17 +507,17 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
                                          VK_SHADER_STAGE_COMPUTE_BIT, e->shader, "main", NULL},
                                         e->layout, VK_NULL_HANDLE, -1};
     VK(vkCreateComputePipelines(e->dev, VK_NULL_HANDLE, 1, &cpci, NULL, &e->pipe));
-    VkDescriptorPoolSize dps = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2};
+    VkDescriptorPoolSize dps = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3};
     VkDescriptorPoolCreateInfo dpci = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, NULL, 0, 1, 1, &dps};
     VK(vkCreateDescriptorPool(e->dev, &dpci, NULL, &e->dpool));
     VkDescriptorSetAllocateInfo dsai = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, NULL, e->dpool, 1, &e->dsl};
     VK(vkAllocateDescriptorSets(e->dev, &dsai, &e->ds));
-    VkDescriptorBufferInfo dbi[2] = {{e->src, 0, VK_WHOLE_SIZE}, {e->nv12, 0, VK_WHOLE_SIZE}};
-    VkWriteDescriptorSet w[2] = {
-        {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL, e->ds, 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, NULL, &dbi[0], NULL},
-        {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL, e->ds, 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, NULL, &dbi[1], NULL},
-    };
-    vkUpdateDescriptorSets(e->dev, 2, w, 0, NULL);
+    VkDescriptorBufferInfo dbi[3] = {{e->src, 0, VK_WHOLE_SIZE}, {e->nv12, 0, VK_WHOLE_SIZE}, {e->flag, 0, VK_WHOLE_SIZE}};
+    VkWriteDescriptorSet w[3];
+    for (uint32_t i = 0; i < 3; i++)
+        w[i] = (VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL, e->ds, i, 0, 1,
+                                      VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, NULL, &dbi[i], NULL};
+    vkUpdateDescriptorSets(e->dev, 3, w, 0, NULL);
 
     // command buffers and synchronisation
     VkCommandPoolCreateInfo cpi = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, NULL,
@@ -526,6 +534,7 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     VK(vkCreateSemaphore(e->dev, &sei, NULL, &e->converted));
     VkFenceCreateInfo fci = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     VK(vkCreateFence(e->dev, &fci, NULL, &e->done));
+    VK(vkCreateFence(e->dev, &fci, NULL, &e->cdone));
 
     rc_set(&e->cur, p->kbps, p->fps, p->vbv_frames);
     e->next = e->cur;
@@ -543,6 +552,7 @@ static const VkCommandBufferBeginInfo once = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_B
 
 int vkenc_convert(VkEnc *e) {
     if (e->converting) { vlog("converted twice without an encode"); return -1; }
+    *e->changed = 0;
     VK(vkBeginCommandBuffer(e->ccb, &once));
     VkImageMemoryBarrier2 to_copy = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, NULL, VK_PIPELINE_STAGE_2_NONE, 0,
                                      VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
@@ -556,11 +566,15 @@ int vkenc_convert(VkEnc *e) {
     uint32_t pc[6] = {e->w, e->h, e->src_pitch_px, e->cw, e->ch, e->matrix601};
     vkCmdPushConstants(e->ccb, e->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof pc, pc);
     vkCmdDispatch(e->ccb, (e->cw / 4 + 15) / 16, (e->ch / 2 + 7) / 8, 1);
-    VkBufferMemoryBarrier2 written = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, NULL,
-                                      VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-                                      VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
-                                      VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, e->nv12, 0, VK_WHOLE_SIZE};
-    dep = (VkDependencyInfo){VK_STRUCTURE_TYPE_DEPENDENCY_INFO, NULL, 0, 0, NULL, 1, &written, 0, NULL};
+    VkBufferMemoryBarrier2 written[2] = {
+        {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, NULL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+         VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
+         VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, e->nv12, 0, VK_WHOLE_SIZE},
+        {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, NULL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+         VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_READ_BIT,
+         VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, e->flag, 0, VK_WHOLE_SIZE},
+    };
+    dep = (VkDependencyInfo){VK_STRUCTURE_TYPE_DEPENDENCY_INFO, NULL, 0, 0, NULL, 2, written, 0, NULL};
     vkCmdPipelineBarrier2(e->ccb, &dep);
     VkBufferImageCopy planes[2] = {
         {0, 0, 0, {VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1}, {0, 0, 0}, {e->cw, e->ch, 1}},
@@ -580,21 +594,34 @@ int vkenc_convert(VkEnc *e) {
     VkSemaphoreSubmitInfo sig = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, NULL, e->converted, 0,
                                  VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0};
     VkSubmitInfo2 si = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2, NULL, 0, 0, NULL, 1, &cbs, 1, &sig};
-    VK(vkQueueSubmit2(e->cq, 1, &si, VK_NULL_HANDLE));
+    VK(vkQueueSubmit2(e->cq, 1, &si, e->cdone));
     e->converting = 1;
+    VK(vkWaitForFences(e->dev, 1, &e->cdone, VK_TRUE, 1000000000ull));
+    VK(vkResetFences(e->dev, 1, &e->cdone));
+    return *e->changed ? 1 : 0;
+fail:
+    return -1;
+}
+
+int vkenc_skip(VkEnc *e) {
+    if (!e->converting) return 0;
+    // Nothing to encode: take the semaphore on the encode queue, where it orders what comes next.
+    VkSemaphoreSubmitInfo wait = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, NULL, e->converted, 0,
+                                  VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR, 0};
+    VkSubmitInfo2 si = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2, NULL, 0, 1, &wait, 0, NULL, 0, NULL};
+    VK(vkQueueSubmit2(e->eq, 1, &si, VK_NULL_HANDLE));
+    e->converting = 0;
     return 0;
 fail:
     return -1;
 }
 
-int vkenc_encode(VkEnc *e, int idr, int reference, const uint8_t **out, uint32_t *len) {
+int vkenc_encode(VkEnc *e, int idr, const uint8_t **out, uint32_t *len) {
     if (getenv("DARPAN_TEST_VULKAN_FAIL")) { vlog("failing as the test asks"); return -1; }
-    if (idr || e->ref_slot < 0) { idr = 1; reference = 1; }
+    if (e->ref_slot < 0) idr = 1;
     uint32_t frame_num = idr ? 0 : (e->ref_frame_num + 1) & 255;
-    // Reference pictures count up by 2, so the viewer's stream has no gaps however many
-    // non-reference pictures were dropped; those sit in between.
-    int32_t poc = idr ? 0 : reference ? e->ref_poc + 2 : e->ref_poc + 1;
-    int setup = reference ? (e->ref_slot + 1) & 1 : -1;
+    int32_t poc = idr ? 0 : e->ref_poc + 2;
+    int setup = (e->ref_slot + 1) & 1;
     StdVideoH264PictureType type = idr ? STD_VIDEO_H264_PICTURE_TYPE_IDR : STD_VIDEO_H264_PICTURE_TYPE_P;
 
     VkVideoPictureResourceInfoKHR dpb[2];
@@ -606,13 +633,14 @@ int vkenc_encode(VkEnc *e, int idr, int reference, const uint8_t **out, uint32_t
     VkVideoEncodeH264DpbSlotInfoKHR ref_dpb = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_KHR, NULL,
                                                e->ref_slot >= 0 ? &e->slot_info[e->ref_slot] : NULL};
     VkVideoReferenceSlotInfoKHR setup_slot = {VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR, &setup_dpb, setup,
-                                              setup >= 0 ? &dpb[setup] : NULL};
+                                              &dpb[setup]};
     VkVideoReferenceSlotInfoKHR ref_slot = {VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR, &ref_dpb, e->ref_slot,
                                             e->ref_slot >= 0 ? &dpb[e->ref_slot] : NULL};
     VkVideoReferenceSlotInfoKHR bound[2];
     uint32_t nbound = 0;
     if (!idr) bound[nbound++] = ref_slot;
-    if (reference) { bound[nbound] = setup_slot; bound[nbound++].slotIndex = -1; }   // to be (re)activated
+    bound[nbound] = setup_slot;
+    bound[nbound++].slotIndex = -1;                            // to be (re)activated
 
     VK(vkBeginCommandBuffer(e->ecb, &once));
     vkCmdResetQueryPool(e->ecb, e->query, 0, 1);
@@ -649,7 +677,7 @@ int vkenc_encode(VkEnc *e, int idr, int reference, const uint8_t **out, uint32_t
     if (!idr) lists.RefPicList0[0] = (uint8_t)e->ref_slot;
     StdVideoEncodeH264PictureInfo pic = {0};
     pic.flags.IdrPicFlag = idr;
-    pic.flags.is_reference = reference;
+    pic.flags.is_reference = 1;
     pic.idr_pic_id = e->idr_id;
     pic.primary_pic_type = type;
     pic.frame_num = frame_num;
@@ -660,7 +688,7 @@ int vkenc_encode(VkEnc *e, int idr, int reference, const uint8_t **out, uint32_t
                                            VK_FALSE};
     VkVideoEncodeInfoKHR ei = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR, &hpi, 0, e->bs, 0, e->bs_size,
                                {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, NULL, {0, 0}, {e->cw, e->ch}, 0, e->pic_view},
-                               reference ? &setup_slot : NULL, idr ? 0 : 1, idr ? NULL : &ref_slot, 0};
+                               &setup_slot, idr ? 0 : 1, idr ? NULL : &ref_slot, 0};
     vkCmdBeginQuery(e->ecb, e->query, 0, 0);
     vkCmdEncodeVideoKHR(e->ecb, &ei);
     vkCmdEndQuery(e->ecb, e->query, 0);
@@ -690,12 +718,10 @@ int vkenc_encode(VkEnc *e, int idr, int reference, const uint8_t **out, uint32_t
         e->started = 1;
         e->rc_pending = 0;
     }
-    if (reference) {
-        e->ref_slot = setup;
-        e->slot_info[setup] = setup_info;
-        e->ref_frame_num = frame_num;
-        e->ref_poc = poc;
-    }
+    e->ref_slot = setup;
+    e->slot_info[setup] = setup_info;
+    e->ref_frame_num = frame_num;
+    e->ref_poc = poc;
     const uint8_t *bits = e->bs_ptr + fbk.offset;
     if (idr) {                                  // SPS and PPS first, like NVENC's repeatSPSPPS
         e->idr_id++;
@@ -732,6 +758,7 @@ void vkenc_close(VkEnc *e) {
         // Everything below belongs to the device; destroying it frees their memory as well, but
         // the order keeps validation layers quiet when someone runs with them.
         if (e->done) vkDestroyFence(e->dev, e->done, NULL);
+        if (e->cdone) vkDestroyFence(e->dev, e->cdone, NULL);
         if (e->converted) vkDestroySemaphore(e->dev, e->converted, NULL);
         if (e->cpool) vkDestroyCommandPool(e->dev, e->cpool, NULL);
         if (e->epool) vkDestroyCommandPool(e->dev, e->epool, NULL);
@@ -750,8 +777,9 @@ void vkenc_close(VkEnc *e) {
         if (e->pic) vkDestroyImage(e->dev, e->pic, NULL);
         if (e->bs) vkDestroyBuffer(e->dev, e->bs, NULL);
         if (e->nv12) vkDestroyBuffer(e->dev, e->nv12, NULL);
+        if (e->flag) vkDestroyBuffer(e->dev, e->flag, NULL);
         if (e->src) vkDestroyBuffer(e->dev, e->src, NULL);
-        VkDeviceMemory mems[] = {e->dpb_mem, e->pic_mem, e->bs_mem, e->nv12_mem, e->src_mem};
+        VkDeviceMemory mems[] = {e->dpb_mem, e->pic_mem, e->bs_mem, e->nv12_mem, e->src_mem, e->flag_mem};
         for (size_t i = 0; i < sizeof mems / sizeof mems[0]; i++) if (mems[i]) vkFreeMemory(e->dev, mems[i], NULL);
         vkDestroyDevice(e->dev, NULL);
     }

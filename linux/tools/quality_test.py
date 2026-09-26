@@ -4,9 +4,9 @@ light panel with text, a gradient, saturated cards), scrolls them (20 px a frame
 and switches to another screen. It has darpan-capture encode each picture at 12 Mbit/s (one credit
 per frame, then the six refreshes after the screen settles), decodes the stream with FFmpeg's decoder
 (GStreamer avdec_h264) and compares every picture with its source (PSNR). Both encoder routes run:
-Vulkan Video (the default) and CUDA ("Full GPU on the Linux computer"). CUDA's encoder is sharper: its
-rate control is two-pass (see vkenc.c for why Vulkan's isn't) and it searches a wider range for
-motion, which counts most when scrolling fast. The floors sit a little under what an RTX 4090 measures.
+Vulkan Video (the default) and CUDA ("Full GPU on the Linux computer"). Vulkan's encoder searches a
+smaller range for motion, so fast scrolling is where CUDA is better. The floors sit a little under
+what an RTX 4090 measures.
 Usage: python3 linux/tools/quality_test.py [helper]      Needs Xvfb, PIL, GStreamer's avdec_h264, NVENC."""
 import ctypes, math, os, random, struct, subprocess, sys, threading, time
 from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageStat
@@ -14,8 +14,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageStat
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HELPER = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "native", "darpan-capture")
 W, H, KBPS = 2560, 1440, 12000
-FLOORS = {("vulkan", 20): (30.0, 32.0), ("cuda", 20): (31.5, 33.0),           # dB: scrolling, settled
-          ("vulkan", 60): (28.0, 29.8), ("cuda", 60): (30.5, 32.8)}
+FLOORS = {("vulkan", 20): (31.5, 33.3), ("cuda", 20): (31.5, 33.0),           # dB: scrolling, settled
+          ("vulkan", 60): (28.0, 32.0), ("cuda", 60): (30.5, 32.8)}
 MONO = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 15)
 SANS = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
 COLS = [(0xE0, 0x6C, 0x75), (0x98, 0xC3, 0x79), (0x61, 0xAF, 0xEF), (0xE5, 0xC0, 0x7B), (0xC6, 0x78, 0xDD),
