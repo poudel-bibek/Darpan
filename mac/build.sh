@@ -5,8 +5,8 @@
 #
 #   bash mac/build.sh
 #
-# Signing: DARPAN_SIGN_ID="Developer ID Application: …" uses that certificate (hardened
-# runtime); otherwise the app is signed ad hoc.
+# Signing: with the "Darpan" identity from make-signing-identity.sh (hardened runtime), or
+# DARPAN_SIGN_ID="Developer ID Application: …"; otherwise ad hoc.
 set -euo pipefail
 
 MAC="$(cd "$(dirname "$0")" && pwd)"
@@ -84,12 +84,20 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$(dirname "$ICONSET")"
 
 echo "==> signing"
-if [ -n "${DARPAN_SIGN_ID:-}" ] && security find-identity -v -p codesigning | grep -qF "$DARPAN_SIGN_ID"; then
-    codesign --force --deep --options runtime --timestamp -s "$DARPAN_SIGN_ID" "$APP"
+# A stable identity keeps the app's designated requirement the same from one release to the next,
+# so the Keychain's "Always Allow" survives updates. DARPAN_SIGN_ID names a Developer ID
+# certificate; otherwise the self-signed "Darpan" code-signing certificate in this Mac's keychain
+# is used if there is one (it needs no trust setting to sign); otherwise the app is signed ad hoc.
+SIGN_ID=${DARPAN_SIGN_ID:-Darpan}
+if security find-identity -p codesigning | grep -qF "\"$SIGN_ID\""; then
+    TS=--timestamp=none
+    [ -n "${DARPAN_SIGN_ID:-}" ] && TS=--timestamp          # Apple's timestamp service is for Apple-issued certificates
+    codesign --force --deep --options runtime $TS -s "$SIGN_ID" "$APP"
 else
-    [ -n "${DARPAN_SIGN_ID:-}" ] && echo "certificate \"$DARPAN_SIGN_ID\" not found; signing ad hoc"
+    echo "no \"$SIGN_ID\" code-signing certificate; signing ad hoc"
     codesign --force --deep -s - "$APP"
 fi
+codesign -d -r- "$APP" 2>&1 | sed -n 's/^designated => /designated requirement: /p'
 codesign --verify --deep --strict "$APP"
 if grep -rlaF /Users/ "$APP"; then echo "the app contains a home path"; exit 1; fi
 
