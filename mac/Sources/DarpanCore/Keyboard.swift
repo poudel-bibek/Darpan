@@ -57,6 +57,9 @@ public enum KeyCodes {
 ///   doesn't reliably deliver key-ups that happen while ⌘ is down, and a stuck key on the remote
 ///   is worse than a short press. Auto-repeat then sends one pair per repeat.
 /// * When ⌘ goes up, keys pressed before it and still held are released, for the same reason.
+/// * A modifier known only from a key event's flags (a synthetic event without device bits and
+///   without its own key events, e.g. a dictation app's posted ⌘V) lasts only for that key: it's
+///   released with it, so nothing stays held on the host. Key-ups never press modifiers.
 public final class KeyboardTranslator {
     public var command: CommandKey
 
@@ -82,6 +85,7 @@ public final class KeyboardTranslator {
     private var held: [UInt16: String] = [:]        // non-modifier keyCode → code sent at press
     private var mods: [UInt16: String] = [:]        // modifier keyCode → code sent at press
     private var refs: [String: Int] = [:]           // remote code → physical keys holding it
+    private var flagOnly: [UInt16: [UInt16]] = [:]  // held keyCode → modifiers pressed only for it
     private var lastCaps: Bool?
 
     public init(command: CommandKey = .ctrl) { self.command = command }
@@ -102,19 +106,25 @@ public final class KeyboardTranslator {
 
     public func keyDown(keyCode: UInt16, isRepeat: Bool, flags: UInt) -> [KeyEvent] {
         var out: [KeyEvent] = []
-        syncModifiers(flags: flags, eventKeyCode: nil, into: &out)
-        guard !KeyCodes.modifiers.contains(keyCode), let code = keyCodeMap[keyCode] else { return out }
+        let transient = syncModifiers(flags: flags, eventKeyCode: nil, into: &out)
+        guard !KeyCodes.modifiers.contains(keyCode), let code = keyCodeMap[keyCode] else {
+            releaseModifiers(transient, into: &out)
+            return out
+        }
         if let sent = held[keyCode] {
             // Auto-repeat, or a second press whose release never arrived: the host turns a
             // down for a key it holds into up+down.
             out.append(KeyEvent(sent, true))
+            flagOnly[keyCode, default: []] += transient
         } else if commandDown {
             let letter = code.count == 4 && code.hasPrefix("Key")
             out.append(KeyEvent(code, true, cmd: letter && command == .ctrl))
             out.append(KeyEvent(code, false))
+            releaseModifiers(transient, into: &out)
         } else {
             held[keyCode] = code
             press(code, into: &out)
+            flagOnly[keyCode] = transient
         }
         return out
     }
@@ -122,7 +132,8 @@ public final class KeyboardTranslator {
     public func keyUp(keyCode: UInt16, flags: UInt) -> [KeyEvent] {
         var out: [KeyEvent] = []
         if let code = held.removeValue(forKey: keyCode) { release(code, into: &out) }
-        syncModifiers(flags: flags, eventKeyCode: nil, into: &out)
+        releaseModifiers(flagOnly.removeValue(forKey: keyCode) ?? [], into: &out)
+        syncModifiers(flags: flags, eventKeyCode: nil, pressAllowed: false, into: &out)
         return out
     }
 
@@ -147,6 +158,7 @@ public final class KeyboardTranslator {
         held.removeAll()
         mods.removeAll()
         refs.removeAll()
+        flagOnly.removeAll()
         return any
     }
 
@@ -157,8 +169,13 @@ public final class KeyboardTranslator {
 
     // MARK: -
 
-    private func syncModifiers(flags: UInt, eventKeyCode: UInt16?, into out: inout [KeyEvent]) {
+    /// Brings the modifiers in line with `flags`. Returns the modifiers it pressed only because a
+    /// key event's flags said so, with no device bits (synthetic events).
+    @discardableResult
+    private func syncModifiers(flags: UInt, eventKeyCode: UInt16?, pressAllowed: Bool = true,
+                               into out: inout [KeyEvent]) -> [UInt16] {
         let commandWasDown = commandDown
+        var flagOnlyPressed: [UInt16] = []
         for m in Self.modifierTable {
             var down: Bool
             if flags & m.independent == 0 {
@@ -170,9 +187,12 @@ public final class KeyboardTranslator {
                 let partnerDown = mods[m.partner] != nil || eventKeyCode == m.partner
                 down = mods[m.keyCode] != nil || eventKeyCode == m.keyCode || (!partnerDown && m.isLeft)
             }
-            if down, mods[m.keyCode] == nil, let code = remoteCode(forKeyCode: m.keyCode) {
+            if down, pressAllowed, mods[m.keyCode] == nil, let code = remoteCode(forKeyCode: m.keyCode) {
                 mods[m.keyCode] = code
                 press(code, into: &out)
+                if eventKeyCode == nil && flags & (m.device | Self.device(of: m.partner)) == 0 {
+                    flagOnlyPressed.append(m.keyCode)
+                }
             } else if !down, let code = mods.removeValue(forKey: m.keyCode) {
                 release(code, into: &out)
             }
@@ -181,7 +201,15 @@ public final class KeyboardTranslator {
             for (kc, code) in held.sorted(by: { $0.key < $1.key }) {
                 held.removeValue(forKey: kc)
                 release(code, into: &out)
+                releaseModifiers(flagOnly.removeValue(forKey: kc) ?? [], into: &out)
             }
+        }
+        return flagOnlyPressed
+    }
+
+    private func releaseModifiers(_ keyCodes: [UInt16], into out: inout [KeyEvent]) {
+        for kc in keyCodes {
+            if let code = mods.removeValue(forKey: kc) { release(code, into: &out) }
         }
     }
 

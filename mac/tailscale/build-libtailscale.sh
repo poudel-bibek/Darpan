@@ -10,7 +10,7 @@ MAC="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$MAC/.build/libtailscale"
 SRC="$OUT/src"
 
-STAMP="$COMMIT nologs gomaxprocs2"
+STAMP="$COMMIT nologs gomaxprocs2 nopaths"
 if [ -f "$OUT/libtailscale.a" ] && [ "$(cat "$OUT/commit" 2>/dev/null)" = "$STAMP" ]; then exit 0; fi
 
 GO="$(command -v go || true)"
@@ -47,7 +47,7 @@ export CGO_ENABLED=1 GOTOOLCHAIN=local MACOSX_DEPLOYMENT_TARGET=14.0
 for arch in arm64 amd64; do
     clangarch=$([ $arch = amd64 ] && echo x86_64 || echo arm64)
     (cd "$SRC" && GOOS=darwin GOARCH=$arch CC="clang -arch $clangarch -mmacosx-version-min=14.0" \
-        CGO_CFLAGS="-mmacosx-version-min=14.0" "$GO" build -trimpath -buildmode=c-archive \
+        CGO_CFLAGS="-mmacosx-version-min=14.0 -ffile-prefix-map=$HOME/=" "$GO" build -trimpath -buildmode=c-archive \
         -ldflags=-s -o "$OUT/libtailscale-$arch.a" .)
 done
 lipo -create "$OUT/libtailscale-arm64.a" "$OUT/libtailscale-amd64.a" -output "$OUT/libtailscale.a"
