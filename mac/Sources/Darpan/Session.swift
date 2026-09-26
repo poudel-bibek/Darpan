@@ -236,6 +236,11 @@ final class Session: NSObject {
         guard settings.showStats || logStats else { return }
         let s = client.takeStats()
         if settings.showStats { content.stats.text = Self.statsText(s) }
+        if logStats && ticks % 20 == 0, client.proxy != nil {
+            Tailnet.shared.path(to: address.host) { p in
+                FileHandle.standardError.write(Data("tailnet path: \(p ?? "unknown")\n".utf8))
+            }
+        }
         if logStats && ticks % 4 == 0 {
             FileHandle.standardError.write(Data((Self.statsText(s).replacingOccurrences(of: "\n", with: " | ") + "\n").utf8))
         }
