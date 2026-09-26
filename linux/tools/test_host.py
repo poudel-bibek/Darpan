@@ -964,7 +964,7 @@ async def run(args, tmp, probe_log):
     ok("password change ends sessions", code == 4003, "close code %s" % code)
     ws.w.close()
 
-    # each device gets back the resolution it chose last time; Native forgets it. The test display
+    # each kind of client gets back the resolution it chose last time; Native forgets it. The test display
     # offers only 1920×1080, so count the host's switches to it.
     pw = open(os.path.join(tmp, "config", "darpan", "password.txt")).read().strip()
     res_file = os.path.join(tmp, "state", "darpan", "resolutions.json")
@@ -986,8 +986,8 @@ async def run(args, tmp, probe_log):
     base = switches()
     seen = [await visit({"t": "res", "w": 1920, "h": 1080}), await visit(), await visit({"t": "res", "native": True}),
             await visit()]
-    ok("each device gets its last resolution back", seen == [(1, {"127.0.0.1": [1920, 1080]}),
-       (2, {"127.0.0.1": [1920, 1080]}), (3, {}), (3, {})], seen)
+    ok("each client gets its last resolution back", seen == [(1, {"test_host.py": [1920, 1080]}),
+       (2, {"test_host.py": [1920, 1080]}), (3, {}), (3, {})], seen)
     return all(r for _, r in results), results
 
 

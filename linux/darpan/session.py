@@ -784,6 +784,12 @@ class Session:
     }
 
 
+def _kind(session):
+    """The kind of client, e.g. "Darpan for Mac on macOS" or "Chrome on Windows": its name without
+    version numbers. Remembered choices are keyed by it, so no address is stored."""
+    return re.sub(r"\s*\d+(?:\.\d+)+", "", session.client).strip()
+
+
 class Hub:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -1145,9 +1151,9 @@ class Hub:
                     await self.screen.set_mode(int(m["w"]), int(m["h"]))
             saved = self._saved_resolutions()
             if m.get("native"):
-                saved.pop(session.source, None)
+                saved.pop(_kind(session), None)
             else:
-                saved[session.source] = [int(m["w"]), int(m["h"])]
+                saved[_kind(session)] = [int(m["w"]), int(m["h"])]
             config.write_private(self.res_file, json.dumps(saved))
         except (ValueError, KeyError, RuntimeError) as e:
             session.ws.send_json({"t": "notice", "level": "error", "text": "resolution change failed: %s" % e})
@@ -1163,7 +1169,7 @@ class Hub:
 
     async def restore_resolution(self, session):
         """A device gets back the resolution it chose last time, unless someone else is watching."""
-        mode = self._saved_resolutions().get(session.source)
+        mode = self._saved_resolutions().get(_kind(session))
         if not mode:
             return
         try:
@@ -1172,7 +1178,7 @@ class Hub:
                     return
                 await self.screen.set_mode(int(mode[0]), int(mode[1]))
         except (ValueError, TypeError, IndexError, RuntimeError) as e:    # e.g. another monitor now
-            log.info("last resolution of %s not restored: %s", session.source, e)
+            log.info("last resolution of %s not restored: %s", _kind(session), e)
             return
         await self.refresh_modes(broadcast=True)
 

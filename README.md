@@ -109,8 +109,9 @@ Plus full screen, screen resolutions to match your window, and a toolbar that tu
 * **Files**: **Files** in the toolbar opens two panes, this Mac and the Linux computer. Select files
   or folders and **Send** or **Receive** them, or drag between the panes. Files dropped on the window
   land on the Linux desktop. The browser has the same window, with the Linux side only.
-* **Resolution**: pick one in the toolbar's display panel. The Linux computer remembers it for that
-  device and switches back to it the next time you connect; *Native* goes back to normal.
+* **Resolution**: pick one in the toolbar's display panel. The Linux computer remembers it, for the
+  Mac app and for each browser, and switches back to it the next time you connect; *Native* goes back
+  to normal.
 * **The toolbar** is the small capsule at the upper right of the window. Point at it for full screen,
   display and quality, keyboard, files, stats and sound. Drag it by its grip to put it anywhere.
 * **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
