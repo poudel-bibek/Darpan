@@ -18,7 +18,8 @@
   const forget = (k) => { try { localStorage.removeItem(k); } catch { /* ignore */ } };
   const settings = Object.assign({}, DEFAULTS, readJSON('darpan.settings') || {});
   // 1.4.0's Auto / Low / Balanced / High became Balanced / Faster / Balanced / Higher Quality (kbit/s caps)
-  settings.quality = { 0: '15000', 3000: '6000', 10000: '15000', 20000: '30000' }[settings.quality] || settings.quality;
+  settings.quality = { 0: '15000', 3000: '6000', 10000: '15000', 20000: '30000' }[settings.quality] ||
+    (['6000', '15000', '30000', '50000'].includes(String(settings.quality)) ? settings.quality : '15000');
   const saveSettings = () => writeJSON('darpan.settings', settings);
   const KEY_SLOT = 'darpan.key.' + location.host;
 

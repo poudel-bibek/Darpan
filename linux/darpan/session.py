@@ -353,7 +353,7 @@ class Session:
             self.params["bitrate"] = b
             if self.rc:
                 self.rc.cap = b or self.hub.cfg["max_kbps"]
-                target = min(self.rc.kbps if not b else b, self.rc.cap)
+                target = min(self.rc.kbps, self.rc.cap)      # a higher ceiling is climbed to, not jumped to
                 self.rc.kbps = target
                 if self.cap:
                     self.cap.bitrate(target)
@@ -411,7 +411,7 @@ class Session:
         cfg = hub.cfg
         cap_kbps = p["bitrate"] or cfg["max_kbps"]
         if not self.rc or not restart:
-            self.rc = RateControl(cfg["start_kbps"] if not p["bitrate"] else p["bitrate"], cap_kbps, p["fps"])
+            self.rc = RateControl(cfg["start_kbps"], cap_kbps, p["fps"])    # gently, up to the chosen ceiling
         self.window = self.rc.window()
         self.withhold = 0
         use_nvenc = hub.encoder and time.monotonic() >= self.x264_until and cfg["encoder"] != "x264"
