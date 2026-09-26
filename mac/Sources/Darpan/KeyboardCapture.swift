@@ -258,6 +258,7 @@ final class ClipboardSync {
     /// Sets the remote clipboard explicitly (clipboard panel).
     func setRemote(_ text: String) {
         lastSent = text
+        remote = text
         send(text)
     }
 
@@ -265,6 +266,7 @@ final class ClipboardSync {
     private func offer(_ s: String?) -> Bool {
         guard let s, !s.isEmpty, s != lastSent, s != remote, s.utf8.count <= Msg.maxClipboardBytes else { return false }
         lastSent = s
+        remote = s                          // the remote holds this now, so a later restore isn't skipped
         send(s)
         return true
     }
