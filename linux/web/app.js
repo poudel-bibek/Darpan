@@ -140,7 +140,7 @@
         showLogin('The password on the remote computer changed — enter it again.');
         return;
       }
-      send({ t: 'auth', proof: await makeProof(S.key, m.nonce), client: clientName(), ver: '1.0.2' });
+      send({ t: 'auth', proof: await makeProof(S.key, m.nonce), client: clientName(), ver: m.ver });   // served by the host: same build
     } catch (e) {
       showLogin('Could not sign in: ' + e.message, true);
     }
