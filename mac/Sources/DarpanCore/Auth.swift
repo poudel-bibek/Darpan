@@ -53,6 +53,6 @@ public enum Auth {
 }
 
 public enum DarpanVersion {
-    public static let string = "1.2.0"
+    public static let string = "1.3.0"
     public static let proto = 1
 }
