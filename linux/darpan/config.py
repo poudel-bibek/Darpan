@@ -5,7 +5,7 @@ import socket
 import tempfile
 
 APP = "darpan"
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 PROTO = 1
 
 # Source tree (linux/) and installed tree (/opt/darpan) share the same layout:
