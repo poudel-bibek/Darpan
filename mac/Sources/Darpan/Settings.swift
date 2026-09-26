@@ -75,10 +75,9 @@ final class Settings: ObservableObject {
     static func migrated(quality q: Int) -> Int {
         switch q {
         case 6000, 15000, 30000, 50000: return q
-        case 1..<10000: return 6000
-        case 20000..<50000: return 30000
-        case 50000...: return 50000
-        default: return defaultQuality
+        case 3000: return 6000
+        case 20000: return 30000
+        default: return defaultQuality          // 0 (Auto), 10000, and anything unknown
         }
     }
 
