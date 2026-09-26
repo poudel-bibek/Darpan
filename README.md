@@ -44,7 +44,7 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 |---|---|
 | **Feels local** | About 27 ms from a change on the Linux screen to your Mac, over the internet. Typing and scrolling keep up. |
 | **Private** | Only your own devices can reach it. The connection is encrypted end to end, no ports are opened, and on top of that there's a password that never crosses the network. |
-| **Light** | Nothing runs until you connect: 0 % CPU while idle. While you're connected: about 0.3 % of one CPU core. Your long GPU jobs keep the machine. |
+| **Light** | On the Linux computer, nothing runs until you connect: 0 % CPU while idle, and about 0.3 % of one CPU core while you're connected. Your long GPU jobs keep the machine. |
 | **Complete** | Clipboard in both directions, drag-and-drop file transfer, screen resolution changes, full screen, and a toolbar that tucks away. |
 | **Free** | Open source (MIT). No subscription, and no account with us. |
 
@@ -54,7 +54,8 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 * **Send files** by dropping them on the window. They land in `~/Downloads/Darpan` on the Linux computer.
 * **The toolbar** is the small tab at the top of the window. Hover over it for full screen, display and
   quality, keyboard, clipboard and files. Drag it sideways if it's in the way.
-* **Shortcuts**: ⌘ works as Ctrl on Linux. ⌃⌥⌘F toggles full screen, and ⌃⌥⌘D disconnects.
+* **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
+  screen, ⌃⌥⌘D disconnect, and ⌃⌥⌘⎋ to release the keyboard (press it again to capture).
 
 <details>
 <summary><b>Requirements and limitations</b></summary>
@@ -68,6 +69,7 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 * **Staying signed in:** Tailscale signs devices out after 180 days. To avoid that, open the
   [Tailscale admin console](https://login.tailscale.com/admin/machines) and choose
   **Disable key expiry** for the Linux computer and for Darpan on your Mac.
+* **After an update**, macOS may ask once whether Darpan can use its saved sign-in. Choose **Always Allow**.
 * **No sound yet.** Audio from the Linux computer is coming next.
 
 </details>
@@ -95,7 +97,8 @@ sudo apt remove darpan
 rm -rf ~/.config/darpan ~/.local/state/darpan ~/.local/share/darpan   # settings, password, network state
 ```
 
-On the Mac, drag Darpan from Applications to the Trash. Then remove both devices in the
+On the Mac, drag Darpan from Applications to the Trash, and delete `~/Library/Application Support/Darpan`
+(its network sign-in). Then remove both devices in the
 [Tailscale admin console](https://login.tailscale.com/admin/machines).
 
 </details>
