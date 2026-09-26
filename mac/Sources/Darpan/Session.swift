@@ -95,10 +95,12 @@ final class Session: NSObject {
         video.dropHighlight = { [weak self] on in self?.content.drop.isHidden = !on }
         keyboard.send = { [weak self] m in self?.client.send(m) }
         keyboard.beforePaste = { [weak self] in
-            guard let self else { return }
-            if !self.clipboard.beforePaste() {
-                self.content.toasts.show("The clipboard is too large to send (1 MB at most).", error: true)
+            guard let self else { return true }
+            guard self.clipboard.beforePaste() else {
+                self.content.toasts.show("The clipboard is too large to paste on the remote computer (1 MB at most).", error: true)
+                return false
             }
+            return true
         }
 
         let bar = content.toolbar
@@ -445,6 +447,8 @@ extension Session: ClientDelegate {
             content.overlay.hide()
             if !wasConnected {
                 wasConnected = true
+                // Remember unticked: forget a sign-in saved earlier, even if it was just used.
+                if !remember { Keychain.delete(address.origin) }
                 showWindow()
                 owner?.sessionDidConnect(self)
             }

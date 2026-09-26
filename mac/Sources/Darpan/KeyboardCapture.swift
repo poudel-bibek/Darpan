@@ -15,8 +15,9 @@ final class KeyboardCapture {
     let translator = KeyboardTranslator()
     /// Every key goes to the remote (⌃⌥⌘⎋ toggles).
     var captureAll = true
-    /// ⌘V or ⌃V is about to go out: bring the remote clipboard up to date first.
-    var beforePaste: (() -> Void)?
+    /// ⌘V or ⌃V is about to go out: bring the remote clipboard up to date first. False: it
+    /// couldn't be (too large), so the paste isn't sent; the remote would paste something stale.
+    var beforePaste: (() -> Bool)?
     var send: ((String) -> Void)?
 
     private weak var video: VideoView?
@@ -89,7 +90,7 @@ final class KeyboardCapture {
     func keyDown(_ e: NSEvent) {
         let f = e.modifierFlags
         if e.keyCode == KeyCodes.v && !e.isARepeat && (f.contains(.command) || f.contains(.control)) && !f.contains(.option) {
-            beforePaste?()
+            if beforePaste?() == false { return }
         }
         out(translator.keyDown(keyCode: e.keyCode, isRepeat: e.isARepeat, flags: f.rawValue))
     }
