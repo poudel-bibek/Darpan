@@ -1,5 +1,5 @@
 /// macOS virtual key code (`NSEvent.keyCode`) → W3C `KeyboardEvent.code` (physical position).
-/// Copied verbatim from MAC_PROMPT.md §4. ISO keyboards swap `IntlBackslash`/`Backquote`
+/// macOS virtual key code → W3C `code` (PROTOCOL.md §10 lists the codes the host accepts). ISO keyboards swap `IntlBackslash`/`Backquote`
 /// physically; this matches Chrome. Fn (0x3F) is never sent.
 public let keyCodeMap: [UInt16: String] = [
   0x00:"KeyA",0x01:"KeyS",0x02:"KeyD",0x03:"KeyF",0x04:"KeyH",0x05:"KeyG",0x06:"KeyZ",0x07:"KeyX",

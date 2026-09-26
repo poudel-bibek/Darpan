@@ -20,7 +20,7 @@ func inputTests() {
             for f in 1...24 { s.insert("F\(f)") }
             return s
         }()
-        eq(keyCodeMap.count, 119, "entries (MAC_PROMPT §4)")
+        eq(keyCodeMap.count, 119, "entries in the key code table")
         for (kc, code) in keyCodeMap { check(valid.contains(code), "0x\(String(kc, radix: 16)) → \(code) is a PROTOCOL §10 code") }
         eq(Set(keyCodeMap.values).count, keyCodeMap.count, "no two key codes share a code")
         for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" { check(keyCodeMap.values.contains("Key\(c)"), "Key\(c) present") }
