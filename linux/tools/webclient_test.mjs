@@ -90,6 +90,7 @@ await call('Page.navigate', { url: `http://127.0.0.1:${env.port}/` }, sid);
 await sleep(1200);
 
 const probeLog = () => readFileSync(env.probe_log, 'utf8').split('\n');
+const until = async (expr, ms = 5000) => { let v; for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) if ((v = await ev(expr))) return v; return v; };
 try {
   const sup = await ev(`VideoDecoder.isConfigSupported({codec:'avc1.640028', optimizeForLatency:true}).then(r => r.supported)`);
   ok('WebCodecs H.264 supported', sup === true);
@@ -108,6 +109,18 @@ try {
   ok('viewer visible', await ev(`!document.getElementById('viewer').hidden`));
   const saved = await ev(`!!localStorage.getItem('darpan.key.' + location.host)`);
   ok('device remembered (key only)', saved && !(await ev(`localStorage.getItem('darpan.key.' + location.host).includes(${JSON.stringify(env.password)})`)));
+
+  // the first time: the toolbar stays open, a tip points at it and at its grip, until "Got it"
+  const tipState = `(() => { const t = document.getElementById('tip'), r = t.getBoundingClientRect();
+    return { shown: !t.hidden, title: document.getElementById('tipTitle').textContent, tools: document.querySelector('.tools').offsetWidth > 0,
+      grip: document.querySelector('.handle').offsetWidth > 0, onScreen: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight,
+      seen: localStorage.getItem('darpan.tipSeen') }; })()`;
+  const tip1 = await until(`(${tipState}).shown && ${tipState}`);
+  ok('first time: the toolbar tip shows', tip1 && tip1.title === 'Your controls' && tip1.tools && tip1.grip && tip1.onScreen && !tip1.seen, JSON.stringify(tip1));
+  writeFileSync(join(process.env.DARPAN_TEST_SHOTS || env.tmp, 'browser-tip.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' }, sid)).data, 'base64'));
+  await ev(`document.getElementById('tipOk').click()`);
+  const tip2 = await ev(tipState);
+  ok('"Got it" hides it, for good', !tip2.shown && !tip2.tools && tip2.seen === 'true', JSON.stringify(tip2));
 
   const shot = await call('Page.captureScreenshot', { format: 'png' }, sid);
   writeFileSync(join(env.tmp, 'browser.png'), Buffer.from(shot.data, 'base64'));
@@ -209,7 +222,6 @@ try {
 
   // files (PROTOCOL.md §7.1): the transfer window lists the Linux side, sends, asks before replacing, receives
   ok('no clipboard panel', await ev(`!document.getElementById('panel-clip') && !document.querySelector('[data-panel=clip]')`));
-  const until = async (expr, ms = 5000) => { let v; for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) if ((v = await ev(expr))) return v; return v; };
   const waitFile = async (p, ms = 5000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) if (existsSync(p)) return readFileSync(p, 'utf8'); return null; };
   const xdir = join(env.tmp, 'xfer');
   mkdirSync(join(xdir, 'sub'), { recursive: true });
@@ -321,6 +333,43 @@ try {
   const f1 = await ev('window.__darpan.frames');
   ok('reconnects after host restart', down && back && f1 > f0 && await ev(`document.getElementById('login').hidden`),
      `down=${down} back=${back} frames ${f0}→${f1}`);
+
+  // the tip again (forgotten): dragging the toolbar by its grip moves it and counts as "Got it"; after a
+  // reload it stays away
+  const reload = async () => {
+    await ev(`document.querySelector('[data-act=disconnect]').click()`);   // disconnected: no "leave this page?"
+    await until(`!window.__darpan.connected`);
+    await call('Page.reload', {}, sid);
+    await sleep(1200);
+    await until(`window.__darpan.frames > 0`, 10000);
+  };
+  await ev(`localStorage.removeItem('darpan.tipSeen')`);
+  await reload();
+  const tip3 = await until(`(${tipState}).shown && ${tipState}`);
+  await ev(`document.querySelector('.tools').getAnimations().forEach((a) => a.finish())`);   // the nudge
+  const hb = await ev(`(() => { const b = document.querySelector('.handle').getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; })()`);
+  const x0 = await ev(`parseFloat(document.getElementById('bar').style.left)`);
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hb[0], y: hb[1] }, sid);
+  await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: hb[0], y: hb[1], button: 'left', buttons: 1, clickCount: 1 }, sid);
+  for (const dx of [10, 40, 80]) await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hb[0] + dx, y: hb[1], button: 'left', buttons: 1 }, sid);
+  await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: hb[0] + 80, y: hb[1], button: 'left', buttons: 0, clickCount: 1 }, sid);
+  const tip4 = await ev(tipState);
+  const moved = (await ev(`parseFloat(document.getElementById('bar').style.left)`)) - x0;
+  ok('drag by the grip: moves, ends the tip', tip3 && !tip4.shown && tip4.seen === 'true' && Math.abs(moved - 80) <= 2,
+     `moved ${moved} px; ${JSON.stringify(tip4)}`);
+  // a toolbar button ends it too (here clicked without a pointer, as from the keyboard): the toolbar
+  // stays open with its panel
+  await ev(`localStorage.removeItem('darpan.tipSeen')`);
+  await reload();
+  await until(`(${tipState}).shown`);
+  await ev(`document.querySelector('[data-panel=display]').click()`);
+  const tip5 = await ev(`(() => ({ tip: !document.getElementById('tip').hidden, panel: !document.getElementById('panel-display').hidden,
+    tools: document.querySelector('.tools').offsetWidth > 0 }))()`);
+  ok('a toolbar button ends the tip, the toolbar stays open', !tip5.tip && tip5.panel && tip5.tools, JSON.stringify(tip5));
+  await ev(`document.querySelector('[data-panel=display]').click()`);   // and closes its panel again
+  await reload();
+  await sleep(800);
+  ok('the tip stays away after a reload', !(await ev(tipState)).shown);
 
   const hostLog = () => readFileSync(env.host_log, 'utf8');
   ok('no host errors', !/Traceback|ERROR|E tc/.test(hostLog()), hostLog().split('\n').filter((l) => /Traceback|E tc/.test(l)).slice(0, 3).join(' | '));

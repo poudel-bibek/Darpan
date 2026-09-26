@@ -376,6 +376,7 @@
       if (S.offset != null && p.fresh) S.latency = (t * 1000 + S.offset - p.ts) / 1000;
     }
     S.frames++; S.fpsN++;
+    if (!tipShown) showTip();
   }
 
   function decoderFailed(e) {
@@ -1279,23 +1280,46 @@
   bar.addEventListener('pointerenter', expand);
   bar.addEventListener('pointerleave', () => collapseSoon(openPanel ? 1800 : 600));
   // keep keyboard focus on the remote while clicking toolbar buttons
-  bar.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+  bar.addEventListener('pointerdown', (e) => { if (e.target.closest('button, .handle')) e.preventDefault(); });
 
-  // the pill can be dragged along the top edge so it never covers something important
+  // the pill, or the open toolbar's grip, drags it along the top edge so it never covers something important
   let drag = null;
-  function placeBar() { bar.style.left = Math.round(settings.pillX * innerWidth) + 'px'; }
-  pill.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, moved: false }; pill.setPointerCapture(e.pointerId); });
-  pill.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    if (Math.abs(e.clientX - drag.x) > 4) drag.moved = true;
-    if (drag.moved) { settings.pillX = Math.min(0.95, Math.max(0.05, e.clientX / innerWidth)); placeBar(); }
-  });
-  pill.addEventListener('pointerup', () => {
-    if (drag && drag.moved) saveSettings(); else expand();
-    drag = null;
-  });
+  function placeBar() {                                 // whole on screen, however wide it is right now
+    const half = bar.offsetWidth / 2 + 4;
+    bar.style.left = Math.round(Math.min(innerWidth - half, Math.max(half, settings.pillX * innerWidth))) + 'px';
+  }
+  for (const el of [pill, bar.querySelector('.handle')]) {
+    el.addEventListener('pointerdown', (e) => {
+      drag = { x: e.clientX, dx: parseFloat(bar.style.left) - e.clientX, moved: false };
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      if (!drag.moved && Math.abs(e.clientX - drag.x) > 4) { drag.moved = true; hideTip(); }
+      if (drag.moved) { settings.pillX = Math.min(0.95, Math.max(0.05, (e.clientX + drag.dx) / innerWidth)); placeBar(); }
+    });
+    el.addEventListener('pointerup', () => {
+      if (drag && drag.moved) saveSettings(); else expand();
+      drag = null;
+    });
+  }
   window.addEventListener('resize', placeBar);
+  new ResizeObserver(placeBar).observe(bar);           // it widens when it opens
   placeBar();
+
+  // the first time the desktop shows in this browser, the toolbar stays open and is pointed out,
+  // until "Got it", a drag, or a click on one of its buttons
+  const tip = $('tip');
+  let tipShown = !!readJSON('darpan.tipSeen');
+  function showTip() { tipShown = true; tip.hidden = false; bar.classList.add('intro'); }
+  function hideTip() {
+    if (tip.hidden) return;
+    tip.hidden = true;
+    bar.classList.remove('intro');
+    writeJSON('darpan.tipSeen', true);
+  }
+  $('tipOk').addEventListener('click', hideTip);
+  bar.querySelector('.tools').addEventListener('click', () => { if (!tip.hidden) { expand(); hideTip(); } });   // open, with its panel
 
   for (const b of document.querySelectorAll('[data-panel]')) b.addEventListener('click', () => togglePanel(b.dataset.panel, b));
   for (const b of document.querySelectorAll('[data-combo]')) b.addEventListener('click', () => combo(b.dataset.combo));

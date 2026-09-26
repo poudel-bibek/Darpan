@@ -75,6 +75,9 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .tools button:hover, .tools button.on { background: var(--hover); }
 .tools button.danger:hover { background: rgba(255, 95, 87, 0.18); color: var(--poor); }
 .sep { width: 1px; height: 20px; margin: 0 4px; background: var(--line); }
+/* the grip, as on the Mac: six dots to drag the toolbar by */
+.handle { width: 20px; height: 32px; padding: 10px 6px; cursor: grab; touch-action: none;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.5) 1px, transparent 1.5px) 0 0 / 4px 4px content-box; }
 
 .panel { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
   width: min(300px, calc(100vw - 16px)); max-height: calc(100vh - 70px); overflow: auto; padding: 4px 14px 14px;
@@ -100,6 +103,22 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .row button { flex: 1; }
 .row input[type=range] { flex: 1; accent-color: var(--accent); }
 html:not(.mac) .mac-only { display: none; }
+/* the first-run tip: an arrow to the toolbar, and its grip marked ‹ › while the toolbar slides a little */
+.tip { position: absolute; top: calc(100% + 12px); left: 50%; transform: translateX(-50%); width: min(280px, calc(100vw - 16px));
+  display: flex; flex-direction: column; gap: 6px; padding: 14px 16px 12px; border: 1px solid var(--line); border-radius: 14px;
+  background: rgba(22, 24, 28, 0.96); box-shadow: 0 16px 50px rgba(0, 0, 0, 0.5); }
+.tip::before { content: ""; position: absolute; top: -7px; left: calc(50% - 6px); width: 12px; height: 12px; border: 1px solid var(--line);
+  border-right: 0; border-bottom: 0; border-radius: 3px 0 0 0; background: inherit; transform: rotate(45deg); }
+.tip h2 { margin: 0 0 2px; font-size: 14px; font-weight: 600; }
+.tip p { margin: 0; font-size: 13px; color: var(--muted); }
+.tip .primary { align-self: flex-end; height: 30px; margin-top: 8px; padding: 0 16px; font-size: 13px; }
+.bar.intro .tools { display: flex; animation: nudge 1s ease-in-out .6s 2; }
+.bar.intro .pill { display: none; }
+.bar.intro .handle { position: relative; margin: 0 8px 0 10px; background-image: radial-gradient(circle, var(--accent) 1px, transparent 1.5px); }
+.bar.intro .handle::before, .bar.intro .handle::after { position: absolute; top: 7px; color: var(--accent); font-size: 16px; line-height: 1; }
+.bar.intro .handle::before { content: "‹"; right: 100%; }
+.bar.intro .handle::after { content: "›"; left: 100%; }
+@keyframes nudge { 25% { translate: -12px 0; } 75% { translate: 12px 0; } }
 
 .stats { position: fixed; left: 8px; top: 8px; z-index: 15; padding: 7px 9px; border-radius: 9px; background: rgba(0, 0, 0, 0.62);
   font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; pointer-events: none; color: #d6d8de; }
@@ -190,4 +209,4 @@ html:not(.mac) .mac-only { display: none; }
 .xfer-toast.done .pbar i { background: var(--good); } .xfer-toast.fail .pbar i { background: var(--poor); }
 .xfer-toast.fail svg, .xfer-toast.fail .pct { color: var(--poor); }
 @keyframes rise { from { transform: translateY(8px); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .toast, .spinner { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .toast, .spinner, .bar.intro .tools { animation: none; } }
