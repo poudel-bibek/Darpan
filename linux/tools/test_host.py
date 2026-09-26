@@ -88,6 +88,7 @@ class WS:
 
     def __init__(self, r, w):
         self.r, self.w = r, w
+        self.answer_pings = True     # False: a peer whose TCP is alive but whose app is gone
 
     @classmethod
     async def connect(cls, host, port, path="/ws"):
@@ -101,6 +102,9 @@ class WS:
 
     def send(self, obj=None, binary=None):
         data, op = (binary, 2) if binary is not None else (json.dumps(obj).encode(), 1)
+        self.frame(op, data)
+
+    def frame(self, op, data):
         mask = os.urandom(4)
         n = len(data)
         hdr = bytes([0x80 | op]) + (bytes([0x80 | n]) if n < 126 else (bytes([0xFE]) + struct.pack(">H", n) if n < 65536 else bytes([0xFF]) + struct.pack(">Q", n)))
@@ -109,14 +113,21 @@ class WS:
         self.w.write(hdr + mask + payload)
 
     async def recv(self):
-        b0, b1 = await self.r.readexactly(2)
-        n = b1 & 0x7F
-        if n == 126:
-            n = struct.unpack(">H", await self.r.readexactly(2))[0]
-        elif n == 127:
-            n = struct.unpack(">Q", await self.r.readexactly(8))[0]
-        data = await self.r.readexactly(n)
-        op = b0 & 0x0F
+        while True:
+            b0, b1 = await self.r.readexactly(2)
+            n = b1 & 0x7F
+            if n == 126:
+                n = struct.unpack(">H", await self.r.readexactly(2))[0]
+            elif n == 127:
+                n = struct.unpack(">Q", await self.r.readexactly(8))[0]
+            data = await self.r.readexactly(n)
+            op = b0 & 0x0F
+            if op == 9:              # ping
+                if self.answer_pings:
+                    self.frame(10, data)
+                continue
+            if op != 10:             # pong: nothing to do
+                break
         if op == 8:
             return ("close", struct.unpack(">H", data[:2])[0] if len(data) >= 2 else None)
         if op == 1:
@@ -433,6 +444,82 @@ async def run(args, tmp, probe_log):
     w.close()
     ok("Origin: null refused", " 403 " in line, line)
 
+    # liveness: a peer that stops answering pings is dropped; one that answers is kept, even idle
+    async def session(answer=True):
+        c = await WS.connect("127.0.0.1", args.port)
+        c.answer_pings = answer
+        _, h = await c.recv()
+        c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py"})
+        while (await c.recv())[1].get("t") != "ok":
+            pass
+        return c
+
+    async def gone(c, seconds):
+        """True once the host closes or drops c within `seconds` (reading drains what's queued)."""
+        end = time.monotonic() + seconds
+        try:
+            while time.monotonic() < end:
+                kind, _ = await asyncio.wait_for(c.recv(), max(0.01, end - time.monotonic()))
+                if kind == "close":
+                    return True
+        except (asyncio.IncompleteReadError, ConnectionError):
+            return True
+        except asyncio.TimeoutError:
+            pass
+        return False
+
+    dead = await session(answer=False)
+    live = await session()
+    t0 = time.monotonic()
+    await asyncio.gather(pump(live, 8), pump(ws, 8))   # dead reads nothing meanwhile: no pongs
+    live_ok = not await gone(live, 0.2)
+    ok("silent peer dropped", await gone(dead, 1), "after %.0f s; host log: %s" % (time.monotonic() - t0,
+       "no reply" in open(os.path.join(tmp, "host.log")).read()))
+    ok("answering idle peer kept", live_ok)
+
+    # watchdog: a peer that answers pings but never acks gets back-off resyncs, not one every 3 s
+    live.send({"t": "start", "codec": "h264", "fps": 60, "bitrate": 0})
+    log_path = os.path.join(tmp, "host.log")
+    before = open(log_path).read().count("ack watchdog")
+
+    async def drain(c):                        # reads (answering pings) but never acks
+        try:
+            while True:
+                await c.recv()
+        except (asyncio.IncompleteReadError, ConnectionError):
+            pass
+
+    reader = asyncio.ensure_future(drain(live))
+    end = time.monotonic() + 16
+    while time.monotonic() < end:              # keep the screen changing
+        ws.send({"t": "key", "c": "KeyZ", "d": True})
+        ws.send({"t": "key", "c": "KeyZ", "d": False})
+        await pump(ws, 0.25)
+    reader.cancel()
+    resyncs = open(log_path).read().count("ack watchdog") - before
+    ok("watchdog backs off", 1 <= resyncs <= 2, "%d resyncs in 16 s (without back-off: 4)" % resyncs)
+    live.w.close()
+
+    # close: gives up on a peer that never takes the data (the flush never finishes)
+    class StuckTransport:
+        aborted = closing = False
+        def is_closing(self): return self.closing
+        def get_write_buffer_size(self): return 1 << 20
+        def close(self): self.closing = True       # waits for a flush that never comes
+        def abort(self): self.aborted = True
+
+    class StuckWriter:
+        def __init__(self, t): self.transport = t
+        def writelines(self, parts): pass
+        def close(self): self.transport.close()
+
+    sys.path.insert(0, args.root)
+    from darpan import web as darpan_web
+    stuck = StuckTransport()
+    darpan_web.WebSocket(None, StuckWriter(stuck)).close(4003, "disconnected by host")
+    await asyncio.sleep(3.3)
+    ok("close aborts a stuck peer", stuck.aborted, "after 3 s")
+
     # changing the password ends existing sessions
     env = dict(os.environ, XDG_CONFIG_HOME=os.path.join(tmp, "config"), XDG_RUNTIME_DIR=os.path.join(tmp, "run"),
                XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"), HOME=tmp,
@@ -482,6 +569,9 @@ def main():
                XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"),
                XDG_RUNTIME_DIR=os.path.join(tmp, "run"), HOME=tmp, PYTHONPATH=args.root)
     os.makedirs(env["XDG_RUNTIME_DIR"], mode=0o700)
+    os.makedirs(os.path.join(tmp, "config", "darpan"), mode=0o700)
+    with open(os.path.join(tmp, "config", "darpan", "config.json"), "w") as f:
+        json.dump({"ping_every": 1, "silent_limit": 6}, f)     # liveness in seconds, not minutes
     try:
         probe_log = os.path.join(tmp, "probe.log")
         probe = subprocess.Popen([sys.executable, "-c", PROBE_APP, str(args.probe_w), str(args.probe_h)], env=env,
