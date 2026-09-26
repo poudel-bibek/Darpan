@@ -82,7 +82,7 @@ enum MainMenu {
         conn.addItem(item("Send Clipboard to Remote", #selector(Session.sendClipboardToRemote(_:))))
         conn.addItem(item("Type Clipboard on Remote", #selector(Session.typeClipboard(_:))))
         conn.addItem(item("Copy Remote Clipboard", #selector(Session.copyRemoteClipboard(_:))))
-        conn.addItem(item("Send Files…", #selector(Session.sendFiles(_:))))
+        conn.addItem(item("Files…", #selector(Session.showFiles(_:))))
         conn.addItem(.separator())
         conn.addItem(item("Disconnect", #selector(Session.disconnect(_:)), "d", [.control, .option, .command]))
 

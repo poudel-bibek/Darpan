@@ -35,12 +35,16 @@ final class Session: NSObject {
     private var ended = false
     private var sized = false
     private var uploadToasts: [String: ToastStack.Toast] = [:]
+    private let proxy: SOCKSProxy?
+    private var caps: [String] = []
+    private var files: FilesWindowController?
     private let logStats = ProcessInfo.processInfo.environment["DARPAN_LOG_STATS"] != nil
 
     init(address: HostAddress, proxy: SOCKSProxy?, remember: Bool?, owner: SessionOwner) {
         self.address = address
         self.remember = remember
         self.owner = owner
+        self.proxy = proxy
         window = NSWindow(contentRect: content.frame, styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: true)
         super.init()
@@ -70,6 +74,7 @@ final class Session: NSObject {
     #if DEBUG
     var debugContent: ViewerContentView { content }
     var debugModel: ViewerModel { model }
+    var debugFiles: FilesModel? { files?.model }
     func debugToolbar(_ item: ToolbarView.Item) {
         content.toolbar.expand()
         if let b = content.toolbar.button(item) { toolbarAction(item, b) }
@@ -212,6 +217,8 @@ final class Session: NSObject {
         for o in observers { NotificationCenter.default.removeObserver(o) }
         observers.removeAll()
         popover?.close()
+        files?.model.stop()
+        files?.close()
         client.setAudio(false, sink: nil)
         player.stop()
         video.clear()
@@ -287,7 +294,7 @@ final class Session: NSObject {
             model.accessibilityTrusted = KeyboardCapture.accessibilityTrusted
             togglePanel(item, button, KeysPanel(model: model, settings: settings))
         case .upload:
-            sendFiles(nil)
+            openFiles()
         case .sound:
             settings.sound.toggle()
         case .stats:
@@ -397,6 +404,22 @@ final class Session: NSObject {
         content.toasts.show("Copied")
     }
 
+    /// The Files window, when the host has the file API (§7.1); otherwise the plain upload.
+    private func openFiles() {
+        guard isConnected else { return }
+        guard caps.contains("fs") else { return sendFiles(nil) }
+        if files == nil { files = FilesWindowController(title: "Files — \(window.title)") }
+        files?.showWindow(nil)
+        client.requestFiles()
+    }
+
+    private func filesReady(_ access: FilesAccess) {
+        guard let files, let origin = URL(string: address.origin) else { return }
+        files.model.attach(access, origin: origin, proxy: proxy)
+    }
+
+    @objc func showFiles(_ sender: Any?) { openFiles() }
+
     @objc func sendFiles(_ sender: Any?) {
         guard isConnected, window.attachedSheet == nil else { return }
         let p = NSOpenPanel()
@@ -444,7 +467,7 @@ extension Session: NSMenuItemValidation {
         case #selector(toggleKeyboardCapture(_:)):
             item.title = keyboard.captureAll ? "Release Keyboard" : "Capture Keyboard"
         case #selector(sendKeyCombo(_:)), #selector(chooseResolution(_:)), #selector(typeClipboard(_:)),
-             #selector(sendClipboardToRemote(_:)), #selector(sendFiles(_:)):
+             #selector(sendClipboardToRemote(_:)), #selector(sendFiles(_:)), #selector(showFiles(_:)):
             return live
         case #selector(copyRemoteClipboard(_:)): return !clipboard.remote.isEmpty
         default: break
@@ -492,6 +515,8 @@ extension Session: ClientDelegate {
         switch e {
         case .welcome(let w):
             window.title = w.hostName ?? address.shortName
+            caps = w.caps
+            if files != nil { client.requestFiles() }        // a new session: a new token
             if !wasConnected { sizeWindow(for: w.screen) }
         case .stream(let s):
             video.streamSize = CGSize(width: s.width, height: s.height)
@@ -507,6 +532,8 @@ extension Session: ClientDelegate {
             content.toasts.show(text, error: error, ttl: error ? 8 : 3.5)
         case .upload(let u):
             uploadEvent(u)
+        case .files(let access):
+            filesReady(access)
         case .authenticated(let key):
             if remember == true { Keychain.save(key, for: address.origin) } else if remember == false { Keychain.delete(address.origin) }
         case .forgetKey:
