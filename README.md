@@ -50,7 +50,7 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 
 ## Everyday use
 
-* **Copy and paste** with ⌘C and ⌘V. The clipboard syncs both ways. In Linux terminals, ⌘ acts on the terminal
+* **Copy and paste** with ⌘C and ⌘V. The clipboard syncs both ways. In Linux terminals (with ⌘ as Ctrl, the default), ⌘ acts on the terminal
   (⌘C copies, ⌘V pastes, ⌘T opens a tab) and ⌃ goes to the shell (⌃C interrupts, ⌃R searches).
 * **Sound** from the Linux computer plays on your Mac, or in the browser. The speaker button in the toolbar mutes it.
 * **Send files** by dropping them on the window. They land in `~/Downloads/Darpan` on the Linux computer.
