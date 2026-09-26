@@ -47,6 +47,8 @@ public final class OpusDecoder {
     public let pcm = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 2, interleaved: true)!
     private let opus: AVAudioFormat
     private let converter: AVAudioConverter
+    private let input: AVAudioCompressedBuffer            // reused: one packet at a time
+    private let output: AVAudioPCMBuffer
 
     public init?() {
         var d = AudioStreamBasicDescription(mSampleRate: Self.sampleRate, mFormatID: kAudioFormatOpus, mFormatFlags: 0,
@@ -55,25 +57,27 @@ public final class OpusDecoder {
         guard let opus = AVAudioFormat(streamDescription: &d), let c = AVAudioConverter(from: opus, to: pcm) else { return nil }
         self.opus = opus
         converter = c
+        input = AVAudioCompressedBuffer(format: opus, packetCapacity: 1, maximumPacketSize: 1500)
+        output = AVAudioPCMBuffer(pcmFormat: pcm, frameCapacity: AVAudioFrameCount(Self.frameSamples * 2))!
     }
 
     /// One packet → interleaved stereo samples (L R L R …), or nil if it didn't decode.
     public func decode(_ packet: UnsafeRawBufferPointer) -> [Float]? {
-        guard !packet.isEmpty else { return nil }
-        let input = AVAudioCompressedBuffer(format: opus, packetCapacity: 1, maximumPacketSize: packet.count)
+        guard !packet.isEmpty, packet.count <= 1500 else { return nil }
         input.data.copyMemory(from: packet.baseAddress!, byteCount: packet.count)
         input.byteLength = UInt32(packet.count)
         input.packetCount = 1
         input.packetDescriptions![0] = AudioStreamPacketDescription(mStartOffset: 0, mVariableFramesInPacket: 0,
                                                                     mDataByteSize: UInt32(packet.count))
-        guard let out = AVAudioPCMBuffer(pcmFormat: pcm, frameCapacity: AVAudioFrameCount(Self.frameSamples * 2)) else { return nil }
+        let out = output
+        out.frameLength = 0
         var given = false
         var error: NSError?
         let status = converter.convert(to: out, error: &error) { _, s in
             if given { s.pointee = .noDataNow; return nil }
             given = true
             s.pointee = .haveData
-            return input
+            return self.input
         }
         guard status != .error, out.frameLength > 0, let p = out.floatChannelData?[0] else { return nil }
         return Array(UnsafeBufferPointer(start: p, count: Int(out.frameLength) * 2))
@@ -87,8 +91,9 @@ public final class OpusDecoder {
 /// packet then arrives without FIRST, audio was late (an underrun), and the target grows by 10 ms
 /// (up to 200 ms). With FIRST it was just silence. 10 s without an underrun shrinks it by 5 ms. Clock
 /// drift between the two computers is absorbed by dropping or repeating one sample in 256 while
-/// the level strays more than 20 ms from the target. After silence (or at the start) playback waits
-/// until the target is buffered again.
+/// the level strays more than 20 ms from the target. After silence the skipped slots are appended
+/// as silence while audio is still buffered, so pauses keep their length; playback waits for the
+/// target again only when the buffer had run empty.
 public final class JitterBuffer {
     public static let minTarget = 0.040, maxTarget = 0.200
 
@@ -114,13 +119,13 @@ public final class JitterBuffer {
     public init(rate: Double = OpusDecoder.sampleRate) {
         self.rate = rate
         target = Self.minTarget
-        ring = [Float](repeating: 0, count: Int(rate * Self.maxTarget * 2) * 2)
+        ring = [Float](repeating: 0, count: Int(rate * Self.maxTarget) * 2)
     }
 
     private var capacity: Int { ring.count / 2 }
 
-    /// Network side. `afterSilence` restarts buffering (the stretch before it was silent anyway).
-    public func push(_ samples: [Float], afterSilence: Bool) {
+    /// Network side. `afterSilence`: the first packet after `silentFrames` of nothing (FIRST).
+    public func push(_ samples: [Float], afterSilence: Bool, silentFrames: Int = 0) {
         lock.lock()
         defer { lock.unlock() }
         lastPush = Clock.nowMs()
@@ -130,8 +135,19 @@ public final class JitterBuffer {
             sinceUnderrun = 0
         }
         dry = false
-        if afterSilence { head = 0; count = 0; priming = true }
         let frames = samples.count / 2
+        if afterSilence {
+            if count > 0 && count + silentFrames + frames <= capacity {
+                for _ in 0..<silentFrames {                // keep the pause's length
+                    let w = (head + count) % capacity
+                    ring[w * 2] = 0
+                    ring[w * 2 + 1] = 0
+                    count += 1
+                }
+            } else {
+                head = 0; count = 0; priming = true
+            }
+        }
         for i in 0..<frames {
             if count == capacity {                         // far behind: drop the oldest
                 head = (head + 1) % capacity
@@ -201,7 +217,8 @@ public final class JitterBuffer {
 
 /// Receives decoded audio. Called on the audio queue, in order.
 public protocol AudioSink: AnyObject {
-    func play(_ samples: [Float], first: Bool)
+    /// `first`: FIRST flag; `silentFrames`: the silence before it (skipped slots).
+    func play(_ samples: [Float], first: Bool, silentFrames: Int)
 }
 
 /// The `/audio` WebSocket of one session (PROTOCOL.md §12): signs in with the single-use token,
@@ -213,9 +230,10 @@ final class AudioStream {
     private let decoder: OpusDecoder?
     private weak var sink: AudioSink?
     private var authed = false
-    private let onEnd: (_ wasPlaying: Bool) -> Void
+    private var lastSlot: UInt32?
+    private let onEnd: (_ retry: Bool) -> Void
 
-    init(url: URL, userAgent: String, proxy: SOCKSProxy?, token: String, sink: AudioSink, onEnd: @escaping (_ wasPlaying: Bool) -> Void) {
+    init(url: URL, userAgent: String, proxy: SOCKSProxy?, token: String, sink: AudioSink, onEnd: @escaping (_ retry: Bool) -> Void) {
         decoder = OpusDecoder()
         self.sink = sink
         self.onEnd = onEnd
@@ -231,13 +249,16 @@ final class AudioStream {
                 d.withUnsafeBytes { b in
                     guard let h = AudioHeader(b),
                           let samples = decoder.decode(UnsafeRawBufferPointer(rebasing: b[AudioHeader.size...])) else { return }
-                    self.sink?.play(samples, first: h.afterSilence)
+                    // A slot jump of n means n − 1 silent slots (at most 1 s is kept).
+                    let skipped = self.lastSlot.map { Int(min(100, max(1, h.seq &- $0)) - 1) } ?? 0
+                    self.lastSlot = h.seq
+                    self.sink?.play(samples, first: h.afterSilence, silentFrames: skipped * OpusDecoder.frameSamples)
                 }
             case .waiting:
                 break
-            case .closed:
+            case .closed(let code, _):
                 self.socket = nil
-                self.onEnd(self.authed)
+                self.onEnd(self.authed && code != 1011)     // 1011: the host can't capture sound
             }
         }
         socket = ws

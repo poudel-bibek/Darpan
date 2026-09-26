@@ -654,9 +654,10 @@ public final class Client {
         audio?.close()
         let gen = generation
         audio = AudioStream(url: address.audioURL, userAgent: Self.userAgent, proxy: proxy, token: token, sink: sink) {
-            [weak self] wasPlaying in
-            // The sound socket ended while the session goes on: ask again, unless it was refused.
-            guard wasPlaying else { return }
+            [weak self] retry in
+            // The sound socket ended while the session goes on: ask again, unless it was refused
+            // or the host said it can't capture sound (1011).
+            guard retry else { return }
             self?.queue.asyncAfter(deadline: .now() + 1) {
                 guard let self, self.generation == gen, self.authed, self.wantAudio, self.hostHasAudio else { return }
                 self.socket?.send(text: Msg.audio(on: true))

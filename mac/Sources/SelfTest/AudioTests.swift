@@ -115,8 +115,37 @@ func audioTests() {
         check(k.stats.adjusted >= 18, "drift: samples dropped (\(k.stats.adjusted))")
         check(before - k.stats.depth > 0.100, "drained faster than played")
 
-        k.push(packet, afterSilence: true)
-        check(abs(k.stats.depth - 0.010) < 1e-9, "after silence: the buffer starts over")
+        // FIRST while audio is still buffered: the skipped slots become silence, nothing is dropped.
+        let f = JitterBuffer(rate: 48000)
+        for _ in 0..<4 { f.push(packet, afterSilence: false) }        // 40 ms, playing
+        pull()
+        f.push(packet, afterSilence: true, silentFrames: 960)         // 20 ms pause, then 10 ms of sound
+        check(abs(f.stats.depth - 0.070) < 1e-9, "FIRST keeps buffered audio and inserts the pause (70 ms)")
+        l = [Float](repeating: 1, count: 1900); r = l
+        f.pull(frames: 1900, left: &l, right: &r)                     // the 40 ms of old sound…
+        check(l.allSatisfy { $0 == 0.25 }, "old audio plays out first")
+        l = [Float](repeating: 1, count: 960); r = l
+        f.pull(frames: 960, left: &l, right: &r)                      // …then the 20 ms pause
+        check(l.filter { $0 == 0 }.count >= 930, "then the pause, at its real length (drift trims a few samples)")
+        eq(f.stats.underruns, 0, "no underrun")
+
+        // FIRST on an empty buffer (a long silence drained it): wait for the target again.
+        let e = JitterBuffer(rate: 48000)
+        e.push(packet, afterSilence: true, silentFrames: 48000)
+        l = [Float](repeating: 1, count: 480); r = l
+        e.pull(frames: 480, left: &l, right: &r)
+        check(l.allSatisfy { $0 == 0 }, "empty + FIRST: primes again")
+
+        // A gap that doesn't fit is dropped rather than overflowing: re-prime.
+        let g = JitterBuffer(rate: 48000)
+        for _ in 0..<4 { g.push(packet, afterSilence: false) }
+        g.push(packet, afterSilence: true, silentFrames: 48000)       // 1 s of silence can't fit in 200 ms
+        check(abs(g.stats.depth - 0.010) < 1e-9, "oversized gap: starts over with the new packet")
+
+        // The ring holds at most the maximum target (200 ms).
+        let c = JitterBuffer(rate: 48000)
+        for _ in 0..<40 { c.push(packet, afterSilence: false) }
+        check(c.stats.depth <= JitterBuffer.maxTarget + 1e-9, String(format: "capped at 200 ms (%.0f ms)", c.stats.depth * 1000))
 
         // The target shrinks again after 10 s without an underrun.
         let m = JitterBuffer(rate: 1000)                              // small rate: 10 s = 10 000 frames

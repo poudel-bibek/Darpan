@@ -7,6 +7,8 @@ import DarpanCore
 final class AudioPlayer: AudioSink {
     let buffer = JitterBuffer()
     private let engine = AVAudioEngine()
+    private let lock = NSLock()
+    private var running = false                        // lock: the engine is (being) started
     private var node: AVAudioSourceNode!
     private var idleTimer: Timer?                      // main
 
@@ -26,10 +28,13 @@ final class AudioPlayer: AudioSink {
         #endif
     }
 
-    func play(_ samples: [Float], first: Bool) {
-        let resumed = buffer.idleMs > 1000
-        buffer.push(samples, afterSilence: first)
-        if resumed { DispatchQueue.main.async { self.start() } }
+    func play(_ samples: [Float], first: Bool, silentFrames: Int) {
+        buffer.push(samples, afterSilence: first, silentFrames: silentFrames)
+        lock.lock()
+        let needStart = !running
+        running = true
+        lock.unlock()
+        if needStart { DispatchQueue.main.async { self.start() } }
     }
 
     /// Main thread.
@@ -37,6 +42,9 @@ final class AudioPlayer: AudioSink {
         idleTimer?.invalidate()
         idleTimer = nil
         if engine.isRunning { engine.stop() }
+        lock.lock()
+        running = false
+        lock.unlock()
     }
 
     private func start() {
