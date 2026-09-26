@@ -13,7 +13,7 @@ MAC="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$MAC")"
 DIST="$ROOT/dist"
 NAME=Darpan
-VERSION=1.2.0
+VERSION=$(sed -n 's/.*static let string = "\(.*\)"/\1/p' "$MAC/Sources/DarpanCore/Auth.swift")   # DarpanVersion
 BUILD=3
 APP="$DIST/$NAME.app"
 # The GitHub repository ("owner/name") whose releases the app updates from.

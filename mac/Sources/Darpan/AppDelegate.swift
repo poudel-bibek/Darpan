@@ -2,7 +2,7 @@ import AppKit
 import DarpanCore
 
 /// App lifecycle: the connect window, at most one session at a time, the menu bar.
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var connectWindow: ConnectWindowController!
     private var session: Session?
     private var resolutionMenu: NSMenu?
@@ -67,7 +67,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func checkForUpdates(_ sender: Any?) {
-        Updater.shared.check(manual: true)
+        if case .available = Updater.shared.state { Updater.shared.install() } else { Updater.shared.check(manual: true) }
+    }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard item.action == #selector(checkForUpdates(_:)) else { return true }
+        // An update found while a session hides the connect window is offered here too.
+        switch Updater.shared.state {
+        case .available(let m): item.title = "Install Darpan \(m.version) and Relaunch"
+        case .installing: item.title = "Updating…"; return false
+        default: item.title = "Check for Updates…"
+        }
+        return true
     }
 
     @objc func showAbout(_ sender: Any?) {

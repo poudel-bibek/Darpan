@@ -37,6 +37,8 @@ func updateTests() {
         eq(run(manifest(url: "https://example.com/\(repo)/releases/download/v1.3.0/Darpan.dmg")).failure, .url, "other host refused")
         eq(run(manifest(url: "https://github.com/other/Darpan/releases/download/v1.3.0/Darpan.dmg")).failure, .url, "other repository refused")
         eq(run(manifest(url: "https://github.com/\(repo)/releases/download/v1.3.0/Other.dmg")).failure, .url, "other file refused")
+        eq((try? run(manifest(url: "https://github.com/\(repo.uppercased())/releases/download/v1.3.0/Darpan.dmg")).get())?.build, 4,
+           "repository compared without case")
         eq(run(manifest(minOS: "15.0")).failure, .macOS, "needs a newer macOS")
         eq(run(manifest("1.3"), nil).failure, .format, "malformed version refused")
         eq(run(Data("[]".utf8)).failure, .format, "not an object refused")

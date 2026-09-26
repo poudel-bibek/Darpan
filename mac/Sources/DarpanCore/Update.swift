@@ -15,7 +15,8 @@ public struct UpdateManifest: Equatable {
     }
 
     /// `json`: the exact bytes fetched; `signature`: the base64 text of `darpan-mac.json.sig`.
-    /// `repo`: "owner/name" of the GitHub repository the DMG must come from. The signature is
+    /// `repo`: "owner/name" of the GitHub repository the DMG must come from (GitHub names ignore
+    /// case, and so does this). The signature is
     /// checked before anything is parsed.
     public static func verify(json: Data, signature: Data, publicKey: Data, repo: String,
                               currentVersion: String, currentBuild: Int, macOS: OperatingSystemVersion) throws -> UpdateManifest {
@@ -30,7 +31,7 @@ public struct UpdateManifest: Equatable {
               let sha = o["sha256"] as? String, sha.count == 64, sha.allSatisfy(\.isHexDigit),
               let minOS = o["min_macos"] as? String, let m = Self.parts(minOS) else { throw Problem.format }
         guard url.scheme == "https", url.host == "github.com", url.query == nil,
-              url.path.hasPrefix("/\(repo)/releases/download/"), url.lastPathComponent == "Darpan.dmg" else { throw Problem.url }
+              url.path.lowercased().hasPrefix("/\(repo.lowercased())/releases/download/"), url.lastPathComponent == "Darpan.dmg" else { throw Problem.url }
         let current = Self.parts(currentVersion) ?? [0, 0, 0]
         guard v.lexicographicallyPrecedes(current) == false,
               v != current || build > currentBuild else { throw Problem.notNewer }

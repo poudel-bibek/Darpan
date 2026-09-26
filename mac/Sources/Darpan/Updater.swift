@@ -83,8 +83,12 @@ final class Updater: ObservableObject {
     }
 
     private func checked(json: Data?, sig: Data?, repo: String, manual: Bool) {
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckKey)
-        start()
+        defer {
+            // An offered update isn't stamped: the next launch offers it again, in case it went
+            // unseen (a saved computer connects at launch and hides the connect window).
+            if case .available = state {} else { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckKey) }
+            start()
+        }
         guard let json, let sig else {
             state = .idle
             if manual { alert("Couldn’t check for updates. Check the internet connection and try again.") }
