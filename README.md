@@ -181,8 +181,8 @@ On the Mac, drag Darpan from Applications to the Trash, delete `~/Library/Applic
 <summary><b>How it works</b></summary>
 
 * **Capture only what changes.** The host waits for X11 damage events; there's no capture timer. A
-  changed frame is copied straight to the GPU and encoded with NVENC (H.264, ultra-low-latency) in
-  about 5 ms.
+  changed frame goes straight to the GPU and is encoded by its video encoder (H.264, through Vulkan
+  Video) in about 5 ms. That takes about 40 MB of GPU memory while you're connected, and none otherwise.
 * **No queues.** Each frame needs a credit, and the viewer returns one after decoding. A slow
   network means fewer frames, never a backlog. The pointer is drawn on your side, so it never lags.
 * **A private network built in.** Both ends include an unprivileged [Tailscale](https://tailscale.com)

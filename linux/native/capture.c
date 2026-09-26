@@ -8,8 +8,10 @@
 //   * Frames are only produced while the daemon has granted credits (one credit per frame,
 //     returned when the client acks it), so a slow network makes us encode fewer frames
 //     instead of queueing stale ones.
-//   * Pixels go X server -> XShm segment (pinned for DMA) -> CUDA buffer -> NVENC. There
-//     are no CPU pixel copies and no CPU colour conversion; NVENC converts BGRx itself.
+//   * Pixels go X server -> XShm segment -> GPU, with no CPU pixel copies and no CPU colour
+//     conversion. Through Vulkan Video (vkenc.c), the GPU imports the segment and a compute shader
+//     makes NV12 for NVENC: about 30 MB of VRAM. Without it, through CUDA: the segment is pinned for
+//     DMA and NVENC converts BGRx itself, but the CUDA context alone takes about 200 MB.
 //
 // I/O protocol with the daemon (darpan/capture.py):
 //   stdout: records  [u32 len][u32 flags][u64 capture_ts_us][u32 cap_us][u32 enc_us] + len bytes
@@ -19,7 +21,7 @@
 //           "b KBPS" bitrate · "f FPS" max frame rate · "r" encode now · "q" quit
 //
 // Exit codes: 0 normal, 2 error (also: the X server went away), 3 screen size changed (restart me),
-// 4 NVENC unavailable.
+// 4 NVENC unavailable. DARPAN_NVENC_CUDA=1 skips Vulkan Video and encodes through CUDA.
 
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -43,6 +45,7 @@
 #include <X11/extensions/XShm.h>
 #include <X11/extensions/Xdamage.h>
 
+#include "vkenc.h"
 #include "ffnvcodec/dynlink_cuda.h"
 #include "ffnvcodec/nvEncodeAPI.h"
 
@@ -405,6 +408,7 @@ static int probe_all_skip(const H264Info *h, const uint8_t *buf, uint32_t len) {
 }
 
 typedef struct {
+    VkEnc *vk;                 // Vulkan Video; otherwise NVENC through CUDA (the fields below)
     void *enc;
     CUcontext ctx;
     CUdeviceptr dptr;
@@ -473,7 +477,34 @@ static void set_rc(Encoder *e) {
     rc->enableLookahead = 0;
 }
 
-static int encoder_open(Encoder *e, int gpu, int preset, int matrix601) {
+// Probing needs the parameter sets; a stream this parser doesn't understand is sent in full.
+static void parse_param_sets(Encoder *e, const uint8_t *ps, uint32_t ps_len) {
+    const uint8_t *pos = ps, *nal, *nal_end;
+    int got = 0;
+    while ((nal = next_nal(&pos, ps + ps_len, &nal_end))) {
+        Rbsp r = {nal + 1, nal_end, 0, 0, 0, 0};
+        if ((nal[0] & 0x1f) == 7) got |= parse_sps(&r, &e->h264) ? 4 : 1;
+        else if ((nal[0] & 0x1f) == 8) got |= parse_pps(&r, &e->h264) ? 4 : 2;
+    }
+    e->h264.ok = got == 3;
+    if (!e->h264.ok) logf_("stream not understood; unchanged frames will be sent too");
+}
+
+// src: the frame buffer (page-aligned, src_size a multiple of the page size), read by the GPU.
+static int encoder_open(Encoder *e, int gpu, int preset, int matrix601, void *src, size_t src_size,
+                        uint32_t src_pitch) {
+    if (!getenv("DARPAN_NVENC_CUDA")) {
+        memset(src, 0, src_size);      // the GPU can only import pages that exist
+        VkEncParams vp = {gpu, e->w, e->h, e->fps, e->kbps, e->vbv_frames, preset, matrix601,
+                          src, src_size, src_pitch};
+        const uint8_t *ps;
+        uint32_t ps_len;
+        if ((e->vk = vkenc_open(&vp, e->gpu, &ps, &ps_len))) {
+            parse_param_sets(e, ps, ps_len);
+            return 0;
+        }
+        logf_("no Vulkan Video: NVENC through CUDA");
+    }
     if (cuda_load() || nvenc_load()) return -1;
     CUdevice dev;
     CUCHECK(cu.Init(0));
@@ -572,7 +603,6 @@ static int encoder_open(Encoder *e, int gpu, int preset, int matrix601) {
     NVCHECK(nv.nvEncCreateBitstreamBuffer(e->enc, &cb));
     e->bs = cb.bitstreamBuffer;
 
-    // Probing needs the parameter sets; a stream this parser doesn't understand is sent in full.
     uint8_t ps[1024];
     uint32_t ps_len = 0;
     NV_ENC_SEQUENCE_PARAM_PAYLOAD sp = {0};
@@ -580,17 +610,8 @@ static int encoder_open(Encoder *e, int gpu, int preset, int matrix601) {
     sp.inBufferSize = sizeof ps;
     sp.spsppsBuffer = ps;
     sp.outSPSPPSPayloadSize = &ps_len;
-    if (nv.nvEncGetSequenceParams(e->enc, &sp) == NV_ENC_SUCCESS && ps_len <= sizeof ps) {
-        const uint8_t *pos = ps, *nal, *nal_end;
-        int got = 0;
-        while ((nal = next_nal(&pos, ps + ps_len, &nal_end))) {
-            Rbsp r = {nal + 1, nal_end, 0, 0, 0, 0};
-            if ((nal[0] & 0x1f) == 7) got |= parse_sps(&r, &e->h264) ? 4 : 1;
-            else if ((nal[0] & 0x1f) == 8) got |= parse_pps(&r, &e->h264) ? 4 : 2;
-        }
-        e->h264.ok = got == 3;
-    }
-    if (!e->h264.ok) logf_("stream not understood; unchanged frames will be sent too");
+    if (nv.nvEncGetSequenceParams(e->enc, &sp) != NV_ENC_SUCCESS || ps_len > sizeof ps) ps_len = 0;
+    parse_param_sets(e, ps, ps_len);
     return 0;
 }
 
@@ -599,6 +620,7 @@ static int encoder_set_bitrate(Encoder *e, uint32_t kbps) {
     if (kbps > 200000) kbps = 200000;
     if (kbps == e->kbps) return 0;
     e->kbps = kbps;
+    if (e->vk) return vkenc_set_bitrate(e->vk, kbps);
     set_rc(e);
     NV_ENC_RECONFIGURE_PARAMS rp = {0};
     rp.version = NV_ENC_RECONFIGURE_PARAMS_VER;
@@ -615,6 +637,16 @@ static int encoder_set_bitrate(Encoder *e, uint32_t kbps) {
 static int encoder_encode(Encoder *e, int force_idr, int probe, uint32_t extra_flags, uint64_t ts,
                           uint32_t cap_us, int *out_is_key, uint32_t *out_bytes) {
     uint64_t t0 = now_us();
+    if (e->vk) {
+        const uint8_t *bs;
+        uint32_t n;
+        if (vkenc_encode(e->vk, force_idr, !probe, &bs, &n)) return -1;
+        uint32_t enc_us = (uint32_t)(now_us() - t0);
+        int skip = probe && probe_all_skip(&e->h264, bs, n);
+        *out_bytes = n;
+        *out_is_key = force_idr;
+        return skip ? 1 : emit_record((force_idr ? FLAG_KEY : 0) | extra_flags, ts, cap_us, enc_us, bs, n);
+    }
     NV_ENC_MAP_INPUT_RESOURCE mr = {0};
     mr.version = NV_ENC_MAP_INPUT_RESOURCE_VER;
     mr.registeredResource = e->reg;
@@ -667,6 +699,8 @@ static int encoder_encode(Encoder *e, int force_idr, int probe, uint32_t extra_f
 }
 
 static void encoder_close(Encoder *e) {
+    vkenc_close(e->vk);
+    e->vk = NULL;
     if (e->enc) {
         if (e->bs) nv.nvEncDestroyBitstreamBuffer(e->enc, e->bs);
         if (e->reg) nv.nvEncUnregisterResource(e->enc, e->reg);
@@ -848,8 +882,10 @@ int main(int argc, char **argv) {
 
     if (probe) {
         enc.w = 1280; enc.h = 720; enc.fps = 60; enc.kbps = 4000; enc.vbv_frames = 4;
-        if (encoder_open(&enc, gpu, preset, 0) == 0) {
-            printf("{\"nvenc\":true,\"gpu\":\"%s\"}\n", enc.gpu);
+        size_t size = (size_t)enc.w * enc.h * 4;       // a page multiple
+        void *frame = aligned_alloc((size_t)sysconf(_SC_PAGESIZE), size);
+        if (frame && encoder_open(&enc, gpu, preset, 0, frame, size, enc.w * 4) == 0) {
+            printf("{\"nvenc\":true,\"gpu\":\"%s\",\"api\":\"%s\"}\n", enc.gpu, enc.vk ? "vulkan" : "cuda");
             rc = 0;
         } else {
             printf("{\"nvenc\":false}\n");
@@ -857,6 +893,7 @@ int main(int argc, char **argv) {
         }
         encoder_close(&enc);
         if (enc.ctx) cu.CtxDestroy(enc.ctx);
+        free(frame);
         return rc;
     }
 
@@ -866,19 +903,22 @@ int main(int argc, char **argv) {
     enc.fps = (uint32_t)fps;
     enc.kbps = (uint32_t)kbps;
     enc.vbv_frames = (uint32_t)vbv_frames;
-    if (encoder_open(&enc, gpu, preset, matrix601)) {
+    if (encoder_open(&enc, gpu, preset, matrix601, cap.shm.shmaddr, cap.shm_size, (uint32_t)cap.img->bytes_per_line)) {
         emit_info("{\"ev\":\"error\",\"msg\":\"nvenc init failed\"}");
         rc = 4;
         goto out;
     }
-    // Pin the shm segment so CUDA copies it by DMA straight from the X server's buffer.
-    if (cu.MemHostRegister(cap.shm.shmaddr, cap.shm_size, 0x01 /* PORTABLE */) == CUDA_SUCCESS)
-        cap.pinned = 1;
-    else
-        logf_("cuMemHostRegister failed; using pageable copies");
+    // CUDA: pin the shm segment so it's copied by DMA straight from the X server's buffer.
+    // (Through Vulkan, the GPU already reads it where it is.)
+    if (!enc.vk) {
+        if (cu.MemHostRegister(cap.shm.shmaddr, cap.shm_size, 0x01 /* PORTABLE */) == CUDA_SUCCESS)
+            cap.pinned = 1;
+        else
+            logf_("cuMemHostRegister failed; using pageable copies");
+    }
 
-    emit_info("{\"ev\":\"start\",\"w\":%d,\"h\":%d,\"enc\":\"nvenc\",\"gpu\":\"%s\",\"preset\":%d,\"fps\":%d,\"kbps\":%d}",
-              cap.w, cap.h, enc.gpu, preset, fps, kbps);
+    emit_info("{\"ev\":\"start\",\"w\":%d,\"h\":%d,\"enc\":\"nvenc\",\"api\":\"%s\",\"gpu\":\"%s\",\"preset\":%d,\"fps\":%d,\"kbps\":%d}",
+              cap.w, cap.h, enc.vk ? "vulkan" : "cuda", enc.gpu, preset, fps, kbps);
 
     CUDA_MEMCPY2D cp = {0};
     cp.srcMemoryType = CU_MEMORYTYPE_HOST;
@@ -988,8 +1028,12 @@ int main(int argc, char **argv) {
                 next_allowed = now + 50000;
                 continue;
             }
-            CUresult cr = cu.Memcpy2D(&cp);
-            if (cr != CUDA_SUCCESS) { logf_("cuMemcpy2D: %s", cu_err(cr)); rc = 2; goto out; }
+            if (enc.vk) {
+                if (vkenc_convert(enc.vk)) { rc = 2; goto out; }
+            } else {
+                CUresult cr = cu.Memcpy2D(&cp);
+                if (cr != CUDA_SUCCESS) { logf_("cuMemcpy2D: %s", cu_err(cr)); rc = 2; goto out; }
+            }
             uint64_t t1 = now_us();
             uint64_t ts = t0 > last_ts ? t0 : last_ts + 1;
             last_ts = ts;
