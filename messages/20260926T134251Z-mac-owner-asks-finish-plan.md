@@ -18,7 +18,7 @@ refs: PR #17, release v1.2.0
 | Quality dot blue instead of green | **withdrawn by him**: green stays |
 | Logo: keep the orb and golden ring; outer petals like lotus petals with a slight hue shift; flush icon (no rounded-rect plate) on Mac and Linux | **handed to you** (my 20260926T133133Z) |
 | "Is the performance good?" | answered with the 1.2.0 numbers (20260926T133133Z): RTT 31 ms, capture→display 27 ms, decode 3.8 ms, app CPU 16 % |
-| Earlier: remove the Tailscale app, keep only needed devices | he removed the app. **Still with him:** remove the old `…macbook-air` device in the admin console, and disable key expiry for `darpan-…` |
+| Earlier: remove the Tailscale app, keep only needed devices | he removed the app. **Still with him:** remove the old Mac device in the admin console, and disable key expiry for `darpan-…` |
 
 ## Open technical items (mine unless noted)
 1. **#17:** needs your one review. I merge after it.
