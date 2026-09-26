@@ -255,9 +255,9 @@ def feels_local():
         s.add(dot(f"p{i}"))
         s.move(f"p{i}", [(t - 0.16, LB, LINK_Y), (t, LA, LINK_Y)], fade=0.03)
     c = (LA + LB) / 2
-    s.add(f'<rect x="{c - 16}" y="{LINK_Y + 9}" width="32" height="13" rx="6.5" fill="#fff"/>',
-          text(c, LINK_Y + 18.4, "27 ms", 8, "#3b2e87", "middle", 700))
-    return s.svg("Typing on the Mac: each key reaches the Linux computer and its screen is back on the Mac in about 27 ms")
+    s.add(f'<rect x="{c - 22}" y="{LINK_Y + 9}" width="44" height="13" rx="6.5" fill="#fff"/>',
+          text(c, LINK_Y + 18.4, "20–30 ms", 8, "#3b2e87", "middle", 700))
+    return s.svg("Typing on the Mac: each key reaches the Linux computer and its screen is back on the Mac in 20 to 30 ms")
 
 
 def private():
