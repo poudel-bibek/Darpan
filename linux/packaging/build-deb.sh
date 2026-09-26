@@ -43,15 +43,16 @@ install -m 0644 packaging/debian/copyright "$R/usr/share/doc/darpan/copyright"
 install -m 0644 ../PROTOCOL.md "$R/usr/share/doc/darpan/"
 [ -f ../README.md ] && install -m 0644 ../README.md "$R/usr/share/doc/darpan/README.md"
 install -m 0755 packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm "$R/DEBIAN/"
-# Updates come through the system's updater: each release on GitHub carries a signed flat APT index
-# (packaging/apt-index.sh), and "latest" always points at the newest one.
+# Updates come through the system's updater, from a signed flat APT index (packaging/apt-index.sh)
+# that scripts/publish-updates.sh puts on the repository's GitHub Pages site.
 REPO=${DARPAN_REPO:-$(git -C .. remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')}
 [[ $REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "can't tell the GitHub repository (set DARPAN_REPO=owner/name)"; exit 1; }
 # Source and keyring are both conffiles: "apt remove" keeps them together (so apt update still
 # works), "purge" removes both.
 install -m 0644 packaging/darpan-archive-keyring.gpg "$R/etc/apt/keyrings/"
-printf 'Types: deb\nURIs: https://github.com/%s/releases/latest/download/\nSuites: ./\nSigned-By: /etc/apt/keyrings/darpan-archive-keyring.gpg\n' \
-    "$REPO" > "$R/etc/apt/sources.list.d/darpan.sources"
+OWNER=$(echo "${REPO%%/*}" | tr '[:upper:]' '[:lower:]')          # Pages hosts are lowercase
+printf 'Types: deb\nURIs: https://%s.github.io/%s/apt/\nSuites: ./\nSigned-By: /etc/apt/keyrings/darpan-archive-keyring.gpg\n' \
+    "$OWNER" "${REPO#*/}" > "$R/etc/apt/sources.list.d/darpan.sources"
 printf '/etc/apt/sources.list.d/darpan.sources\n/etc/apt/keyrings/darpan-archive-keyring.gpg\n' > "$R/DEBIAN/conffiles"
 SIZE=$(du -sk --exclude=DEBIAN "$R" | cut -f1)
 sed -e "s/@VERSION@/$VERSION/" -e "s/@SIZE@/$SIZE/" packaging/debian/control.in > "$R/DEBIAN/control"
