@@ -79,7 +79,7 @@ Plus full screen, screen resolutions to match your window, and a toolbar that tu
 * **Dictation** apps work in the Darpan window. With Wispr Flow, for example, you talk and the text
   lands at the Linux cursor, as if you had typed it.
 * **Sound** from the Linux computer plays on your Mac, or in the browser. The speaker button in the toolbar mutes it.
-* **Send files** by dropping them on the window. They land in `~/Downloads/Darpan` on the Linux computer.
+* **Send files** by dropping them on the window. They land on the Linux computer's desktop.
 * **The toolbar** is the small tab at the top of the window. Hover over it for full screen, display and
   quality, keyboard, clipboard, files and sound. Drag it sideways if it's in the way.
 * **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
