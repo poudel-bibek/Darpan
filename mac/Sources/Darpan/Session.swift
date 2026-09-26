@@ -30,6 +30,8 @@ final class Session: NSObject {
     private let model = ViewerModel()
     private let player = AudioPlayer()
     private var popover: NSPopover?
+    /// The first-connection tip pointing at the toolbar.
+    private var tip: NSPopover?
     private var bag = Set<AnyCancellable>()
     private var observers: [NSObjectProtocol] = []
     private var ticker: Timer?
@@ -114,7 +116,10 @@ final class Session: NSObject {
 
         let bar = content.toolbar
         bar.onAction = { [weak self] item, button in self?.toolbarAction(item, button) }
-        bar.onMove = { [weak self] p in self?.content.toolbarPosition = p }
+        bar.onMove = { [weak self] p in
+            self?.content.toolbarPosition = p
+            self?.closeToolbarTip()                          // dragging it is the lesson
+        }
         bar.onMoveEnded = { [weak self] in
             guard let self else { return }
             self.settings.toolbarX = Double(self.content.toolbarPosition.x)
@@ -219,6 +224,8 @@ final class Session: NSObject {
         for o in observers { NotificationCenter.default.removeObserver(o) }
         observers.removeAll()
         popover?.close()
+        tip?.close()
+        tip = nil
         files?.model.stop()
         files?.close()
         client.setAudio(false, sink: nil)
@@ -304,6 +311,39 @@ final class Session: NSObject {
         case .disconnect:
             end()
         }
+    }
+
+    /// Once, on the first connection, when the desktop has appeared: what the toolbar is and that it
+    /// moves. Held open (and the bar with it) until "Got it" or a drag; it never closes by itself.
+    private func showToolbarTipOnce() {
+        guard !settings.toolbarTipSeen, tip == nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, !self.ended, self.tip == nil, !self.settings.toolbarTipSeen else { return }
+            // Minimised, or the connection blinked: try again a little later.
+            guard self.isConnected, self.window.isVisible, !self.window.isMiniaturized else { return self.showToolbarTipOnce() }
+            let bar = self.content.toolbar
+            bar.pinned = true
+            self.content.gripHint.isHidden = false
+            self.content.layoutSubtreeIfNeeded()
+            let p = NSPopover()
+            p.behavior = .applicationDefined
+            p.appearance = NSAppearance(named: .darkAqua)
+            let host = NSHostingController(rootView: ToolbarTip { [weak self] in self?.closeToolbarTip() })
+            p.contentViewController = host
+            p.contentSize = host.view.fittingSize          // sized before it's placed, so it sits right under the bar
+            self.tip = p
+            // Anchored to where the open bar is now (the content view is flipped: maxY is below).
+            p.show(relativeTo: bar.frame, of: self.content, preferredEdge: .maxY)
+        }
+    }
+
+    private func closeToolbarTip() {
+        guard let t = tip else { return }
+        tip = nil
+        t.close()
+        content.gripHint.isHidden = true
+        content.toolbar.pinned = false
+        settings.toolbarTipSeen = true
     }
 
     private func togglePanel<V: View>(_ item: ToolbarView.Item, _ button: NSButton, _ view: V) {
@@ -498,6 +538,7 @@ extension Session: ClientDelegate {
                 if remember == false { Keychain.delete(address.origin) }
                 showWindow()
                 owner?.sessionDidConnect(self)
+                showToolbarTipOnce()
             }
             updateTicker()
             updateTap()

@@ -44,6 +44,8 @@ final class Settings: ObservableObject {
     @Published var remember: Bool { didSet { d.set(remember, forKey: "remember") } }
     /// The welcome screen has been through its "Get started".
     @Published var welcomed: Bool { didSet { d.set(welcomed, forKey: "welcomed") } }
+    /// The first-connection tip about the toolbar has been closed.
+    @Published var toolbarTipSeen: Bool { didSet { d.set(toolbarTipSeen, forKey: "toolbarTipSeen") } }
     /// Play the remote computer's sound.
     @Published var sound: Bool { didSet { d.set(sound, forKey: "sound") } }
     /// How to reach the tailnet: the node built into the app, or whatever this Mac provides
@@ -70,6 +72,7 @@ final class Settings: ObservableObject {
         toolbarY = min(1, max(0, d.double(forKey: "toolbarY")))
         remember = d.bool(forKey: "remember")
         welcomed = d.bool(forKey: "welcomed")
+        toolbarTipSeen = d.bool(forKey: "toolbarTipSeen")
         sound = d.bool(forKey: "sound")
         network = NetworkMode(rawValue: d.string(forKey: "network") ?? "") ?? .builtIn
         checkUpdates = d.bool(forKey: "checkUpdates")
