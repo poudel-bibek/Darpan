@@ -444,6 +444,11 @@ extension Session: ClientDelegate {
         case .connecting:
             break
         case .connected:
+            if wasConnected {
+                // Back after an outage: keys pressed meanwhile never reached this new host session.
+                _ = keyboard.reset()
+                _ = video.releaseButtons()
+            }
             content.overlay.hide()
             if !wasConnected {
                 wasConnected = true
