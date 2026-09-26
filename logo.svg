@@ -1,21 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Porthole">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Darpan">
   <defs>
-    <linearGradient id="brass" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#F8CF72"/>
-      <stop offset="1" stop-color="#C4861C"/>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FAD57A"/><stop offset="1" stop-color="#C98A1E"/>
+    </linearGradient>
+    <linearGradient id="deep" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E4A845"/><stop offset="1" stop-color="#9C6610"/>
     </linearGradient>
     <radialGradient id="glass" cx="0.36" cy="0.3" r="0.85">
-      <stop offset="0" stop-color="#3E74DC"/>
-      <stop offset="1" stop-color="#0D1A3A"/>
+      <stop offset="0" stop-color="#3E66CC"/><stop offset="1" stop-color="#0C1533"/>
     </radialGradient>
+    <path id="petal" d="M0-30C17-38 12-54 0-62C-12-54-17-38 0-30Z"/>
+    <path id="bud" d="M0-30C13-37 10-49 0-55C-10-49-13-37 0-30Z"/>
   </defs>
-  <circle cx="64" cy="64" r="58" fill="url(#brass)" stroke="#8A5A10" stroke-width="2"/>
-  <circle cx="64" cy="64" r="41" fill="#8A5A10"/>
-  <circle cx="64" cy="64" r="38" fill="url(#glass)"/>
-  <g fill="#9E6716">
-    <circle cx="114" cy="64" r="4"/><circle cx="99.4" cy="99.4" r="4"/><circle cx="64" cy="114" r="4"/><circle cx="28.6" cy="99.4" r="4"/>
-    <circle cx="14" cy="64" r="4"/><circle cx="28.6" cy="28.6" r="4"/><circle cx="64" cy="14" r="4"/><circle cx="99.4" cy="28.6" r="4"/>
+  <g transform="translate(64 64)" stroke="#8E5B0E" stroke-linejoin="round">
+    <g fill="url(#gold)" stroke-width="1.2">
+      <use href="#petal"/><use href="#petal" transform="rotate(45)"/><use href="#petal" transform="rotate(90)"/><use href="#petal" transform="rotate(135)"/>
+      <use href="#petal" transform="rotate(180)"/><use href="#petal" transform="rotate(225)"/><use href="#petal" transform="rotate(270)"/><use href="#petal" transform="rotate(315)"/>
+    </g>
+    <g fill="url(#deep)" stroke-width="1">
+      <use href="#bud" transform="rotate(22.5)"/><use href="#bud" transform="rotate(67.5)"/><use href="#bud" transform="rotate(112.5)"/><use href="#bud" transform="rotate(157.5)"/>
+      <use href="#bud" transform="rotate(202.5)"/><use href="#bud" transform="rotate(247.5)"/><use href="#bud" transform="rotate(292.5)"/><use href="#bud" transform="rotate(337.5)"/>
+    </g>
+    <circle r="38" fill="url(#gold)" stroke-width="1.5"/>
+    <circle r="34.5" fill="none" stroke="#B57B19" stroke-width="1"/>
+    <circle r="31" fill="url(#glass)" stroke="#7A4C0B" stroke-width="1.5"/>
+    <path d="M-23-6A23 23 0 0 1-6-23" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M-9-17V11L-2.5 4.5 2 14.5 6.5 12.5 2 2.5H11Z" fill="#fff" stroke="#0C1533" stroke-width="2.2"/>
   </g>
-  <path d="M38 60A27 27 0 0 1 60 37" fill="none" stroke="#fff" stroke-opacity=".32" stroke-width="5" stroke-linecap="round"/>
-  <path d="M56 46V76L63 69L68 80L73 78L68 67H78Z" fill="#fff" stroke="#0D1A3A" stroke-width="2.5" stroke-linejoin="round"/>
 </svg>

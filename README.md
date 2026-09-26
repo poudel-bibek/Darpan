@@ -1,9 +1,9 @@
-<p align="center"><img src="logo.svg" width="120" alt="Porthole"></p>
+<p align="center"><img src="logo.svg" width="120" alt="Darpan"></p>
 
-<h1 align="center">Porthole</h1>
+<h1 align="center">Darpan</h1>
 
-<p align="center">A small, fast, private window into your other computer.<br>
-Self-hosted remote desktop for a Linux workstation, used from a Mac (or any browser).</p>
+<p align="center"><b>Darpan</b> — Sanskrit for <i>mirror</i>. Your other computer, mirrored here:<br>
+small, fast and private. Self-hosted remote desktop for a Linux workstation, used from a Mac (or any browser).</p>
 
 ---
 
@@ -37,11 +37,12 @@ Self-hosted remote desktop for a Linux workstation, used from a Mac (or any brow
 ## Install on the Linux computer (the one you want to reach)
 
 ```bash
-sudo apt install ./dist/porthole_1.0.0_amd64.deb
+sudo apt install ./dist/darpan_1.0.0_amd64.deb
 ```
 
 The package is self-contained (Tailscale is inside); apt pulls in the few standard Ubuntu
-packages it uses. Then open **Porthole** from the app grid (or run `porthole setup`):
+packages it uses. It replaces an earlier *Porthole* install automatically, keeping your address,
+password and Tailscale sign-in. Then open **Darpan** from the app grid (or run `darpan setup`):
 
 1. **Sign in to Tailscale** — click *Sign in*, use any Google/Microsoft/GitHub/Apple account (free).
 2. **Publish** — one click; if asked, enable HTTPS for your tailnet (one more click).
@@ -56,9 +57,9 @@ choose **Disable key expiry** (otherwise it drops off the network after 180 days
    the same account.
 2. Open the address (e.g. `https://workstation.example.ts.net`) in Chrome or Safari and
    enter the password. Tick *Remember this device* to skip the password next time.
-   *Tip:* in Chrome use *Install Porthole* (address bar) for an app window; in full screen Chrome
+   *Tip:* in Chrome use *Install Darpan* (address bar) for an app window; in full screen Chrome
    also forwards shortcuts like ⌘W to the remote computer.
-3. The native Mac app (`dist/Porthole.dmg`, see `mac/`) adds system-shortcut capture (⌘Tab, ⌘Space)
+3. The native Mac app (`dist/Darpan.dmg`, see `mac/`) adds system-shortcut capture (⌘Tab, ⌘Space)
    and seamless clipboard sync.
 
 Keyboard: ⌘ acts as Ctrl on the remote computer by default (⌘C/⌘V copy and paste as you expect);
@@ -68,29 +69,29 @@ decides the characters; *Type it* in the clipboard menu types arbitrary text.
 ## Everyday commands
 
 ```text
-porthole status       address, password, who is connected
-porthole password     show it · --set to choose your own · --generate for a new random one
-porthole disconnect   kick every remote session
-porthole doctor       check display, GPU encoder, network, service
-porthole net          Tailscale status and whether your devices connect directly or via relay
+darpan status       address, password, who is connected
+darpan password     show it · --set to choose your own · --generate for a new random one
+darpan disconnect   kick every remote session
+darpan doctor       check display, GPU encoder, network, service
+darpan net          Tailscale status and whether your devices connect directly or via relay
 ```
 
-Logs: `journalctl --user -u porthole -u porthole-net -f`
+Logs: `journalctl --user -u darpan -u darpan-net -f`
 
 ## Limitations (honest ones)
 
-* **After a reboot someone must log in to the desktop** before Porthole can show it (it runs in
+* **After a reboot someone must log in to the desktop** before Darpan can show it (it runs in
   your desktop session, not as root). For true unattended access enable *Automatic Login*
   (Settings → Users) — anyone with physical access then gets your desktop.
 * X11 sessions only (Ubuntu's default with NVIDIA drivers); Wayland isn't supported yet.
 * Without an NVIDIA GPU it falls back to software x264 (works, uses a few CPU cores while streaming).
-* Keep your current paid remote-access app until you've confirmed Porthole works from the Mac.
+* Keep your current paid remote-access app until you've confirmed Darpan works from the Mac.
 
 ## Uninstall
 
 ```bash
-sudo apt remove porthole
-rm -rf ~/.config/porthole ~/.local/state/porthole ~/.local/share/porthole   # settings, password, Tailscale state
+sudo apt remove darpan
+rm -rf ~/.config/darpan ~/.local/state/darpan ~/.local/share/darpan   # settings, password, Tailscale state
 ```
 Also remove the machine from <https://login.tailscale.com/admin/machines>.
 

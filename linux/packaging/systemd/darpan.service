@@ -1,14 +1,15 @@
 [Unit]
-Description=Porthole host (remote desktop)
-Documentation=file:///usr/share/doc/porthole/README.md
+Description=Darpan host (remote desktop)
+Documentation=file:///usr/share/doc/darpan/README.md
 PartOf=graphical-session.target
-After=graphical-session.target porthole-net.service
-Wants=porthole-net.service
+After=graphical-session.target darpan-net.service
+Wants=darpan-net.service
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/porthole serve
+ExecStartPre=/opt/darpan/migrate
+ExecStart=/usr/bin/darpan serve
 Restart=always
 RestartSec=3
 NoNewPrivileges=yes

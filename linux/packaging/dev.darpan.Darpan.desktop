@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=Porthole
+Name=Darpan
 GenericName=Remote Desktop
 Comment=Use this computer from your other devices
-Exec=porthole gui
-Icon=porthole
+Exec=darpan gui
+Icon=darpan
 Terminal=false
 Categories=Network;RemoteAccess;GTK;
 Keywords=remote;desktop;teamviewer;vnc;rdp;tailscale;
 StartupNotify=true
-StartupWMClass=dev.porthole.Porthole
+StartupWMClass=dev.darpan.Darpan

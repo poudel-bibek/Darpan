@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dev tool: read porthole-capture records from stdin, print stats, optionally dump raw H.264 and
+"""Dev tool: read darpan-capture records from stdin, print stats, optionally dump raw H.264 and
 decode selected frames to PNG (uses GStreamer avdec_h264) to verify the encoder output."""
 import struct, sys, json, argparse
 

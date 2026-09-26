@@ -12,7 +12,7 @@ import re
 
 from . import config
 
-log = logging.getLogger("porthole.screen")
+log = logging.getLogger("darpan.screen")
 
 _MODE_RE = re.compile(r"^\s+(\d+)x(\d+)\s+(.*)$")
 _OUT_RE = re.compile(r"^(\S+) connected( primary)?(?: (\d+)x(\d+)\+\d+\+\d+)?")

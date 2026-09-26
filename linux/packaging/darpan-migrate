@@ -1,0 +1,10 @@
+#!/bin/sh
+# Runs before the services start. Carries over per-user data from this app's earlier name
+# ("porthole": settings, password, Tailscale identity + published address) so nothing
+# changes for the user. Idempotent; does nothing once migrated or on fresh installs.
+for base in "${XDG_CONFIG_HOME:-$HOME/.config}" "${XDG_STATE_HOME:-$HOME/.local/state}" "${XDG_DATA_HOME:-$HOME/.local/share}"; do
+    if [ -d "$base/porthole" ] && [ ! -e "$base/darpan" ]; then
+        mv "$base/porthole" "$base/darpan"
+    fi
+done
+exit 0

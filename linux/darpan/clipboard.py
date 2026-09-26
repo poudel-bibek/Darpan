@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 
-log = logging.getLogger("porthole.clip")
+log = logging.getLogger("darpan.clip")
 MAX = 1 << 20
 
 

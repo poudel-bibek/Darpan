@@ -1,6 +1,6 @@
 # build outputs (published as GitHub Release assets instead)
 dist/
-linux/native/porthole-capture
+linux/native/darpan-capture
 linux/packaging/cache/
 mac/.build/
 mac/build/

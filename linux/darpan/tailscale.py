@@ -1,4 +1,4 @@
-"""The bundled Tailscale: tailscaled runs as its own user service (porthole-net.service)
+"""The bundled Tailscale: tailscaled runs as its own user service (darpan-net.service)
 in userspace-networking mode — no root, no firewall changes, no TUN device. We talk to its
 LocalAPI (JSON over the unix socket) directly, so the 33 MB `tailscale` CLI isn't shipped."""
 import http.client

@@ -1,3 +1,0 @@
-#!/bin/sh
-# -I: isolated mode (ignores PYTHON* variables and user site-packages); -B: no bytecode writes
-exec /usr/bin/python3 -I -B -c 'import sys; sys.path.insert(0, "/opt/porthole"); from porthole.cli import main; sys.exit(main(sys.argv[1:]))' "$@"

@@ -1,4 +1,4 @@
-"""porthole command line."""
+"""darpan command line."""
 import argparse
 import asyncio
 import getpass
@@ -12,7 +12,7 @@ import time
 
 from . import auth, config, control, tailscale
 
-log = logging.getLogger("porthole")
+log = logging.getLogger("darpan")
 
 
 def _serve(args):
@@ -27,7 +27,7 @@ def _serve(args):
     hub = Hub(cfg)
     if not hub.auth.configured:
         hub.auth.generate()
-        log.info("generated an access password — run `porthole status` to see it")
+        log.info("generated an access password — run `darpan status` to see it")
 
     async def main():
         await hub.start()
@@ -53,14 +53,14 @@ def _serve(args):
 
 def _status(args):
     store = auth.AuthStore()
-    print("Porthole %s on %s" % (config.VERSION, config.hostname()))
+    print("Darpan %s on %s" % (config.VERSION, config.hostname()))
     try:
         st = control.request("status")
         enc = ("NVENC on " + st["encoder"]) if st.get("encoder") else "x264 (software)"
         print("  Host service : running on port %d, encoder %s" % (st["port"], enc))
     except OSError:
         st = None
-        print("  Host service : NOT running  (start it: systemctl --user start porthole)")
+        print("  Host service : NOT running  (start it: systemctl --user start darpan)")
     ts = tailscale.summary()
     state = ts.get("state")
     if state == "Running":
@@ -68,16 +68,16 @@ def _status(args):
         if tailscale.serving(config.load()["port"]):
             print("  Address      : %s" % (ts.get("url") or "?"))
         else:
-            print("  Address      : not published yet — run `porthole setup` (or click Publish in the app)")
+            print("  Address      : not published yet — run `darpan setup` (or click Publish in the app)")
     elif state == "stopped":
-        print("  Network      : Tailscale not running  (systemctl --user start porthole-net)")
+        print("  Network      : Tailscale not running  (systemctl --user start darpan-net)")
     else:
-        print("  Network      : Tailscale %s  (run: porthole setup)" % state)
+        print("  Network      : Tailscale %s  (run: darpan setup)" % state)
     pw = store.visible_password()
     if pw:
-        print("  Password     : %s   (change with: porthole password --set)" % pw)
+        print("  Password     : %s   (change with: darpan password --set)" % pw)
     else:
-        print("  Password     : %s" % ("set by you (hidden)" if store.configured else "NOT SET — run: porthole password --set"))
+        print("  Password     : %s" % ("set by you (hidden)" if store.configured else "NOT SET — run: darpan password --set"))
     if st:
         ss = st.get("sessions") or []
         print("  Sessions     : %d" % len(ss))
@@ -120,24 +120,24 @@ def _open_url(url):
 
 def _setup(args):
     store = auth.AuthStore()
-    print("Porthole setup\n")
+    print("Darpan setup\n")
     if not store.configured:
         store.generate()
     pw = store.visible_password()
     print("1. Access password: %s" % (pw or "(your own password)"))
-    print("   (change any time with: porthole password --set)\n")
+    print("   (change any time with: darpan password --set)\n")
 
     print("2. Private network (Tailscale)")
     ts = tailscale.summary()
     if ts["state"] == "stopped":
-        subprocess.run(["systemctl", "--user", "start", "porthole-net.service"], check=False)
+        subprocess.run(["systemctl", "--user", "start", "darpan-net.service"], check=False)
         for _ in range(20):
             time.sleep(0.5)
             ts = tailscale.summary()
             if ts["state"] != "stopped":
                 break
     if ts["state"] == "stopped":
-        print("   tailscaled isn't running. Check: journalctl --user -u porthole-net")
+        print("   tailscaled isn't running. Check: journalctl --user -u darpan-net")
         return 1
     if ts["state"] != "Running":
         url = tailscale.login(config.hostname().lower())
@@ -185,7 +185,7 @@ def _doctor(args):
         ok &= bool(good)
         print("  %s %-22s %s" % ("✓" if good else "✗", name, detail))
 
-    print("Porthole diagnostics")
+    print("Darpan diagnostics")
     disp = os.environ.get("DISPLAY")
     check("X display", bool(disp), disp or "DISPLAY not set (is a desktop session running?)")
     try:
@@ -208,7 +208,7 @@ def _doctor(args):
         st = control.request("status")
         check("host service", True, "port %d" % st["port"])
     except OSError:
-        check("host service", False, "not running — systemctl --user status porthole")
+        check("host service", False, "not running — systemctl --user status darpan")
     ts = tailscale.summary()
     check("tailscale", ts["state"] == "Running", ts["state"] + (" " + ts["url"] if ts.get("url") else ""))
     for p in ts.get("peers", []):
@@ -242,7 +242,7 @@ def _gui(args):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="porthole", description="Porthole — fast, private remote desktop host")
+    ap = argparse.ArgumentParser(prog="darpan", description="Darpan — fast, private remote desktop host")
     sub = ap.add_subparsers(dest="cmd")
     p = sub.add_parser("serve", help="run the host (normally started automatically)")
     p.add_argument("--port", type=int)

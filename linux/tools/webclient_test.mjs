@@ -33,7 +33,7 @@ const env = await new Promise((resolve, reject) => {
 console.log(`host ready on ${env.display}, port ${env.port}`);
 
 // 2) Chrome
-const profile = mkdtempSync(join(tmpdir(), 'porthole-chrome-'));
+const profile = mkdtempSync(join(tmpdir(), 'darpan-chrome-'));
 // --no-sandbox: Ubuntu 24.04 blocks the user namespaces Chrome's sandbox needs; this test
 // browser only ever loads our own page on 127.0.0.1.
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
@@ -84,18 +84,18 @@ try {
 
   await ev(`document.getElementById('password').value=${JSON.stringify(env.password)}; document.getElementById('loginForm').requestSubmit(); 1`);
   let frames = 0;
-  for (let i = 0; i < 40 && !frames; i++) { await sleep(250); frames = await ev('window.__porthole.frames'); }
+  for (let i = 0; i < 40 && !frames; i++) { await sleep(250); frames = await ev('window.__darpan.frames'); }
   ok('video frames decoded', frames > 0, `${frames} frame(s)`);
   ok('viewer visible', await ev(`!document.getElementById('viewer').hidden`));
-  const saved = await ev(`!!localStorage.getItem('porthole.key.' + location.host)`);
-  ok('device remembered (key only)', saved && !(await ev(`localStorage.getItem('porthole.key.' + location.host).includes(${JSON.stringify(env.password)})`)));
+  const saved = await ev(`!!localStorage.getItem('darpan.key.' + location.host)`);
+  ok('device remembered (key only)', saved && !(await ev(`localStorage.getItem('darpan.key.' + location.host).includes(${JSON.stringify(env.password)})`)));
 
   const shot = await call('Page.captureScreenshot', { format: 'png' }, sid);
   writeFileSync(join(env.tmp, 'browser.png'), Buffer.from(shot.data, 'base64'));
   console.log('  screenshot:', join(env.tmp, 'browser.png'));
 
   // pointer → host
-  const r = await ev(`(() => { const b = document.getElementById('screen').getBoundingClientRect(); return [b.left, b.top, b.width, b.height, window.__porthole.stream.w, window.__porthole.stream.h]; })()`);
+  const r = await ev(`(() => { const b = document.getElementById('screen').getBoundingClientRect(); return [b.left, b.top, b.width, b.height, window.__darpan.stream.w, window.__darpan.stream.h]; })()`);
   const [left, top, width, height, sw, shh] = r;
   const cx = left + width * (200 / sw), cy = top + height * (150 / shh);
   await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: cx, y: cy }, sid);
@@ -122,11 +122,11 @@ try {
   // a key press repaints the probe window: measure browser→host→browser round trip
   const lat = [];
   for (let i = 0; i < 8; i++) {
-    const before = await ev('window.__porthole.frames');
+    const before = await ev('window.__darpan.frames');
     const t0 = Date.now();
     await call('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyA', key: 'a', text: 'a', windowsVirtualKeyCode: 65 }, sid);
     let f = before;
-    while (f === before && Date.now() - t0 < 2000) f = await ev('window.__porthole.frames');
+    while (f === before && Date.now() - t0 < 2000) f = await ev('window.__darpan.frames');
     lat.push(Date.now() - t0);
     await call('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyA', key: 'a', windowsVirtualKeyCode: 65 }, sid);
     await sleep(200);
@@ -134,7 +134,7 @@ try {
   lat.sort((a, b) => a - b);
   ok('key → decoded frame in browser', lat[4] < 60, `median ${lat[4]} ms incl. CDP polling overhead (min ${lat[0]})`);
 
-  const st = await ev(`({fps: window.__porthole.fps, lat: window.__porthole.latency, dec: window.__porthole.decodeMs, rtt: window.__porthole.rtt, enc: window.__porthole.stream.enc})`);
+  const st = await ev(`({fps: window.__darpan.fps, lat: window.__darpan.latency, dec: window.__darpan.decodeMs, rtt: window.__darpan.rtt, enc: window.__darpan.stream.enc})`);
   ok('stats populated', st.rtt != null, JSON.stringify(st));
 
   // toolbar: collapsed by default, expands on click

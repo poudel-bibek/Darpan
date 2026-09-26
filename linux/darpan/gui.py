@@ -1,4 +1,4 @@
-"""Porthole status window (GTK 4 + libadwaita): address, password, network sign-in and
+"""Darpan status window (GTK 4 + libadwaita): address, password, network sign-in and
 connected devices. All slow calls run on a worker thread; the UI never blocks."""
 import os
 import subprocess
@@ -13,7 +13,7 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from . import auth, config, control, tailscale  # noqa: E402
 
-APP_ID = "dev.porthole.Porthole"
+APP_ID = "dev.darpan.Darpan"
 
 
 def _bg(fn, done=None):
@@ -36,7 +36,7 @@ def _open(url):
 
 class Window(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Porthole", default_width=480, default_height=680)
+        super().__init__(application=app, title="Darpan", default_width=480, default_height=680)
         self.cfg = config.load()
         self.reveal = False
         self.serve_url = None
@@ -210,7 +210,7 @@ class Window(Adw.ApplicationWindow):
     def on_status_action(self, btn):
         label = btn.get_label()
         if label == "Start":
-            _bg(lambda: subprocess.run(["systemctl", "--user", "start", "porthole-net.service", "porthole.service"]),
+            _bg(lambda: subprocess.run(["systemctl", "--user", "start", "darpan-net.service", "darpan.service"]),
                 lambda _r: self.refresh() and False)
         elif label == "Sign in":
             btn.set_sensitive(False)
@@ -315,6 +315,6 @@ class App(Adw.Application):
 
 def main():
     config.ensure_dirs()
-    GLib.set_prgname(APP_ID)          # WM_CLASS → matches dev.porthole.Porthole.desktop
-    GLib.set_application_name("Porthole")
+    GLib.set_prgname(APP_ID)          # WM_CLASS → matches dev.darpan.Darpan.desktop
+    GLib.set_application_name("Darpan")
     return App().run([])

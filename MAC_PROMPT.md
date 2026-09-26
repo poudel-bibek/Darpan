@@ -1,8 +1,8 @@
-# Build the Porthole macOS app
+# Build the Darpan macOS app
 
-You are a Claude instance on the owner's Mac, in a clone of `github.com/OWNER/porthole`
+You are a Claude instance on the owner's Mac, in a clone of `github.com/OWNER/darpan`
 (private). The Linux host — the machine being controlled — is finished and running. Your job is
-the **native macOS client** in `mac/`, shipped as `dist/Porthole.dmg` and attached to the GitHub
+the **native macOS client** in `mac/`, shipped as `dist/Darpan.dmg` and attached to the GitHub
 release. The owner uses it from home to work on a Linux workstation that trains ML models, so it
 must feel instant for typing and cost almost nothing. Work autonomously; post short progress
 updates; ask the owner only for the things listed in §0.
@@ -17,12 +17,12 @@ Run and report: `sw_vers`, `uname -m`, `xcode-select -p`, `swift --version`, `gh
   `gh auth login` (they can type `! gh auth login` in Claude Code).
 * No git identity → ask the owner for name/email; never invent one.
 * Ask the owner for the **host address** (`https://<machine>.<tailnet>.ts.net`) and **password**
-  (shown in the Porthole window on Linux, or `porthole status`). Check reachability with
+  (shown in the Darpan window on Linux, or `darpan status`). Check reachability with
   `curl -sS <address>/api/info`. If it fails: Tailscale must be running and signed in on this
   Mac with the same account, and the Linux setup steps in `README.md` must be done — tell the
   owner which one is missing, then continue with everything that doesn't need the host.
 * **Never write the address or password into any file in the repo.** For live tests read them
-  from environment variables (`PORTHOLE_URL`, `PORTHOLE_PASSWORD`) or the Keychain.
+  from environment variables (`DARPAN_URL`, `DARPAN_PASSWORD`) or the Keychain.
 
 ## 1. Read first (in this order)
 
@@ -46,10 +46,10 @@ Deployment target: macOS 13, or 12 if the owner's Mac is older (nothing below ne
   certificate validation (valid Let's Encrypt cert on `*.ts.net`), `NWProtocolTCP.Options.noDelay
   = true`. Omit the `Origin` header. Refuse plain `ws://` except to `localhost`.
 * **Auth** — PBKDF2-HMAC-SHA256 via CommonCrypto `CCKeyDerivationPBKDF`, HMAC via CryptoKit,
-  label `porthole-auth-v1`; password NFC-normalised (`precomposedStringWithCanonicalMapping`).
+  label `darpan-auth-v1`; password NFC-normalised (`precomposedStringWithCanonicalMapping`).
   Keychain stores the **derived key** (never the password) + salt + iter per host
   (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`); reuse it while `hello` carries the same
-  salt/iter, otherwise ask for the password again. `auth.client` = `"Porthole for Mac 1.0.0 on
+  salt/iter, otherwise ask for the password again. `auth.client` = `"Darpan for Mac 1.0.0 on
   macOS <version>"`, `ver` = `"1.0.0"`. Known-answer test:
 
   ```text
@@ -57,7 +57,7 @@ Deployment target: macOS 13, or 12 if the owner's Mac is older (nothing below ne
   salt      c2FsdHNhbHRzYWx0c2FsdA==        iter 200000
   nonce     AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
   key (hex) a58c2cefe9e01e0464dad113872d0867db9889f547e517fb39ce046b3506a845
-  proof     wyZGzNpll1CwX3ZcThEoUAHMf5d8zkgbExTI/lYsAEE=
+  proof     AG+vUe6kdYyGhR8kh0ntx1CxNRsbCrdjnHuzYug1Sgg=
   ```
 * **Video** — parse the 16-byte VIDEO header; drop frames whose stream id isn't the latest
   `stream`. Split Annex-B NALs; on key frames build a `CMVideoFormatDescription` with
@@ -146,8 +146,8 @@ let keyCodeMap: [UInt16: String] = [
 
 ```text
 mac/Package.swift
-mac/Sources/PortholeCore/   protocol types, auth, Annex-B/AVCC, key map — no UI, testable
-mac/Sources/Porthole/       the app (AppKit/SwiftUI, VideoToolbox, input, UI)
+mac/Sources/DarpanCore/   protocol types, auth, Annex-B/AVCC, key map — no UI, testable
+mac/Sources/Darpan/       the app (AppKit/SwiftUI, VideoToolbox, input, UI)
 mac/Sources/SelfTest/       test runner executable (see §7) — or Tests/ if XCTest exists
 mac/build.sh                one command: test → build → .app → sign → .dmg
 mac/assets/logo-1024.png    icon source (exists)
@@ -160,17 +160,17 @@ mac/NOTES.md                anything the Linux side should fix (create only if n
 1. Run the self-tests; stop on failure.
 2. `swift build -c release` (universal `--arch arm64 --arch x86_64` only if the toolchain
    supports it; otherwise the Mac's own arch is fine).
-3. Assemble `dist/Porthole.app`: `Contents/MacOS/Porthole`, `Contents/Info.plist`
-   (`CFBundleIdentifier` `dev.porthole.Porthole`, `CFBundleName` Porthole,
+3. Assemble `dist/Darpan.app`: `Contents/MacOS/Darpan`, `Contents/Info.plist`
+   (`CFBundleIdentifier` `dev.darpan.Darpan`, `CFBundleName` Darpan,
    `CFBundleShortVersionString` 1.0.0, `CFBundleVersion` 1, `LSMinimumSystemVersion`,
    `NSHighResolutionCapable` true, `CFBundleIconFile` AppIcon), `Contents/Resources/AppIcon.icns`
    built from `mac/assets/logo-1024.png` with `sips` + `iconutil`.
-4. Sign: if `PORTHOLE_SIGN_ID` names a certificate in the keychain use it, else ad-hoc
+4. Sign: if `DARPAN_SIGN_ID` names a certificate in the keychain use it, else ad-hoc
    (`codesign --force --deep -s -`). A stable self-signed "code signing"
    certificate (Keychain Access → Certificate Assistant) keeps the Accessibility permission across
    rebuilds; with ad-hoc signing macOS asks again after every rebuild — say so in the README.
-5. DMG: stage `Porthole.app` + a symlink to `/Applications`, then
-   `hdiutil create -volname Porthole -srcfolder <stage> -ov -format UDZO dist/Porthole.dmg`.
+5. DMG: stage `Darpan.app` + a symlink to `/Applications`, then
+   `hdiutil create -volname Darpan -srcfolder <stage> -ov -format UDZO dist/Darpan.dmg`.
 6. Print the DMG path and its `shasum -a 256`.
 
 Everything must work with only the Command Line Tools installed.
@@ -183,7 +183,7 @@ Everything must work with only the Command Line Tools installed.
   real SPS/PPS, key-map sanity, wheel-sign conversion.
 * **Live, against the owner's host**: first open the address in Safari on this Mac to confirm the
   host works, then your app. Check: video appears, typing latency (stats), mouse and scroll
-  (direction!), ⌘C/⌘V both ways, file drop lands in `~/Downloads/Porthole/` on Linux, resolution
+  (direction!), ⌘C/⌘V both ways, file drop lands in `~/Downloads/Darpan/` on Linux, resolution
   change and that it reverts on disconnect, minimise → host stops encoding (stats stop), reconnect
   after toggling Wi-Fi, wrong password shows the error. Don't leave the host in a changed
   resolution when you finish.
@@ -206,25 +206,25 @@ Everything must work with only the Command Line Tools installed.
 
 ```bash
 bash mac/build.sh
-gh release view v1.0.0 >/dev/null 2>&1 || gh release create v1.0.0 --title "Porthole 1.0.0" --notes ""
-gh release upload v1.0.0 dist/Porthole.dmg --clobber
+gh release view v1.0.0 >/dev/null 2>&1 || gh release create v1.0.0 --title "Darpan 1.0.0" --notes ""
+gh release upload v1.0.0 dist/Darpan.dmg --clobber
 gh release view v1.0.0 --json body -q .body > /tmp/notes.md   # then append the Mac section:
 gh release edit v1.0.0 --notes-file /tmp/notes.md
 ```
-The appended Mac section: install (open the DMG, drag Porthole to Applications), first launch of a
+The appended Mac section: install (open the DMG, drag Darpan to Applications), first launch of a
 downloaded copy (System Settings → Privacy & Security → *Open Anyway*, or
-`xattr -dr com.apple.quarantine /Applications/Porthole.app`), Accessibility permission for
+`xattr -dr com.apple.quarantine /Applications/Darpan.app`), Accessibility permission for
 shortcut capture, and the DMG's SHA-256. Put the same install notes in the README's Mac section.
 
 ## 10. Definition of done
 
-- [ ] `bash mac/build.sh` passes self-tests and produces `dist/Porthole.dmg` from a clean clone
+- [ ] `bash mac/build.sh` passes self-tests and produces `dist/Darpan.dmg` from a clean clone
 - [ ] every live check in §7 passes against the owner's host (or the owner was told which
       couldn't be run and why)
 - [ ] `README.md` Mac section + `mac/README.md` written
 - [ ] all work committed and pushed to `main`; working tree clean; no secrets committed
 - [ ] DMG uploaded to release v1.0.0 and the release notes updated
-- [ ] the owner has the app: offer to copy `dist/Porthole.app` to `/Applications`
+- [ ] the owner has the app: offer to copy `dist/Darpan.app` to `/Applications`
 
 ## 11. Final report to the owner
 

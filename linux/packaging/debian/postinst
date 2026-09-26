@@ -9,14 +9,14 @@ each_user() {  # run "$@" as the systemd user manager of every logged-in user
 }
 case "$1" in
 configure)
-    python3 -m compileall -q -f /opt/porthole/host >/dev/null 2>&1 || true
-    systemctl --global enable porthole-net.service porthole.service >/dev/null 2>&1 || true
+    python3 -m compileall -q -f /opt/darpan/host >/dev/null 2>&1 || true
+    systemctl --global enable darpan-net.service darpan.service >/dev/null 2>&1 || true
     each_user daemon-reload
-    each_user restart porthole-net.service
-    each_user restart porthole.service
+    each_user restart darpan-net.service
+    each_user restart darpan.service
     echo
-    echo "  Porthole is installed."
-    echo "  Finish setup: open \"Porthole\" from your apps, or run:  porthole setup"
+    echo "  Darpan is installed."
+    echo "  Finish setup: open \"Darpan\" from your apps, or run:  darpan setup"
     echo
     ;;
 esac

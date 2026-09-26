@@ -11,7 +11,7 @@ import os
 import zlib
 import struct
 
-log = logging.getLogger("porthole.x11")
+log = logging.getLogger("darpan.x11")
 
 _x11 = ctypes.CDLL("libX11.so.6")
 _xtst = ctypes.CDLL("libXtst.so.6")

@@ -1,0 +1,17 @@
+[Unit]
+Description=Darpan private network (bundled Tailscale, userspace, no root)
+Documentation=https://tailscale.com/kb/1112/userspace-networking
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment=TS_LOGS_DIR=%h/.local/share/darpan/tailscale
+ExecStartPre=/opt/darpan/migrate
+ExecStartPre=/usr/bin/mkdir -p %t/darpan %h/.local/share/darpan/tailscale
+ExecStart=/opt/darpan/tailscale/tailscaled --tun=userspace-networking --statedir=%h/.local/share/darpan/tailscale --socket=%t/darpan/tailscaled.sock --port=0 --no-logs-no-support
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

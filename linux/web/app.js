@@ -1,4 +1,4 @@
-/* Porthole — browser client. Speaks PROTOCOL.md; no dependencies. */
+/* Darpan — browser client. Speaks PROTOCOL.md; no dependencies. */
 'use strict';
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -16,9 +16,9 @@
   const readJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
   const writeJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
   const forget = (k) => { try { localStorage.removeItem(k); } catch { /* ignore */ } };
-  const settings = Object.assign({}, DEFAULTS, readJSON('porthole.settings') || {});
-  const saveSettings = () => writeJSON('porthole.settings', settings);
-  const KEY_SLOT = 'porthole.key.' + location.host;
+  const settings = Object.assign({}, DEFAULTS, readJSON('darpan.settings') || {});
+  const saveSettings = () => writeJSON('darpan.settings', settings);
+  const KEY_SLOT = 'darpan.key.' + location.host;
 
   // ------------------------------------------------------------ helpers
   const now = () => performance.now();
@@ -49,7 +49,7 @@
   }
   async function makeProof(key, nonceB64) {
     const k = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const label = TE.encode('porthole-auth-v1');
+    const label = TE.encode('darpan-auth-v1');
     const nonce = b64dec(nonceB64);
     const msg = new Uint8Array(label.length + nonce.length);
     msg.set(label);
@@ -102,7 +102,7 @@
     frames: 0, decodeMs: 0, fpsN: 0, bytesN: 0, fps: 0, mbps: 0,
     remoteClip: '', clipSeen: false, lastSentClip: null, modes: null, cursorId: null, cssScale: 1,
   };
-  window.__porthole = S;   // live counters for automated tests
+  window.__darpan = S;   // live counters for automated tests
 
   function send(obj) {
     const ws = S.ws;
@@ -162,7 +162,7 @@
       if (S.password == null) { forget(KEY_SLOT); S.key = null; showLogin('Saved sign-in expired — enter the password.'); }
       else showLogin(m.retry ? `Wrong password. Locked for ${m.retry} s.` : 'Wrong password.', true);
     } else if (r === 'locked') showLogin(`Too many attempts. Try again in ${m.retry} s.`, true);
-    else if (r === 'no_password') showLogin('No password is set on the remote computer. Run “porthole setup” there.', true);
+    else if (r === 'no_password') showLogin('No password is set on the remote computer. Run “darpan setup” there.', true);
     else if (r === 'busy') showLogin('Too many people are connected right now.', true);
     else showLogin('Access denied.', true);
   };
@@ -817,7 +817,7 @@
     try {
       S.info = await (await fetch('/api/info', { cache: 'no-store' })).json();
       $('hostName').textContent = S.info.host;
-      document.title = 'Porthole — ' + S.info.host;
+      document.title = 'Darpan — ' + S.info.host;
     } catch { $('hostName').textContent = location.host; }
     if (!window.isSecureContext || !('VideoDecoder' in window)) {
       $('insecure').hidden = false;

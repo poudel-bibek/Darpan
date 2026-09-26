@@ -18,7 +18,7 @@ from .clipboard import Clipboard
 from .screen import Screen
 from .x11 import BUTTONS, X11, png_rgba
 
-log = logging.getLogger("porthole.session")
+log = logging.getLogger("darpan.session")
 
 VHDR = struct.Struct(">BBHIQ")
 FILE_HDR = struct.Struct(">BI")
@@ -38,7 +38,7 @@ def _downloads_dir():
                     d = os.path.expandvars(line.split("=", 1)[1].strip().strip('"'))
     except OSError:
         pass
-    return os.path.join(d or os.path.expanduser("~/Downloads"), "Porthole")
+    return os.path.join(d or os.path.expanduser("~/Downloads"), "Darpan")
 
 
 class RateControl:

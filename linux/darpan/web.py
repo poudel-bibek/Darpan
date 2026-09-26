@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 from . import config
 
-log = logging.getLogger("porthole.web")
+log = logging.getLogger("darpan.web")
 
 _GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_HEADER = 16 * 1024
@@ -37,11 +37,11 @@ _TS_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 
 
 class Static:
-    """Web client files, loaded once. In dev mode (PORTHOLE_DEV=1) re-read on change."""
+    """Web client files, loaded once. In dev mode (DARPAN_DEV=1) re-read on change."""
 
     def __init__(self, root):
         self.root = root
-        self.dev = bool(os.environ.get("PORTHOLE_DEV"))
+        self.dev = bool(os.environ.get("DARPAN_DEV"))
         self.files = {}
         self._load()
 

@@ -1,4 +1,4 @@
-# Porthole — wire protocol, version 1
+# Darpan — wire protocol, version 1
 
 This is the contract between the **host** (Linux machine being controlled) and any
 **client** (the browser client served by the host, or a native macOS app).
@@ -19,7 +19,7 @@ the host encodes fewer frames instead of buffering stale ones.
 * The host serves the browser client at `/` over the same origin.
 * `GET /api/info` (no auth) returns JSON:
   ```json
-  {"app":"porthole","ver":"1.0.0","proto":1,"host":"workstation",
+  {"app":"darpan","ver":"1.0.0","proto":1,"host":"workstation",
    "url":"https://workstation.example.ts.net"}
   ```
   `url` is the canonical HTTPS address when known, else `null`.
@@ -48,7 +48,7 @@ the host encodes fewer frames instead of buffering stale ones.
 
 1. Immediately after the WebSocket opens, the host sends:
    ```json
-   {"t":"hello","proto":1,"app":"porthole","ver":"1.0.0","host":"workstation",
+   {"t":"hello","proto":1,"app":"darpan","ver":"1.0.0","host":"workstation",
     "kdf":{"alg":"pbkdf2-sha256","salt":"<base64>","iter":200000},
     "nonce":"<base64 of 32 random bytes>"}
    ```
@@ -56,7 +56,7 @@ the host encodes fewer frames instead of buffering stale ones.
    ```
    pw    = UTF-8 bytes of the password after Unicode NFC normalisation
    key   = PBKDF2-HMAC-SHA256(pw, base64decode(salt), iter, 32 bytes)
-   proof = HMAC-SHA256(key, UTF-8("porthole-auth-v1") || base64decode(nonce))
+   proof = HMAC-SHA256(key, UTF-8("darpan-auth-v1") || base64decode(nonce))
    ```
    and sends
    ```json
@@ -217,10 +217,10 @@ key-up for keys pressed while ⌘ is held: send those as an immediate down+up pa
    `[0x02][uint32 id, big-endian][up to 256 KiB of data]`.
 4. Host acks progress `{"t":"fack","id":1,"n":<total bytes received>}`. Keep at most
    1 MiB un-acked.
-5. When `size` bytes have arrived: `{"t":"fdone","id":1,"path":"/home/…/Downloads/Porthole/report.pdf"}`.
+5. When `size` bytes have arrived: `{"t":"fdone","id":1,"path":"/home/…/Downloads/Darpan/report.pdf"}`.
    Client may abort with `{"t":"fabort","id":1}`.
 
-Files land in `~/Downloads/Porthole/` (name sanitised, never overwrites: ` (1)` suffix).
+Files land in `~/Downloads/Darpan/` (name sanitised, never overwrites: ` (1)` suffix).
 
 ---
 

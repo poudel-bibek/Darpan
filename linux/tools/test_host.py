@@ -124,7 +124,7 @@ class WS:
 def proof_for(password, hello):
     salt = base64.b64decode(hello["kdf"]["salt"])
     key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, hello["kdf"]["iter"], 32)
-    return base64.b64encode(hmac.new(key, b"porthole-auth-v1" + base64.b64decode(hello["nonce"]), hashlib.sha256).digest()).decode()
+    return base64.b64encode(hmac.new(key, b"darpan-auth-v1" + base64.b64decode(hello["nonce"]), hashlib.sha256).digest()).decode()
 
 
 def decode_frames(frames, png_path):
@@ -164,7 +164,7 @@ async def run(args, tmp, probe_log):
         results.append((name, bool(cond)))
         print("  %s %-34s %s" % ("PASS" if cond else "FAIL", name, detail), flush=True)
 
-    pw = open(os.path.join(tmp, "config", "porthole", "password.txt")).read().strip()
+    pw = open(os.path.join(tmp, "config", "darpan", "password.txt")).read().strip()
 
     async def pump(ws, seconds, want=None):
         """Read for `seconds`, acking every frame. Returns (frames, first text msg of type `want`)."""
@@ -355,11 +355,11 @@ def main():
     ap.add_argument("--display", default=None, help="default: a free display chosen by Xvfb")
     ap.add_argument("--port", type=int, default=47490)
     ap.add_argument("--keep", action="store_true")
-    ap.add_argument("--root", default=ROOT, help="tree to test (e.g. an extracted .deb's opt/porthole)")
+    ap.add_argument("--root", default=ROOT, help="tree to test (e.g. an extracted .deb's opt/darpan)")
     ap.add_argument("--serve", action="store_true", help="set everything up, print JSON, wait (for browser tests)")
     args = ap.parse_args()
     args.probe_w, args.probe_h = 1280, 720
-    tmp = tempfile.mkdtemp(prefix="porthole-test-")
+    tmp = tempfile.mkdtemp(prefix="darpan-test-")
     signal.signal(signal.SIGTERM, lambda *a: sys.exit(2))   # make sure `finally` cleanup runs
     procs = []
     if not args.display:
@@ -382,12 +382,12 @@ def main():
                                  stdout=open(probe_log, "w"), stderr=subprocess.STDOUT)
         procs.append(probe)
         host_log = open(os.path.join(tmp, "host.log"), "w")
-        host = subprocess.Popen([sys.executable, "-m", "porthole", "serve", "--port", str(args.port), "-v"], env=env,
+        host = subprocess.Popen([sys.executable, "-m", "darpan", "serve", "--port", str(args.port), "-v"], env=env,
                                 stdout=host_log, stderr=subprocess.STDOUT, cwd=args.root)
         procs.append(host)
         for _ in range(50):
             time.sleep(0.2)
-            if os.path.exists(os.path.join(tmp, "config", "porthole", "password.txt")):
+            if os.path.exists(os.path.join(tmp, "config", "darpan", "password.txt")):
                 try:
                     import socket
                     socket.create_connection(("127.0.0.1", args.port), 0.2).close()
@@ -395,14 +395,14 @@ def main():
                 except OSError:
                     pass
         if args.serve:
-            pw = open(os.path.join(tmp, "config", "porthole", "password.txt")).read().strip()
+            pw = open(os.path.join(tmp, "config", "darpan", "password.txt")).read().strip()
             print(json.dumps({"port": args.port, "password": pw, "display": args.display, "probe_log": probe_log,
                               "tmp": tmp, "host_log": os.path.join(tmp, "host.log")}), flush=True)
             signal.signal(signal.SIGINT, lambda *a: sys.exit(0))
             while host.poll() is None:
                 time.sleep(0.5)
             return 1
-        print("Porthole host test on %s (tmp %s)" % (args.display, tmp))
+        print("Darpan host test on %s (tmp %s)" % (args.display, tmp))
         good, _ = asyncio.run(run(args, tmp, probe_log))
         print("\nRESULT:", "ALL PASS" if good else "FAILURES")
         return 0 if good else 1

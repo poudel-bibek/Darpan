@@ -15,7 +15,7 @@ import unicodedata
 from . import config
 
 ITERATIONS = 200_000
-LABEL = b"porthole-auth-v1"
+LABEL = b"darpan-auth-v1"
 _ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"   # no 0/o/1/l look-alikes
 
 

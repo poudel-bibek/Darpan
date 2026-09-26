@@ -1,11 +1,11 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: porthole
+Upstream-Name: darpan
 
 Files: *
 Copyright: 2026 The Darpan authors
 License: MIT
 
-Files: opt/porthole/tailscale/*
+Files: opt/darpan/tailscale/*
 Copyright: 2020 Tailscale Inc & AUTHORS
 License: BSD-3-Clause
  Redistribution and use in source and binary forms, with or without

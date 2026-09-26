@@ -4,15 +4,15 @@ import os
 import socket
 import tempfile
 
-APP = "porthole"
+APP = "darpan"
 VERSION = "1.0.0"
 PROTO = 1
 
-# Source tree (linux/) and installed tree (/opt/porthole) share the same layout:
-#   <root>/porthole/  <root>/native/porthole-capture  <root>/web/  <root>/tailscale/
-ROOT = os.environ.get("PORTHOLE_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Source tree (linux/) and installed tree (/opt/darpan) share the same layout:
+#   <root>/darpan/  <root>/native/darpan-capture  <root>/web/  <root>/tailscale/
+ROOT = os.environ.get("DARPAN_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(ROOT, "web")
-CAPTURE_BIN = os.path.join(ROOT, "native", "porthole-capture")
+CAPTURE_BIN = os.path.join(ROOT, "native", "darpan-capture")
 TAILSCALE_DIR = os.path.join(ROOT, "tailscale")
 
 DEFAULTS = {

@@ -3,7 +3,7 @@
     start()  credit(n)  keyframe()  bitrate(kbps)  fps(n)  refresh()  stop()
     callbacks: on_start(w, h, encoder)  on_frame(flags, ts_us, cap_us, enc_us, data)  on_exit(reason)
 
-NvencCapture drives native/porthole-capture (damage-driven XShm -> CUDA -> NVENC, ~0 CPU).
+NvencCapture drives native/darpan-capture (damage-driven XShm -> CUDA -> NVENC, ~0 CPU).
 X264Capture is the safety net when NVENC is unavailable (e.g. the NVIDIA driver is being
 updated): GStreamer ximagesrc + x264, same flow control, more CPU.
 """
@@ -16,7 +16,7 @@ import time
 
 from . import config
 
-log = logging.getLogger("porthole.capture")
+log = logging.getLogger("darpan.capture")
 
 _REC = struct.Struct("<IIQII")
 FLAG_KEY, FLAG_REFRESH, FLAG_INFO = 0x1, 0x2, 0x80000000

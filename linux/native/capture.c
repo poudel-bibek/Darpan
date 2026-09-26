@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// porthole-capture — damage-driven X11 screen capture + NVIDIA NVENC H.264 encoder for Porthole.
+// darpan-capture — damage-driven X11 screen capture + NVIDIA NVENC H.264 encoder for Darpan.
 //
 // Why this exists: the host must be close to free while the machine trains models.
 //   * Nothing runs unless the X server reports damage (the screen changed) — an idle
@@ -10,7 +10,7 @@
 //   * Pixels go X server -> XShm segment (pinned for DMA) -> CUDA buffer -> NVENC. There
 //     are no CPU pixel copies and no CPU colour conversion; NVENC converts BGRx itself.
 //
-// I/O protocol with the daemon (porthole/capture.py):
+// I/O protocol with the daemon (darpan/capture.py):
 //   stdout: records  [u32 len][u32 flags][u64 capture_ts_us][u32 cap_us][u32 enc_us] + len bytes
 //           (native little-endian). flags: bit0 key frame, bit1 refresh, bit31 JSON info record.
 //           The timestamp is CLOCK_MONOTONIC in µs (same clock as Python's time.monotonic()).
@@ -54,7 +54,7 @@
 static void logf_(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    fputs("porthole-capture: ", stderr);
+    fputs("darpan-capture: ", stderr);
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
     va_end(ap);
@@ -277,7 +277,7 @@ static int encoder_open(Encoder *e, int gpu, int preset, int matrix601) {
     // We never launch a kernel, so CUDA's default per-thread stack reservation (sized for every
     // resident thread on every SM), device malloc heap and printf buffer are pure waste of VRAM
     // that a training job could use. Shrink them to the minimum.
-    if (!getenv("PORTHOLE_CUDA_DEFAULT_LIMITS")) {
+    if (!getenv("DARPAN_CUDA_DEFAULT_LIMITS")) {
         cu.CtxSetLimit(0x00 /* STACK_SIZE */, 0);
         cu.CtxSetLimit(0x01 /* PRINTF_FIFO_SIZE */, 4096);
         cu.CtxSetLimit(0x02 /* MALLOC_HEAP_SIZE */, 0);
@@ -311,7 +311,7 @@ static int encoder_open(Encoder *e, int gpu, int preset, int matrix601) {
     h->sliceModeData = 0;
     h->chromaFormatIDC = 1;
     h->level = NV_ENC_LEVEL_AUTOSELECT;
-    if (!getenv("PORTHOLE_NVENC_DEFAULT_REFS")) {
+    if (!getenv("DARPAN_NVENC_DEFAULT_REFS")) {
         // Screen content is predicted from the previous frame; a single reference keeps the
         // decoded-picture buffer (and NVENC's VRAM) minimal and suits zero-latency decoders.
         h->maxNumRefFrames = 1;
@@ -532,7 +532,7 @@ static void on_signal(int s) { (void)s; g_quit = 1; }
 
 static void usage(void) {
     fprintf(stderr,
-            "usage: porthole-capture [--display :1] [--fps 60] [--bitrate KBPS] [--credits N]\n"
+            "usage: darpan-capture [--display :1] [--fps 60] [--bitrate KBPS] [--credits N]\n"
             "                  [--preset 1-7] [--vbv-frames N] [--gpu N] [--matrix 709|601]\n"
             "                  [--probe] [--bench N]\n");
 }

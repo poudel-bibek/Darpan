@@ -1,4 +1,4 @@
-# Porthole for Mac
+# Darpan for Mac
 
 Native macOS client (Swift, VideoToolbox, no dependencies). It is built by a Claude instance
 running on the Mac from the instructions in [`../MAC_PROMPT.md`](../MAC_PROMPT.md), against the
