@@ -34,8 +34,9 @@ Install and first launch: see *Mac app* in the [main README](../README.md#mac-ap
   Accessibility. They're only taken while the viewer is the front window.
 * **Clipboard**: text copied on either side is available on the other. Items that password
   managers mark as concealed are only sent when you paste them with ⌘V.
-* **Files**: drop files on the window (or use the toolbar). They land on the remote
-  computer's desktop. Folders aren't sent; zip them first.
+* **Files**: the toolbar's **Files** button (or Connection → Files…) opens two panes, this Mac on the
+  left and the remote computer on the right. Select files or folders, then **Send** or **Receive**, or
+  drag between the panes. Files dropped on the viewer land on the remote computer's desktop.
 * **Updates**: once a day while it's open, Darpan checks GitHub for a newer release, and asks before
   installing it. It's the only request Darpan makes outside the tailnet. The ⚙︎ menu's *Check for
   Updates Automatically* turns it off; *Darpan → Check for Updates…* checks at once.
