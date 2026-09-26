@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Fails if tracked files (or, with --history, commit metadata) contain personal data.
+# Fails if tracked or new (untracked, not ignored) files, or with --history commit metadata, contain
+# personal data. New files count so a board message or source file is caught before it is committed.
 # Generic patterns: e-mail addresses, IPv4 addresses, home-directory paths, tailnet host names.
 # Personal terms (names, accounts, machine names…) go in .private-denylist (untracked, one
 # case-insensitive fixed string per line, # comments) so the list itself is never committed.
@@ -9,7 +10,7 @@ deny=.private-denylist
 found=0
 report() { echo "$1"; found=1; }
 
-files=$(git ls-files | grep -vE '^linux/native/third_party/|\.(png|jpg|ico|icns|a|so)$')
+files=$({ git ls-files; git ls-files --others --exclude-standard; } | grep -vE '^linux/native/third_party/|\.(png|jpg|ico|icns|a|so)$')
 # e-mail addresses, except placeholders and GitHub no-reply addresses
 while IFS= read -r m; do report "email      $m"; done < <(grep -nIoE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' $files \
   | grep -vE '@(darpan\.invalid|example\.(com|org)|users\.noreply\.github\.com)$')
