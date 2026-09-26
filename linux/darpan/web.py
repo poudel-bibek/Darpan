@@ -313,10 +313,10 @@ class Server:
             self._simple(writer, 400, "Bad Request")
             return writer.close()
         origin = headers.get("origin")
-        if origin:
+        if origin is not None:            # browsers always send one; native clients send none
             o = urlsplit(origin).netloc.lower()
-            allowed = {headers.get("host", "").lower(), headers.get("x-forwarded-host", "").lower()}
-            if o not in allowed:
+            allowed = {h for h in (headers.get("host", "").lower(), headers.get("x-forwarded-host", "").lower()) if h}
+            if not o or o not in allowed:  # rejects "null" (sandboxed iframes, data: URLs) too
                 log.warning("rejected WebSocket from origin %s", origin)
                 self._simple(writer, 403, "Forbidden")
                 return writer.close()

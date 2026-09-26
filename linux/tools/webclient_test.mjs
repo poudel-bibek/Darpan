@@ -169,6 +169,21 @@ try {
 
   // hidden tab → host stops encoding; visible → resumes with a fresh key frame
   await call('Emulation.setFocusEmulationEnabled', { enabled: true }, sid).catch(() => {});
+  // host restart (it says bye + closes 4004): the client must come back by itself
+  const f0 = await ev('window.__darpan.frames');
+  process.kill(host.pid, 'SIGUSR1');
+  let down = false, back = false;
+  for (let i = 0; i < 60 && !back; i++) {
+    await sleep(250);
+    const c = await ev('window.__darpan.connected');
+    if (!c) down = true;
+    else if (down) back = true;
+  }
+  await sleep(1500);
+  const f1 = await ev('window.__darpan.frames');
+  ok('reconnects after host restart', down && back && f1 > f0 && await ev(`document.getElementById('login').hidden`),
+     `down=${down} back=${back} frames ${f0}→${f1}`);
+
   const hostLog = () => readFileSync(env.host_log, 'utf8');
   ok('no host errors', !/Traceback|ERROR|E tc/.test(hostLog()), hostLog().split('\n').filter((l) => /Traceback|E tc/.test(l)).slice(0, 3).join(' | '));
 } catch (e) {

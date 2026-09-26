@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import struct
+import threading
 import time
 
 from . import config
@@ -29,7 +30,12 @@ async def probe_nvenc(gpu=0):
         proc = await asyncio.create_subprocess_exec(config.CAPTURE_BIN, "--probe", "--gpu", str(gpu),
                                                     stdout=asyncio.subprocess.PIPE,
                                                     stderr=asyncio.subprocess.PIPE)
-        out, err = await asyncio.wait_for(proc.communicate(), 20)
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), 20)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise
         info = json.loads(out.decode() or "{}")
         if info.get("nvenc"):
             return info.get("gpu") or "NVIDIA GPU"
@@ -63,6 +69,10 @@ class NvencCapture(_Source):
         self.proc = await asyncio.create_subprocess_exec(
             *args, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=None,
             limit=1 << 20)
+        if self.stopped:                  # stop() raced the spawn: don't leave an encoder behind
+            self.proc.kill()
+            await self.proc.wait()
+            return
         self.task = asyncio.get_running_loop().create_task(self._read())
 
     async def _read(self):
@@ -150,6 +160,7 @@ class X264Capture(_Source):
         self.pipe = None
         self.loop = None
         self._t_frame = 0.0
+        self._lock = threading.Lock()     # credits: GStreamer streaming thread vs asyncio thread
 
     async def start(self):
         import gi
@@ -181,10 +192,11 @@ class X264Capture(_Source):
     def _gate(self, pad, info):
         Gst = self.Gst
         now = time.monotonic()
-        if self.credits <= 0 or now - self._t_frame < 1.0 / max(1, self.fps_):
-            return Gst.PadProbeReturn.DROP
-        self._t_frame = now
-        self.credits -= 1
+        with self._lock:
+            if self.credits <= 0 or now - self._t_frame < 1.0 / max(1, self.fps_):
+                return Gst.PadProbeReturn.DROP
+            self._t_frame = now
+            self.credits -= 1
         if not self._started:
             self._started = True
             caps = pad.get_current_caps().get_structure(0)
@@ -221,7 +233,8 @@ class X264Capture(_Source):
             await asyncio.sleep(0.25)
 
     def credit(self, n=1):
-        self.credits = min(64, self.credits + n)
+        with self._lock:
+            self.credits = min(64, self.credits + n)
 
     def keyframe(self):
         Gst = self.Gst
@@ -239,7 +252,8 @@ class X264Capture(_Source):
         pass  # ximagesrc produces frames continuously
 
     def pause(self):
-        self.credits = 0
+        with self._lock:
+            self.credits = 0
 
     async def stop(self):
         self.stopped = True

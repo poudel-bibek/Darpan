@@ -92,14 +92,18 @@ class Upload:
     def __init__(self, fid, name, size):
         self.fid, self.size, self.n = fid, size, 0
         name = os.path.basename(str(name).replace("\\", "/"))
-        name = re.sub(r"[\x00-\x1f\x7f]", "", name).strip()[:200]
+        name = re.sub(r"[\x00-\x1f\x7f]", "", name).strip()
+        name = name.encode()[:200].decode("utf-8", "ignore").strip()   # ≤ 200 bytes (NAME_MAX is 255)
         if name in ("", ".", ".."):
             name = "file"
         self.name = name
         self.dir = _downloads_dir()
         os.makedirs(self.dir, exist_ok=True)
-        self.tmp = os.path.join(self.dir, ".%s.%s.part" % (name[:60], secrets.token_hex(4)))
+        self.tmp = os.path.join(self.dir, ".darpan-upload-%s.part" % secrets.token_hex(6))
         self.f = open(self.tmp, "xb")
+        self.received = 0                  # bytes accepted from the socket (≥ n, the bytes on disk)
+        self.q = asyncio.Queue()           # chunks waiting for the writer; bounded by the client's window
+        self.task = None
 
     def write(self, data):
         self.f.write(data)
@@ -144,8 +148,11 @@ class Session:
         self.withhold = 0
         self.rc = None
         self.errors = collections.deque()
-        self.force_x264 = False
+        self.x264_until = 0.0            # NVENC failed (e.g. VRAM full): software until then, then retry
+        self.x264_backoff = 60.0
         self.last_kf = 0.0
+        self._kf_pending = False
+        self._cap_lock = asyncio.Lock()  # start/stop/restart never overlap (no orphaned encoders)
         self.stats = [0, 0, 0, 0]   # frames, bytes, cap_us, enc_us  (this second)
         self.last_stats = time.monotonic()
         # input
@@ -259,13 +266,13 @@ class Session:
     async def _close(self):
         hub = self.hub
         hub.sessions.discard(self)
+        writers = [u.task for u in self.uploads.values() if u.task]
         for t in list(self.tasks):
             t.cancel()
+        await asyncio.gather(*writers, return_exceptions=True)   # they delete their partial files
+        self.uploads.clear()
         await self._stop_capture()
         self._release_all()
-        for u in self.uploads.values():
-            u.abort()
-        self.uploads.clear()
         if self.authed:
             log.info("session %s closed", self.sid)
         await hub.session_ended()
@@ -317,10 +324,23 @@ class Session:
                     self.cap.bitrate(target)
 
     def on_kf(self, m):
-        now = time.monotonic()
-        if self.cap and now - self.last_kf > 1.0:
-            self.last_kf = now
+        # At most one forced key frame per second, but never drop a request: with an infinite
+        # GOP a dropped one would leave the client waiting for a key frame forever.
+        if not self.cap:
+            return
+        wait = self.last_kf + 1.0 - time.monotonic()
+        if wait <= 0:
+            self.last_kf = time.monotonic()
             self.cap.keyframe()
+        elif not self._kf_pending:
+            self._kf_pending = True
+
+            def later():
+                self._kf_pending = False
+                if self.cap:
+                    self.last_kf = time.monotonic()
+                    self.cap.keyframe()
+            asyncio.get_running_loop().call_later(wait, later)
 
     def on_ack(self, m):
         if m.get("id") != self.stream_id:
@@ -346,7 +366,11 @@ class Session:
             self.cap.credit(n)
 
     async def _start_capture(self, restart=False):
-        await self._stop_capture()
+        async with self._cap_lock:
+            await self._stop_capture_locked()
+            await self._start_capture_locked(restart)
+
+    async def _start_capture_locked(self, restart):
         hub, p = self.hub, self.params
         cfg = hub.cfg
         cap_kbps = p["bitrate"] or cfg["max_kbps"]
@@ -354,14 +378,15 @@ class Session:
             self.rc = RateControl(cfg["start_kbps"] if not p["bitrate"] else p["bitrate"], cap_kbps, p["fps"])
         self.window = self.rc.window()
         self.withhold = 0
-        use_nvenc = hub.encoder and not self.force_x264 and cfg["encoder"] != "x264"
+        use_nvenc = hub.encoder and time.monotonic() >= self.x264_until and cfg["encoder"] != "x264"
         cls = capture.NvencCapture if use_nvenc else capture.X264Capture
         kw = {"preset": cfg["preset"], "gpu": cfg["gpu"]} if use_nvenc else {}
+        fps = p["fps"] if use_nvenc else min(p["fps"], 30)   # software encoding: spare the CPU
         self.stream_id = (self.stream_id % 0xFFFF) + 1
         self.seq = 0
         self.inflight.clear()
         self.paused_at = None
-        self.cap = cls(hub.display, p["fps"], self.rc.kbps, self.window, on_start=self._cap_started,
+        self.cap = cls(hub.display, fps, self.rc.kbps, self.window, on_start=self._cap_started,
                        on_frame=self._cap_frame, on_exit=self._cap_exit, **kw)
         try:
             await self.cap.start()
@@ -371,12 +396,17 @@ class Session:
             self.cap = None
 
     async def _stop_capture(self):
+        async with self._cap_lock:
+            await self._stop_capture_locked()
+
+    async def _stop_capture_locked(self):
         cap, self.cap = self.cap, None
         if cap:
             await cap.stop()
 
     def _resume(self):
         self.paused_at = None
+        self.withhold = 0                 # fresh window: a shrink pending from before the pause is moot
         self.stream_id = (self.stream_id % 0xFFFF) + 1
         self.seq = 0
         self.inflight.clear()
@@ -413,15 +443,14 @@ class Session:
         if reason == "resize":
             delay = 0.3
         elif reason == "no-nvenc":
-            self.hub.encoder = None
+            self._fall_back_to_x264("NVENC unavailable (GPU memory full?)")
             delay = 0
         else:
             self.errors.append(now)
             while self.errors and now - self.errors[0] > 60:
                 self.errors.popleft()
-            if len(self.errors) >= 3 and not self.force_x264:
-                log.warning("session %s: NVENC keeps failing, switching to x264", self.sid)
-                self.force_x264 = True
+            if len(self.errors) >= 3 and time.monotonic() >= self.x264_until:
+                self._fall_back_to_x264("NVENC keeps failing")
             delay = min(5, len(self.errors))
         if self.paused_at is not None:
             # The viewer is hidden: leave the encoder down until it sends `start` again.
@@ -434,9 +463,20 @@ class Session:
                 await self._start_capture(restart=True)
         self._task(later())
 
+    def _fall_back_to_x264(self, why):
+        log.warning("session %s: %s — software encoding for %d s, then NVENC again", self.sid, why,
+                    self.x264_backoff)
+        self.x264_until = time.monotonic() + self.x264_backoff
+        self.x264_backoff = min(900.0, self.x264_backoff * 2)
+
     def tick(self, now):
         """Once a second: stats, congestion control, watchdog, idle encoder teardown."""
         if not self.cap:
+            return
+        if (self.cap.encoder == "x264" and self.hub.encoder and self.x264_until and now >= self.x264_until
+                and self.paused_at is None and not self._cap_lock.locked()):
+            self.x264_until = 0.0                      # retry NVENC (training may have freed VRAM)
+            self._task(self._start_capture(restart=True))
             return
         if self.paused_at is not None:
             if now - self.paused_at > 15:
@@ -453,7 +493,9 @@ class Session:
         self.window = win
         if self.inflight:
             oldest = min(t for t, _ in self.inflight.values())
-            if now - oldest > 3:         # acks stopped: never deadlock, restart from a key frame
+            # Acks stopped: resync from a key frame so we never deadlock — unless the socket itself
+            # is backed up (link stalled): queueing more frames would only add latency.
+            if now - oldest > 3 and self.ws.buffered < 256 * 1024:
                 log.info("session %s: ack watchdog, resyncing", self.sid)
                 k = len(self.inflight)
                 self.inflight.clear()
@@ -530,7 +572,7 @@ class Session:
     def on_txt(self, m):
         s = str(m.get("s", ""))[:4096]
         if s:
-            self.hub.type_text(s)
+            return self.hub.type_text(s)   # awaited: later keys can't overtake the text
 
     def on_clip(self, m):
         # Awaited by the receive loop: the host clipboard holds the new text before the next
@@ -571,14 +613,39 @@ class Session:
             self.ws.send_json({"t": "ferr", "id": fid, "e": str(e)})
             return
         self.uploads[fid] = up
+        up.task = self._task(self._upload_writer(up))
         self.ws.send_json({"t": "fok", "id": fid})
-        if size == 0:
-            self._finish_upload(up)
 
     def on_fabort(self, m):
         up = self.uploads.pop(int(m.get("id", 0)), None)
-        if up:
+        if up and up.task:
+            up.task.cancel()              # the writer removes the partial file
+
+    async def _upload_writer(self, up):
+        """Disk writes happen on a worker thread, so a slow disk (checkpointing, writeback) never
+        stalls video or input; each fack is sent once its bytes are actually written."""
+        loop = asyncio.get_running_loop()
+        try:
+            while up.n < up.size:
+                chunk = await up.q.get()
+                fut = loop.run_in_executor(None, up.write, chunk)
+                try:
+                    await asyncio.shield(fut)
+                except asyncio.CancelledError:
+                    try:
+                        await fut                  # let the in-flight write finish before cleanup
+                    except Exception:
+                        pass
+                    raise
+                self.ws.send_json({"t": "fack", "id": up.fid, "n": up.n})
+            self._finish_upload(up)
+        except OSError as e:
+            self.uploads.pop(up.fid, None)
             up.abort()
+            self.ws.send_json({"t": "ferr", "id": up.fid, "e": str(e)})
+        except asyncio.CancelledError:
+            up.abort()
+            raise
 
     def _on_binary(self, data):
         if len(data) < FILE_HDR.size or data[0] != 2:
@@ -587,26 +654,21 @@ class Session:
         up = self.uploads.get(fid)
         if not up:
             return
-        chunk = memoryview(data)[FILE_HDR.size:]
-        if up.n + len(chunk) > up.size:
-            self.uploads.pop(fid).abort()
+        chunk = data[FILE_HDR.size:]
+        if up.received + len(chunk) > up.size:
+            self.uploads.pop(fid)
+            up.task.cancel()
             self.ws.send_json({"t": "ferr", "id": fid, "e": "too much data"})
             return
-        try:
-            up.write(chunk)
-        except OSError as e:
-            self.uploads.pop(fid).abort()
-            self.ws.send_json({"t": "ferr", "id": fid, "e": str(e)})
-            return
-        self.ws.send_json({"t": "fack", "id": fid, "n": up.n})
-        if up.n == up.size:
-            self._finish_upload(up)
+        up.received += len(chunk)
+        up.q.put_nowait(chunk)
 
     def _finish_upload(self, up):
         self.uploads.pop(up.fid, None)
         try:
             path = up.finish()
         except OSError as e:
+            up.abort()                    # never leave a hidden full-size .part behind
             self.ws.send_json({"t": "ferr", "id": up.fid, "e": str(e)})
             return
         log.info("session %s uploaded %s (%d bytes)", self.sid, path, up.size)
@@ -646,6 +708,7 @@ class Hub:
         self._active = asyncio.Event()
         self._url_at = -1e9
         self._restore_keymap = None
+        self._typing = asyncio.Lock()
         self.loop = None
 
     async def start(self):
@@ -687,6 +750,7 @@ class Hub:
 
     async def handle(self, ws, source, headers):
         if self.unauthed >= 8:
+            ws.send_json({"t": "denied", "reason": "busy", "retry": 5})
             ws.close(4005, "busy")
             return
         s = Session(self, ws, source, headers)
@@ -740,11 +804,36 @@ class Hub:
             self.x.set_autorepeat(False)
             self._repeat_off = True
 
-    def type_text(self, s):
-        self.x.type_text(s, SHIFT_KC)
-        if self._restore_keymap:
-            self._restore_keymap.cancel()
-        self._restore_keymap = self.loop.call_later(0.3, self.x.restore_keymap)
+    async def type_text(self, s):
+        """Type arbitrary Unicode. Layout characters use their real key; others borrow one of the
+        spare keycodes. A repeated character reuses its keycode; once every spare is taken, pause
+        so apps consume the earlier keys before a keycode is rebound to something else."""
+        x = self.x
+        async with self._typing:
+            if self._restore_keymap:
+                self._restore_keymap.cancel()
+            bound, free = {}, x.spare_keycodes
+            for ch in s:
+                ks = x._keysym(ch)
+                k = x.layout_key(ks)
+                if k:
+                    x.tap(k[0], k[1], SHIFT_KC)
+                    continue
+                kc = bound.get(ks)
+                if kc is None:
+                    if not free:
+                        x.sync()
+                        await asyncio.sleep(0.05)
+                        bound, free = {}, x.spare_keycodes
+                        if not free:
+                            continue          # no spare keycodes at all on this server
+                    kc = free.pop()
+                    x.map_spare(kc, ks)
+                    x.sync()
+                    bound[ks] = kc
+                x.tap(kc, False, SHIFT_KC)
+            x.sync()
+            self._restore_keymap = self.loop.call_later(0.3, x.restore_keymap)
 
     # ---------------------------------------------------------------- cursor
     def _on_cursor(self):
@@ -797,8 +886,8 @@ class Hub:
         if self.clip_dirty:
             self.clip_dirty = False
             self.clip_text = await self.clip.read()
-        if self.clip_text:
-            session.ws.send_json({"t": "clip", "text": self.clip_text})
+        # Always, even when empty: clients skip the first clip after `ok` as the snapshot.
+        session.ws.send_json({"t": "clip", "text": self.clip_text or ""})
 
     async def set_clipboard(self, text, origin):
         if text == self.clip_text:
@@ -813,6 +902,8 @@ class Hub:
     def _on_resize(self, w, h):
         for s in self.sessions:
             s.ws.send_json({"t": "screen", "w": w, "h": h})
+            if s.cap and s.cap.encoder == "x264":      # ximagesrc keeps its old size: restart it
+                s._task(s._stop_capture() if s.paused_at is not None else s._start_capture(restart=True))
         self.loop.create_task(self.refresh_modes(broadcast=True))
 
     async def refresh_modes(self, send_to=None, broadcast=False):

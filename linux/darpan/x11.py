@@ -211,12 +211,20 @@ class X11:
             except Exception:
                 log.exception("X event handler failed")
 
+    def _after_roundtrip(self):
+        # A reply read may have pulled queued events into Xlib's buffer; the fd won't signal
+        # readable for them again, so handle them now.
+        if XPending(self.dpy):
+            self._drain()
+
     def screen_size(self):
         r = _Window()
         x, y = ctypes.c_int(), ctypes.c_int()
         w, h, bw, dp = ctypes.c_uint(), ctypes.c_uint(), ctypes.c_uint(), ctypes.c_uint()
         XGetGeometry(self.dpy, self.root, ctypes.byref(r), ctypes.byref(x), ctypes.byref(y),
                      ctypes.byref(w), ctypes.byref(h), ctypes.byref(bw), ctypes.byref(dp))
+        if self.on_resize is not None or self.on_cursor is not None:
+            self._after_roundtrip()
         return w.value, h.value
 
     # ---------------------------------------------------------------- cursor
@@ -245,6 +253,7 @@ class X11:
             return ci.cursor_serial & 0xFFFFFFFF, w, h, ci.xhot, ci.yhot, bytes(out) if visible else None
         finally:
             XFree(p)
+            self._after_roundtrip()
 
     # ---------------------------------------------------------------- input
     def motion(self, x, y):
@@ -268,6 +277,7 @@ class X11:
     def autorepeat(self):
         st = _XKeyboardState()
         XGetKeyboardControl(self.dpy, ctypes.byref(st))
+        self._after_roundtrip()
         return bool(st.global_auto_repeat)
 
     def set_autorepeat(self, on):
@@ -275,7 +285,7 @@ class X11:
         XFlush(self.dpy)
 
     # ---------------------------------------------------------------- text typing
-    def _find_spare_keycodes(self, want=8):
+    def _find_spare_keycodes(self, want=64):
         """Keycodes with no symbols; we borrow them to type characters the layout lacks."""
         per = ctypes.c_int()
         count = self.max_kc - self.min_kc + 1
@@ -299,41 +309,37 @@ class X11:
             return o
         return 0x01000000 | o
 
-    def type_text(self, text, shift_keycode):
-        """Type arbitrary Unicode. Characters on the current layout use their real key;
-        others are typed through a temporarily remapped spare keycode."""
-        pending = []
-        for ch in text:
-            ks = self._keysym(ch)
-            kc = XKeysymToKeycode(self.dpy, ks)
-            if kc:
-                if XKeycodeToKeysym(self.dpy, kc, 0) == ks:
-                    pending.append((kc, False))
-                    continue
-                if XKeycodeToKeysym(self.dpy, kc, 1) == ks:
-                    pending.append((kc, True))
-                    continue
-            if not self._spare:
-                continue
-            self._flush_typed(pending, shift_keycode)
-            pending = []
-            kc = self._spare[len(self._remapped) % len(self._spare)]
-            arr = (_KeySym * 2)(ks, ks)
-            XChangeKeyboardMapping(self.dpy, kc, 2, arr, 1)
-            XSync(self.dpy, 0)
-            self._remapped.append(kc)
-            pending.append((kc, False))
-        self._flush_typed(pending, shift_keycode)
+    def layout_key(self, ks):
+        """(keycode, needs_shift) if the current layout has this keysym, else None."""
+        kc = XKeysymToKeycode(self.dpy, ks)
+        if kc:
+            if XKeycodeToKeysym(self.dpy, kc, 0) == ks:
+                return kc, False
+            if XKeycodeToKeysym(self.dpy, kc, 1) == ks:
+                return kc, True
+        return None
 
-    def _flush_typed(self, keys, shift_keycode):
-        for kc, shift in keys:
-            if shift:
-                XTestFakeKeyEvent(self.dpy, shift_keycode, 1, 0)
-            XTestFakeKeyEvent(self.dpy, kc, 1, 0)
-            XTestFakeKeyEvent(self.dpy, kc, 0, 0)
-            if shift:
-                XTestFakeKeyEvent(self.dpy, shift_keycode, 0, 0)
-        XFlush(self.dpy)
+    @property
+    def spare_keycodes(self):
+        return list(self._spare)
+
+    def map_spare(self, kc, ks):
+        """Temporarily bind a spare keycode to `ks` (undone by restore_keymap)."""
+        arr = (_KeySym * 2)(ks, ks)
+        XChangeKeyboardMapping(self.dpy, kc, 2, arr, 1)
+        self._remapped.append(kc)
+
+    def tap(self, kc, shift, shift_keycode):
+        if shift:
+            XTestFakeKeyEvent(self.dpy, shift_keycode, 1, 0)
+        XTestFakeKeyEvent(self.dpy, kc, 1, 0)
+        XTestFakeKeyEvent(self.dpy, kc, 0, 0)
+        if shift:
+            XTestFakeKeyEvent(self.dpy, shift_keycode, 0, 0)
+
+    def sync(self):
+        XSync(self.dpy, 0)
+        self._after_roundtrip()
 
     def restore_keymap(self):
         """Give borrowed keycodes back (call a moment after typing, once apps have read them)."""

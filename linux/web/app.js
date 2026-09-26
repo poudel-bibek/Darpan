@@ -140,7 +140,7 @@
         showLogin('The password on the remote computer changed — enter it again.');
         return;
       }
-      send({ t: 'auth', proof: await makeProof(S.key, m.nonce), client: clientName(), ver: '1.0.1' });
+      send({ t: 'auth', proof: await makeProof(S.key, m.nonce), client: clientName(), ver: '1.0.2' });
     } catch (e) {
       showLogin('Could not sign in: ' + e.message, true);
     }
@@ -167,7 +167,8 @@
     else if (r === 'busy') showLogin('Too many people are connected right now.', true);
     else showLogin('Access denied.', true);
   };
-  H.bye = (m) => { S.want = false; toast(m.reason || 'Disconnected'); };
+  // The close code decides what happens next (4003 kicked → stay out; 4004 restarting → reconnect).
+  H.bye = (m) => { if (m.reason) toast(m.reason); };
   H.notice = (m) => toast(m.text, { error: m.level === 'error' });
   H.screen = () => { /* a new `stream` follows */ };
   H.stats = (m) => { S.host = m; };
@@ -538,7 +539,8 @@
     if (!paste.waiting) return;
     clearTimeout(paste.timer);
     paste.waiting = false;
-    if (text && text !== S.lastSentClip) { S.lastSentClip = text; send({ t: 'clip', text }); }
+    // Compare with what the host holds now (it may have changed since we last sent anything).
+    if (text && text !== S.remoteClip) { S.lastSentClip = S.remoteClip = text; send({ t: 'clip', text }); }
     sendKey(paste.mapped, true);
     if (paste.early || (IS_MAC && metaDown)) { sendKey(paste.mapped, false); pressed.delete('KeyV'); }
   }
@@ -597,7 +599,7 @@
       const p = await navigator.permissions.query({ name: 'clipboard-read' });
       if (p.state !== 'granted') return;
       const text = await navigator.clipboard.readText();
-      if (text && text !== S.lastSentClip && text !== S.remoteClip) { S.lastSentClip = text; send({ t: 'clip', text }); }
+      if (text && text !== S.lastSentClip && text !== S.remoteClip) { S.lastSentClip = S.remoteClip = text; send({ t: 'clip', text }); }
     } catch { /* not supported */ }
   });
 
@@ -776,7 +778,7 @@
   });
   $('sendClip').addEventListener('click', () => {
     const t = $('localClip').value;
-    if (t) { S.lastSentClip = t; send({ t: 'clip', text: t }); toast('Remote clipboard set'); }
+    if (t) { S.lastSentClip = S.remoteClip = t; send({ t: 'clip', text: t }); toast('Remote clipboard set'); }
   });
   $('typeClip').addEventListener('click', () => {
     const t = $('localClip').value;
