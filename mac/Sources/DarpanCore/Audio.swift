@@ -83,8 +83,9 @@ public final class OpusDecoder {
 /// Decoded audio waiting to be played: written from the network queue, read from the real-time
 /// render callback (critical sections are a few copies under a lock).
 ///
-/// It aims for `target` of buffered audio (40 ms to start). An underrun plays silence and makes
-/// the target 10 ms larger (up to 200 ms); 10 s without one makes it 5 ms smaller again. Clock
+/// It aims for `target` of buffered audio (40 ms to start). Running dry plays silence; if the next
+/// packet then arrives without FIRST, audio was late (an underrun), and the target grows by 10 ms
+/// (up to 200 ms). With FIRST it was just silence. 10 s without an underrun shrinks it by 5 ms. Clock
 /// drift between the two computers is absorbed by dropping or repeating one sample in 256 while
 /// the level strays more than 20 ms from the target. After silence (or at the start) playback waits
 /// until the target is buffered again.
@@ -104,9 +105,11 @@ public final class JitterBuffer {
     private var head = 0, count = 0       // in frames
     private var target: Double
     private var priming = true
+    private var dry = false               // ran out while playing; the next packet tells why
     private var underruns = 0, adjusted = 0
     private var sinceUnderrun = 0         // frames played since the last underrun
     private var drift = 0                 // frames played since the last drift correction
+    private var lastPush = -1e9           // Clock.nowMs
 
     public init(rate: Double = OpusDecoder.sampleRate) {
         self.rate = rate
@@ -120,6 +123,13 @@ public final class JitterBuffer {
     public func push(_ samples: [Float], afterSilence: Bool) {
         lock.lock()
         defer { lock.unlock() }
+        lastPush = Clock.nowMs()
+        if dry && !afterSilence {                           // late, not silent: more margin
+            underruns += 1
+            target = min(Self.maxTarget, target + 0.010)
+            sinceUnderrun = 0
+        }
+        dry = false
         if afterSilence { head = 0; count = 0; priming = true }
         let frames = samples.count / 2
         for i in 0..<frames {
@@ -164,11 +174,9 @@ public final class JitterBuffer {
                 i += 1
             }
             sinceUnderrun += i
-            if i < frames {                                // ran dry: wait for more, with more margin
-                underruns += 1
-                target = min(Self.maxTarget, target + 0.010)
+            if i < frames {                                // ran dry: re-prime; push() decides why
                 priming = true
-                sinceUnderrun = 0
+                dry = true
             } else if Double(sinceUnderrun) > 10 * rate && target > Self.minTarget {
                 target = max(Self.minTarget, target - 0.005)
                 sinceUnderrun = 0
@@ -177,9 +185,69 @@ public final class JitterBuffer {
         while i < frames { left[i] = 0; right[i] = 0; i += 1 }
     }
 
+    /// Milliseconds since audio last arrived.
+    public var idleMs: Double {
+        lock.lock()
+        defer { lock.unlock() }
+        return Clock.nowMs() - lastPush
+    }
+
     public var stats: Stats {
         lock.lock()
         defer { lock.unlock() }
         return Stats(depth: Double(count) / rate, target: target, underruns: underruns, adjusted: adjusted)
+    }
+}
+
+/// Receives decoded audio. Called on the audio queue, in order.
+public protocol AudioSink: AnyObject {
+    func play(_ samples: [Float], first: Bool)
+}
+
+/// The `/audio` WebSocket of one session (PROTOCOL.md §12): signs in with the single-use token,
+/// then decodes each AUDIO message into the sink. Its own connection and queue, so sound never
+/// waits behind video.
+final class AudioStream {
+    private let queue = DispatchQueue(label: "dev.darpan.Darpan.audio", qos: .userInteractive)
+    private var socket: WebSocket?
+    private let decoder: OpusDecoder?
+    private weak var sink: AudioSink?
+    private var authed = false
+    private let onEnd: (_ wasPlaying: Bool) -> Void
+
+    init(url: URL, userAgent: String, proxy: SOCKSProxy?, token: String, sink: AudioSink, onEnd: @escaping (_ wasPlaying: Bool) -> Void) {
+        decoder = OpusDecoder()
+        self.sink = sink
+        self.onEnd = onEnd
+        let ws = WebSocket(url: url, userAgent: userAgent, proxy: proxy, queue: queue) { [weak self] e in
+            guard let self else { return }
+            switch e {
+            case .ready:
+                if let auth = Msg.json(["t": "auth", "token": token]) { self.socket?.send(text: auth) }
+            case .text(let d):
+                if Incoming(d)?.type == "ok" { self.authed = true }
+            case .binary(let d):
+                guard self.authed, let decoder = self.decoder else { return }
+                d.withUnsafeBytes { b in
+                    guard let h = AudioHeader(b),
+                          let samples = decoder.decode(UnsafeRawBufferPointer(rebasing: b[AudioHeader.size...])) else { return }
+                    self.sink?.play(samples, first: h.afterSilence)
+                }
+            case .waiting:
+                break
+            case .closed:
+                self.socket = nil
+                self.onEnd(self.authed)
+            }
+        }
+        socket = ws
+        queue.async { ws.start() }
+    }
+
+    func close() {
+        queue.async {
+            self.socket?.close()
+            self.socket = nil
+        }
     }
 }

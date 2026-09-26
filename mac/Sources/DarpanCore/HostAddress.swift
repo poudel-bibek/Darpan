@@ -7,6 +7,8 @@ public struct HostAddress: Hashable, CustomStringConvertible {
     /// `https://host[:port]` (or `http://localhost…`) — also the Keychain account.
     public let origin: String
     public let webSocketURL: URL
+    /// The sound socket (PROTOCOL.md §12), next to `/ws`.
+    public var audioURL: URL { webSocketURL.deletingLastPathComponent().appendingPathComponent("audio") }
     public let host: String
     public let port: Int?
     public let secure: Bool

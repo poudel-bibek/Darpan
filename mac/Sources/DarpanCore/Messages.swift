@@ -37,6 +37,7 @@ public enum Msg {
     public static let rel = #"{"t":"rel"}"#
     public static let kf = #"{"t":"kf"}"#
     public static let stop = #"{"t":"stop"}"#
+    public static func audio(on: Bool) -> String { #"{"t":"audio","on":\#(on)}"# }
 
     public static func auth(proof: Data, client: String) -> String? {
         json(["t": "auth", "proof": proof.base64EncodedString(), "client": client, "ver": DarpanVersion.string])

@@ -32,6 +32,9 @@ Install and first launch: see *Mac app* in the [main README](../README.md#mac-ap
   managers mark as concealed are only sent when you paste them with ⌘V.
 * **Files**: drop files on the window (or use the toolbar). They land in `~/Downloads/Darpan/` on
   the remote computer. Folders aren't sent; zip them first.
+* **Sound**: the remote computer's sound plays on the Mac. It's on by default; the speaker button in
+  the toolbar, or View → Play Sound, mutes it. It keeps playing while the viewer is hidden, and the
+  Mac's audio device is used only while sound actually arrives (it's released after 2 s without any).
 * **Efficiency**: a minimised, hidden or fully covered window stops the video (the remote encoder
   idles). Display sleep isn't prevented.
 

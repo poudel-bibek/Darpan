@@ -88,11 +88,21 @@ func audioTests() {
         eq(j.stats.underruns, 0, "no underrun yet")
         pull(); pull(); pull()                                        // 40 ms buffered, 40 ms pulled
         pull()
-        eq(j.stats.underruns, 1, "running dry counts an underrun")
-        check(abs(j.stats.target - 0.050) < 1e-9, "and adds 10 ms to the target")
         check(l.last == 0, "silence while dry")
+        eq(j.stats.underruns, 0, "running dry alone isn't an underrun (could be silence)")
+        j.push(packet, afterSilence: false)
+        eq(j.stats.underruns, 1, "a late packet (no FIRST) after running dry is one")
+        check(abs(j.stats.target - 0.050) < 1e-9, "and adds 10 ms to the target")
 
-        for _ in 0..<5 { j.push(packet, afterSilence: false) }        // 50 ms: primed again
+        // Silence: dry, then the next packet has FIRST: no underrun, target unchanged.
+        let q = JitterBuffer(rate: 48000)
+        for _ in 0..<4 { q.push(packet, afterSilence: false) }
+        for _ in 0..<5 { l = [Float](repeating: 1, count: 480); r = l; q.pull(frames: 480, left: &l, right: &r) }
+        q.push(packet, afterSilence: true)
+        eq(q.stats.underruns, 0, "silence then FIRST: no underrun")
+        check(abs(q.stats.target - 0.040) < 1e-9, "target unchanged after silence")
+
+        for _ in 0..<4 { j.push(packet, afterSilence: false) }        // 50 ms: primed again
         pull()
         check(l.allSatisfy { $0 == 0.25 }, "resumes at the new target")
 
@@ -112,7 +122,8 @@ func audioTests() {
         let m = JitterBuffer(rate: 1000)                              // small rate: 10 s = 10 000 frames
         m.push([Float](repeating: 0.1, count: 2 * 40), afterSilence: true)
         var ml = [Float](repeating: 0, count: 60), mr = ml
-        m.pull(frames: 60, left: &ml, right: &mr)                     // underrun → 50 ms target
+        m.pull(frames: 60, left: &ml, right: &mr)                     // runs dry…
+        m.push([Float](repeating: 0.1, count: 2 * 10), afterSilence: false)   // …and audio was late: 50 ms
         let grown = m.stats.target
         for _ in 0..<5 { m.push([Float](repeating: 0.1, count: 2 * 10), afterSilence: false) }   // back at the target
         for _ in 0..<1100 {                                           // 11 s of steady 10 ms packets

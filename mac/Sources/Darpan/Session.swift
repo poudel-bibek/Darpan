@@ -26,6 +26,7 @@ final class Session: NSObject {
     private var keyboard: KeyboardCapture!
     private var clipboard: ClipboardSync!
     private let model = ViewerModel()
+    private let player = AudioPlayer()
     private var popover: NSPopover?
     private var bag = Set<AnyCancellable>()
     private var observers: [NSObjectProtocol] = []
@@ -137,6 +138,12 @@ final class Session: NSObject {
             self?.video.wheel.speed = speed
             self?.video.wheel.invert = invert
         }.store(in: &bag)
+        settings.$sound.sink { [weak self] on in
+            guard let self else { return }
+            self.content.toolbar.soundOn = on
+            self.client.setAudio(on, sink: self.player)
+            if !on { self.player.stop() }
+        }.store(in: &bag)
         settings.$showStats.sink { [weak self] on in
             guard let self else { return }
             self.content.stats.isHidden = !on
@@ -209,6 +216,8 @@ final class Session: NSObject {
         for o in observers { NotificationCenter.default.removeObserver(o) }
         observers.removeAll()
         popover?.close()
+        client.setAudio(false, sink: nil)
+        player.stop()
         video.clear()
         window.delegate = nil
         if closeWindow { window.close() }
@@ -236,14 +245,19 @@ final class Session: NSObject {
         if NSApp.isActive { clipboard.poll() }
         guard settings.showStats || logStats else { return }
         let s = client.takeStats()
-        if settings.showStats { content.stats.text = Self.statsText(s) }
+        var text = Self.statsText(s)
+        let a = player.buffer.stats
+        if player.buffer.idleMs < 2000 {
+            text += String(format: "\naudio buffer %.0f ms (target %.0f)  underruns %d", a.depth * 1000, a.target * 1000, a.underruns)
+        }
+        if settings.showStats { content.stats.text = text }
         if logStats && ticks % 20 == 0, client.proxy != nil {
             Tailnet.shared.path(to: address.host) { p in
                 FileHandle.standardError.write(Data("tailnet path: \(p ?? "unknown")\n".utf8))
             }
         }
         if logStats && ticks % 4 == 0 {
-            FileHandle.standardError.write(Data((Self.statsText(s).replacingOccurrences(of: "\n", with: " | ") + "\n").utf8))
+            FileHandle.standardError.write(Data((text.replacingOccurrences(of: "\n", with: " | ") + "\n").utf8))
         }
     }
 
@@ -281,6 +295,8 @@ final class Session: NSObject {
             togglePanel(item, button, ClipboardPanel(model: model))
         case .upload:
             sendFiles(nil)
+        case .sound:
+            settings.sound.toggle()
         case .stats:
             settings.showStats.toggle()
         case .disconnect:
@@ -348,6 +364,7 @@ final class Session: NSObject {
     @objc func setFitScale(_ sender: Any?) { settings.scale = .fit }
     @objc func setActualScale(_ sender: Any?) { settings.scale = .actual }
     @objc func toggleStats(_ sender: Any?) { settings.showStats.toggle() }
+    @objc func toggleSound(_ sender: Any?) { settings.sound.toggle() }
     @objc func toggleSystemShortcuts(_ sender: Any?) { settings.captureSystemKeys.toggle() }
     @objc func chooseQuality(_ sender: NSMenuItem) { settings.quality = sender.tag }
     @objc func chooseFrameRate(_ sender: NSMenuItem) { settings.fps = sender.tag }
@@ -426,6 +443,7 @@ extension Session: NSMenuItemValidation {
         case #selector(setFitScale(_:)): item.state = settings.scale == .fit ? .on : .off
         case #selector(setActualScale(_:)): item.state = settings.scale == .actual ? .on : .off
         case #selector(toggleStats(_:)): item.state = settings.showStats ? .on : .off
+        case #selector(toggleSound(_:)): item.state = settings.sound ? .on : .off
         case #selector(chooseQuality(_:)): item.state = settings.quality == item.tag ? .on : .off
         case #selector(chooseFrameRate(_:)): item.state = settings.fps == item.tag ? .on : .off
         case #selector(chooseCommandKey(_:)): item.state = (item.tag == 0) == (settings.command == .ctrl) ? .on : .off

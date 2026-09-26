@@ -37,6 +37,7 @@ enum MainMenu {
         view.addItem(item("Actual Size", #selector(Session.setActualScale(_:))))
         view.addItem(.separator())
         view.addItem(item("Show Stats", #selector(Session.toggleStats(_:))))
+        view.addItem(item("Play Sound", #selector(Session.toggleSound(_:))))
         view.addItem(.separator())
         view.addItem(item("Release Keyboard", #selector(Session.toggleKeyboardCapture(_:)), "\u{1b}", [.control, .option, .command]))
         view.addItem(item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.control, .option, .command]))

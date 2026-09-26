@@ -224,6 +224,10 @@ public final class Client {
     private var warnedDecoder = false
     private var lastStop = -1e9
     private var clipSeen = false
+    private var wantAudio = false
+    private var hostHasAudio = false
+    private var audio: AudioStream?
+    private weak var audioSink: AudioSink?
 
     private let uploads: Uploader
 
@@ -329,6 +333,18 @@ public final class Client {
             guard self.authed else { return }
             self.lastInbound = Clock.nowMs()
             self.ping()
+        }
+    }
+
+    /// Sound on or off (PROTOCOL.md §12). Decoded audio goes to `sink`, on its own queue.
+    public func setAudio(_ on: Bool, sink: AudioSink?) {
+        queue.async {
+            self.audioSink = sink
+            guard self.wantAudio != on else { return }
+            self.wantAudio = on
+            guard self.authed, self.hostHasAudio else { return }
+            if !on { self.audio?.close(); self.audio = nil }
+            self.socket?.send(text: Msg.audio(on: on))
         }
     }
 
@@ -476,6 +492,9 @@ public final class Client {
         pingTimer?.cancel()
         pingTimer = nil
         decoder.invalidate()
+        audio?.close()
+        audio = nil
+        hostHasAudio = false
         uploads.cancelAll(reason: "connection lost")
     }
 
@@ -534,6 +553,8 @@ public final class Client {
             guard let id = m.int("id") else { return }
             emit(.cursor(Cursor(id: id, png: m.data("png"), width: m.int("w") ?? 0, height: m.int("h") ?? 0,
                                 hotX: m.int("hx") ?? 0, hotY: m.int("hy") ?? 0)))
+        case "audio":
+            onAudio(m)
         case "clip":
             guard let text = m.string("text") else { return }
             let initial = !clipSeen
@@ -620,6 +641,27 @@ public final class Client {
         startPing()
         if wantVideo { sendStart() }
         uploads.pump()
+        hostHasAudio = ((m["caps"] as? [Any]) ?? []).contains { $0 as? String == "audio" }
+        if wantAudio && hostHasAudio { socket?.send(text: Msg.audio(on: true)) }
+    }
+
+    /// The host's answer to `audio on`: a token for `/audio`, or an error.
+    private func onAudio(_ m: Incoming) {
+        guard authed, wantAudio, let token = m.string("token"), let sink = audioSink else {
+            if let e = m.string("error") { emit(.notice("No sound from the remote computer (\(e)).", error: false)) }
+            return
+        }
+        audio?.close()
+        let gen = generation
+        audio = AudioStream(url: address.audioURL, userAgent: Self.userAgent, proxy: proxy, token: token, sink: sink) {
+            [weak self] wasPlaying in
+            // The sound socket ended while the session goes on: ask again, unless it was refused.
+            guard wasPlaying else { return }
+            self?.queue.asyncAfter(deadline: .now() + 1) {
+                guard let self, self.generation == gen, self.authed, self.wantAudio, self.hostHasAudio else { return }
+                self.socket?.send(text: Msg.audio(on: true))
+            }
+        }
     }
 
     private func onDenied(_ m: Incoming) {
