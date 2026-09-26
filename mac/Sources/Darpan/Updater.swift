@@ -49,11 +49,19 @@ final class Updater: ObservableObject {
         // DARPAN_DEBUG_UPDATE_DMG=<Darpan.dmg>: install that image as if it had been downloaded.
         if let dmg = ProcessInfo.processInfo.environment["DARPAN_DEBUG_UPDATE_DMG"], state == .idle {
             state = .installing
-            DispatchQueue.global().async {
+            let delay = Double(ProcessInfo.processInfo.environment["DARPAN_DEBUG_UPDATE_DELAY"] ?? "") ?? 0
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
                 let r = Self.replaceBundle(from: URL(fileURLWithPath: dmg))
                 FileHandle.standardError.write(Data("[update] \(r)\n".utf8))
                 DispatchQueue.main.async { if case .success(let app?) = r { self.relaunch(app) } }
             }
+            return
+        }
+        // DARPAN_DEBUG_UPDATE_OFFER=<version>: show the update dialog for a made-up release.
+        if let v = ProcessInfo.processInfo.environment["DARPAN_DEBUG_UPDATE_OFFER"], state == .idle {
+            let m = UpdateManifest(version: v, build: 99, url: URL(string: "https://github.com/x/y/releases/download/v\(v)/Darpan.dmg")!,
+                                   sha256: String(repeating: "0", count: 64), minMacOS: "14.0")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { self.state = .available(m); self.offer(m, manual: false) }
             return
         }
         #endif
@@ -100,7 +108,7 @@ final class Updater: ObservableObject {
                                               currentVersion: DarpanVersion.string, currentBuild: build,
                                               macOS: ProcessInfo.processInfo.operatingSystemVersion)
             state = .available(m)
-            if manual { NSApp.sendAction(#selector(AppDelegate.newConnection(_:)), to: nil, from: nil) }
+            offer(m, manual: manual)
         } catch UpdateManifest.Problem.notNewer {
             state = .idle
             if manual { alert("Darpan \(DarpanVersion.string) is the latest version.") }
@@ -110,6 +118,30 @@ final class Updater: ObservableObject {
         } catch {
             state = .idle
             if manual { alert("The update information couldn’t be verified, so nothing was installed.") }
+        }
+    }
+
+    /// Versions already offered in a dialog this launch ("Later" isn't asked again until relaunch).
+    private var offered = Set<String>()
+
+    /// A dialog on the front window: install now, or later (the connect window and the Darpan
+    /// menu keep offering it).
+    private func offer(_ m: UpdateManifest, manual: Bool) {
+        guard manual || !offered.contains(m.version) else { return }
+        offered.insert(m.version)
+        let a = NSAlert()
+        a.messageText = "Darpan \(m.version) is available"
+        a.informativeText = "You have \(DarpanVersion.string). Darpan installs it and relaunches."
+        a.addButton(withTitle: "Install & Relaunch")
+        a.addButton(withTitle: "Later")
+        let answer: (NSApplication.ModalResponse) -> Void = { [weak self] r in
+            if r == .alertFirstButtonReturn { self?.install() }
+        }
+        if let w = NSApp.keyWindow ?? NSApp.mainWindow, w.attachedSheet == nil {
+            a.beginSheetModal(for: w, completionHandler: answer)
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+            answer(a.runModal())
         }
     }
 
@@ -222,7 +254,10 @@ final class Updater: ObservableObject {
         p.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$2\"",
                        "sh", String(ProcessInfo.processInfo.processIdentifier), app.path]
         try? p.run()
-        NSApp.terminate(nil)
+        // The new copy is in place: this one must go. Quit normally (from the run loop, not from
+        // inside a queue block), and if that hasn't happened within 10 s, leave anyway.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(0) }
+        RunLoop.main.perform(inModes: [.common]) { NSApp.terminate(nil) }
     }
 
     // MARK: - helpers

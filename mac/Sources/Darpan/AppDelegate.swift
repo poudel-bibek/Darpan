@@ -49,7 +49,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // Say goodbye properly: the host ends the session (and restores its resolution) at once.
         terminating = true
         s.end()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.reply(toApplicationShouldTerminate: true) }
+        // A run-loop timer, not a main-queue block: terminate() may have been called from inside a
+        // main-queue block, and the main queue doesn't run another block until that one returns.
+        let t = Timer(timeInterval: 0.3, repeats: false) { _ in NSApp.reply(toApplicationShouldTerminate: true) }
+        RunLoop.main.add(t, forMode: .common)
         return .terminateLater
     }
 

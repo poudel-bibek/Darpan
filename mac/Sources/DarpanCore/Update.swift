@@ -10,6 +10,10 @@ public struct UpdateManifest: Equatable {
     public var sha256: String            // of the DMG, lowercase hex
     public var minMacOS: String
 
+    public init(version: String, build: Int, url: URL, sha256: String, minMacOS: String) {
+        self.version = version; self.build = build; self.url = url; self.sha256 = sha256; self.minMacOS = minMacOS
+    }
+
     public enum Problem: Error, Equatable {
         case signature, format, notNewer, url, macOS
     }
