@@ -114,7 +114,8 @@ it down completely. Clients SHOULD send `stop` when their window is hidden/minim
 
 `gpu` (optional): `"lean"` (the default) or `"full"`. The host encodes on its GPU either way; `"full"`
 lets it take more of that GPU's memory for sharper, faster video (NVENC through CUDA, about 250 MB),
-`"lean"` keeps to about 40 MB (Vulkan Video). A host without either ignores it.
+`"lean"` keeps to about 40 MB (Vulkan Video). A host without either ignores it. When the GPU's memory is
+too full for `"full"`, the host uses `"lean"` for the rest of that connection and sends a `notice`.
 
 Mid-stream changes: `{"t":"cfg","fps":30,"bitrate":8000,"gpu":"full"}` (any subset of the `start`
 fields). If the change needs a new encoder the host announces a new `stream`.

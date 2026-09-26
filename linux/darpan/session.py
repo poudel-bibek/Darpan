@@ -56,9 +56,11 @@ def _desktop_dir():
 class RateControl:
     """Delay-based AIMD. The moment frames start queueing somewhere on the path (ack RTT
     rises above the recent minimum by more than the frame's own serialisation time) the
-    bitrate drops. It probes upward while the content uses the bits, and also after a few
-    calm seconds: a desktop is mostly quiet, and one Wi-Fi hiccup mustn't leave every later
-    screen change encoded at a fraction of the chosen quality."""
+    bitrate drops. It probes upward while the content uses the bits, and after a few calm
+    seconds it also goes back to where it was before the last cut: a desktop is mostly quiet,
+    and one Wi-Fi hiccup mustn't leave every later screen change encoded at a fraction of the
+    chosen quality. Only acks carry news: a quiet screen sends no frames, so none come back, and
+    a tick without any is calm, whatever the last estimate said."""
 
     CALM = 3.0                              # s without queueing before a quiet picture climbs back
 
@@ -71,6 +73,8 @@ class RateControl:
         self.min_rtt = None
         self.q = 0.0
         self.sent = 0
+        self.acks = 0                       # since the last tick
+        self.before_cut = self.kbps         # where a quiet climb stops
         self.last = self.calm_since = time.monotonic()
 
     def on_ack(self, now, rtt, size):
@@ -83,6 +87,7 @@ class RateControl:
         self.min_rtt = w[0][1]
         q = rtt - self.min_rtt - size * 8.0 / (self.kbps * 1000.0)
         self.q += 0.25 * ((q if q > 0 else 0.0) - self.q)
+        self.acks += 1
 
     def tick(self, now):
         dt = now - self.last
@@ -91,13 +96,20 @@ class RateControl:
         used = self.sent * 8 / dt / 1000.0
         self.sent = 0
         self.last = now
+        if not self.acks:                   # nothing came back: the last estimate is old news
+            self.q = 0.0
+        self.acks = 0
         old = self.kbps
         if self.q >= 0.010:
             self.calm_since = now
         if self.q > 0.045:
+            self.before_cut = self.kbps
             self.kbps = max(self.floor, int(self.kbps * 0.7))
-        elif self.q < 0.010 and (used > 0.6 * self.kbps or now - self.calm_since >= self.CALM):
-            self.kbps = min(self.cap, int(self.kbps * 1.15) + 250)
+        elif self.q < 0.010:
+            if used > 0.6 * self.kbps:                     # the content uses the bits: probe upward
+                self.kbps = min(self.cap, int(self.kbps * 1.15) + 250)
+            elif now - self.calm_since >= self.CALM:       # quiet: back to before the last cut, no higher
+                self.kbps = max(self.kbps, min(self.cap, self.before_cut, int(self.kbps * 1.15) + 250))
         return self.kbps if self.kbps != old else None
 
     def window(self):
@@ -336,7 +348,8 @@ class Session:
         fps = int(m.get("fps") or self.hub.cfg["fps"])
         self.params = {"fps": max(1, min(120, fps)), "bitrate": max(0, int(m.get("bitrate") or 0)),
                        "gpu": m.get("gpu") == "full"}
-        if self.cap and self.paused_at is not None and self.cap.fps_ == self.params["fps"]:
+        if (self.cap and self.paused_at is not None and self.cap.fps_ == self.params["fps"] and
+                getattr(self.cap, "cuda", None) in (None, self.hub.no_vulkan or self.params["gpu"])):
             self._resume()
         else:
             self._task(self._start_capture())
@@ -353,6 +366,7 @@ class Session:
             self.params["gpu"] = m["gpu"] == "full"
             if self.cap and self.paused_at is None and self.cap.encoder == "nvenc":
                 self._task(self._start_capture(restart=True))   # the other encoder; a key frame follows
+            # (on the software fallback it applies at the next NVENC retry)
         if "fps" in m:
             self.params["fps"] = max(1, min(120, int(m["fps"])))
             if self.cap:
@@ -497,6 +511,12 @@ class Session:
         now = time.monotonic()
         if reason == "resize":
             delay = 0.3
+        elif reason == "no-nvenc" and self.params["gpu"] and not self.hub.no_vulkan:
+            log.warning("session %s: no GPU memory for Full GPU — the low-memory encoder instead", self.sid)
+            self.params["gpu"] = False             # for this connection; the next one asks again
+            self.ws.send_json({"t": "notice", "level": "info",
+                               "text": "Full GPU isn't available right now: the Linux computer's GPU memory is full"})
+            delay = 0
         elif reason == "no-nvenc":
             self._fall_back_to_x264("NVENC unavailable (GPU memory full?)")
             delay = 0

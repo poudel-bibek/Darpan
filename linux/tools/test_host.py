@@ -979,7 +979,9 @@ async def run(args, tmp, probe_log):
     ok("cap frees up when they close", kind == "text" and m.get("t") == "hello", m.get("t"))
     again.w.close()
 
-    # the rate controller: a delay spike cuts the bitrate; a few calm seconds bring a quiet picture back up
+    # the rate controller: a delay spike cuts the bitrate once. A static desktop sends no frames, so no
+    # acks come back: a few such seconds bring it back to where it was, no higher. Content that uses
+    # the bits takes it on up to the ceiling.
     from darpan.session import RateControl
     t0 = time.monotonic()
     rc = RateControl(12000, 15000, 60)
@@ -988,15 +990,41 @@ async def run(args, tmp, probe_log):
     for i in range(8):
         rc.on_ack(t0 + 0.4 + 0.05 * i, 0.300, 1000)           # a Wi-Fi hiccup: RTT spikes
     rc.tick(t0 + 0.8)
-    cut = rc.kbps
-    now = t0 + 0.8
-    for step in range(24):                                      # 12 s of a quiet desktop on a calm path
+    cut, now, quiet = rc.kbps, t0 + 0.8, []
+    for step in range(24):                                      # 12 s of a static desktop: no frames, no acks
         now += 0.5
-        for i in range(4):
-            rc.on_ack(now - 0.1 * i, 0.031, 800)
-        rc.sent = 2000                                          # a few small frames: far below the bitrate
         rc.tick(now)
-    ok("bitrate: cut by a spike, back once calm", cut < 12000 and rc.kbps == 15000, "%d → %d → %d" % (12000, cut, rc.kbps))
+        quiet.append(rc.kbps)
+    for step in range(12):                                      # then scrolling: frames use the bitrate
+        now += 0.5
+        for i in range(15):
+            rc.on_ack(now - 0.45 + 0.03 * i, 0.031, 800)
+        rc.sent = rc.kbps * 1000 // 8 * 4 // 10                 # 80 % of it, over the half-second tick
+        rc.tick(now)
+    ok("bitrate: one cut for a spike, back while quiet, up while used",
+       cut == 8400 and min(quiet) == cut and quiet[-1] == 12000 and rc.kbps == 15000,
+       "%d → %d → %d → %d" % (12000, cut, quiet[-1], rc.kbps))
+
+    # Full GPU: a warm resume on the other route restarts instead; no GPU memory for it → the lean route first
+    import collections
+    import types
+    from darpan.session import Session
+    sent, tasks = [], []
+    fake = types.SimpleNamespace(
+        params={"gpu": True}, hub=types.SimpleNamespace(no_vulkan=False, cfg={"fps": 60}), sid=0, paused_at=1.0,
+        cap=types.SimpleNamespace(fps_=60, cuda=False), errors=collections.deque(), x264_until=0.0, x264_backoff=60.0,
+        ws=types.SimpleNamespace(closed=False, send_json=sent.append), _resume=lambda: tasks.append("resume"),
+        _task=lambda c: (c.close(), tasks.append("restart")), _start_capture=lambda restart=False: asyncio.sleep(0))
+    fake._fall_back_to_x264 = lambda why: Session._fall_back_to_x264(fake, why)
+    Session.on_start(fake, {"fps": 60, "gpu": "full"})
+    Session.on_start(fake, {"fps": 60, "gpu": "lean"})
+    ok("warm resume only on the same route", tasks == ["restart", "resume"], tasks)
+    fake.params, fake.paused_at, tasks[:] = {"gpu": True}, None, []
+    Session._cap_exit(fake, "no-nvenc")
+    lean = not fake.params["gpu"] and not fake.x264_until and sent and sent[-1]["t"] == "notice"
+    Session._cap_exit(fake, "no-nvenc")
+    ok("Full GPU out of memory: lean first, then software", lean and fake.x264_until > 0 and tasks == ["restart"] * 2,
+       "%s %s" % (sent, tasks))
 
     # changing the password ends existing sessions
     env = dict(os.environ, XDG_CONFIG_HOME=os.path.join(tmp, "config"), XDG_RUNTIME_DIR=os.path.join(tmp, "run"),
