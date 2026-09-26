@@ -5,7 +5,7 @@
 <p align="center"><b>Stop paying for remote desktop.</b><br>
 Use your Linux computer from your Mac or any browser. It feels local, stays private, and costs nothing.</p>
 
-<p align="center"><img src="docs/demo.svg" width="880" alt="Connecting from the Darpan Mac app, then typing in a terminal on the Linux desktop"></p>
+<p align="center"><img src="docs/demo.svg" width="880" alt="Connecting from the Darpan Mac app, starting a training run on the Linux desktop, and switching to full screen"></p>
 
 ## Download
 
