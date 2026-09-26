@@ -1047,7 +1047,7 @@ async def run(args, tmp, probe_log):
        cut == 8400 and min(quiet) == cut and quiet[-1] == 12000 and rc.kbps == 15000,
        "%d → %d → %d → %d" % (12000, cut, quiet[-1], rc.kbps))
 
-    # Full GPU: a warm resume on the other route restarts instead; no GPU memory for it → the lean route first
+    # More GPU: a warm resume on the other route restarts instead; no GPU memory for it → the lean route first
     import collections
     import types
     from darpan.session import Session
@@ -1066,7 +1066,7 @@ async def run(args, tmp, probe_log):
     Session._cap_exit(fake, "no-nvenc")
     lean = not fake.params["gpu"] and not fake.x264_until and sent and sent[-1]["t"] == "notice"
     Session._cap_exit(fake, "no-nvenc")
-    ok("Full GPU out of memory: lean first, then software", lean and fake.x264_until > 0 and tasks == ["restart"] * 2,
+    ok("more GPU out of memory: lean first, then software", lean and fake.x264_until > 0 and tasks == ["restart"] * 2,
        "%s %s" % (sent, tasks))
 
     # changing the password ends existing sessions
@@ -1231,11 +1231,11 @@ async def run(args, tmp, probe_log):
        and not os.path.exists(lss.DIR) and all(edits) and calls == [["enable-linger", "darpan-test-a"],
        ["enable-linger", "darpan-test-b"], ["disable-linger", "darpan-test-a"], ["disable-linger", "darpan-test-b"]],
        "%s %s" % (edits, calls))
-    # "Full GPU on the Linux computer": the viewer picks NVENC through CUDA; off again, Vulkan Video
+    # "Use more of the Linux computer's GPU": the viewer picks NVENC through CUDA; off again, Vulkan Video
     def routes():
         out = subprocess.run([sys.executable, "-m", "darpan", "status"], env=args.host_env, cwd=args.root,
                              capture_output=True, text=True, timeout=20).stdout
-        return "full" if "full GPU encoder" in out else "lean" if "low-memory encoder" in out else out.strip()[-80:]
+        return "full" if "more-GPU encoder" in out else "lean" if "standard encoder" in out else out.strip()[-80:]
     c = await WS.connect("127.0.0.1", args.port)
     _, h = await c.recv()
     c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py gpu"})
@@ -1248,7 +1248,7 @@ async def run(args, tmp, probe_log):
     await pump(c, 2.5)
     second = routes()
     c.w.close()
-    ok("Full GPU on: CUDA; off: Vulkan", (first, second) == ("full", "lean"), "%s, then %s" % (first, second))
+    ok("more GPU on: CUDA; off: Vulkan", (first, second) == ("full", "lean"), "%s, then %s" % (first, second))
 
     # full colour: 4:4:4 for a viewer that decodes it, at Higher Quality; below that, 4:2:0 again. A viewer
     # that doesn't say it decodes 4:4:4 never gets it.
