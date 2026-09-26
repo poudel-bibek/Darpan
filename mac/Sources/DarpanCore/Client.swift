@@ -227,6 +227,7 @@ public final class Client {
     private var wantAudio = false
     private var hostHasAudio = false
     private var audio: AudioStream?
+    private var audioToast = false                  // "no sound" shown once per session
     private weak var audioSink: AudioSink?
 
     private let uploads: Uploader
@@ -495,6 +496,7 @@ public final class Client {
         audio?.close()
         audio = nil
         hostHasAudio = false
+        audioToast = false
         uploads.cancelAll(reason: "connection lost")
     }
 
@@ -648,20 +650,41 @@ public final class Client {
     /// The host's answer to `audio on`: a token for `/audio`, or an error.
     private func onAudio(_ m: Incoming) {
         guard authed, wantAudio, let token = m.string("token"), let sink = audioSink else {
-            if let e = m.string("error") { emit(.notice("No sound from the remote computer (\(e)).", error: false)) }
+            if m.string("error") != nil { soundUnavailable() }
             return
         }
         audio?.close()
         let gen = generation
-        audio = AudioStream(url: address.audioURL, userAgent: Self.userAgent, proxy: proxy, token: token, sink: sink) {
-            [weak self] retry in
-            // The sound socket ended while the session goes on: ask again, unless it was refused
-            // or the host said it can't capture sound (1011).
-            guard retry else { return }
-            self?.queue.asyncAfter(deadline: .now() + 1) {
-                guard let self, self.generation == gen, self.authed, self.wantAudio, self.hostHasAudio else { return }
-                self.socket?.send(text: Msg.audio(on: true))
+        weak var stream: AudioStream?                   // for the callback; `audio` holds it
+        let created = AudioStream(url: address.audioURL, userAgent: Self.userAgent, proxy: proxy, token: token, sink: sink) {
+            [weak self] retry, unavailable in
+            self?.queue.async {
+                guard let self else { return }
+                if self.audio === stream { self.audio = nil }
+                // Ended while the session goes on: ask again, unless it was refused; if the host
+                // can't capture sound (1011), ask once more after its cooldown.
+                if unavailable { self.soundUnavailable() }
+                guard retry else { return }
+                self.queue.asyncAfter(deadline: .now() + 1) {
+                    guard self.generation == gen, self.authed, self.wantAudio, self.hostHasAudio else { return }
+                    self.socket?.send(text: Msg.audio(on: true))
+                }
             }
+        }
+        stream = created
+        audio = created
+    }
+
+    /// The host can't capture sound right now: say so once, and ask again after its 60 s cooldown.
+    private func soundUnavailable() {
+        if !audioToast {
+            audioToast = true
+            emit(.notice("No sound from the remote computer right now.", error: false))
+        }
+        let gen = generation
+        queue.asyncAfter(deadline: .now() + 65) { [weak self] in
+            guard let self, self.generation == gen, self.authed, self.wantAudio, self.hostHasAudio, self.audio == nil else { return }
+            self.socket?.send(text: Msg.audio(on: true))
         }
     }
 

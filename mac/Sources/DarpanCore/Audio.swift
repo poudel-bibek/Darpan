@@ -231,9 +231,9 @@ final class AudioStream {
     private weak var sink: AudioSink?
     private var authed = false
     private var lastSlot: UInt32?
-    private let onEnd: (_ retry: Bool) -> Void
+    private let onEnd: (_ retry: Bool, _ unavailable: Bool) -> Void
 
-    init(url: URL, userAgent: String, proxy: SOCKSProxy?, token: String, sink: AudioSink, onEnd: @escaping (_ retry: Bool) -> Void) {
+    init(url: URL, userAgent: String, proxy: SOCKSProxy?, token: String, sink: AudioSink, onEnd: @escaping (_ retry: Bool, _ unavailable: Bool) -> Void) {
         decoder = OpusDecoder()
         self.sink = sink
         self.onEnd = onEnd
@@ -258,7 +258,7 @@ final class AudioStream {
                 break
             case .closed(let code, _):
                 self.socket = nil
-                self.onEnd(self.authed && code != 1011)     // 1011: the host can't capture sound
+                self.onEnd(self.authed && code != 1011, code == 1011)   // 1011: the host can't capture sound
             }
         }
         socket = ws

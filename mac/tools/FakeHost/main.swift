@@ -54,6 +54,8 @@ var lockedUntil = 0.0
 var hostClip = "FakeHost clipboard ✓"
 var silentUntil = 0.0
 var audioTokens = Set<String>()
+var audioSockets: [Session] = []
+var soundUntil = 0.0                        // `soundfail`: capture "broken" until then
 
 /// One second of a 440 Hz tone as 10 ms Opus packets (a whole number of cycles, so it loops cleanly).
 let tone: [Data] = {
@@ -266,7 +268,10 @@ final class Session {
         case "modes":
             sendText(modesMessage())
         case "audio":
-            if m["on"] as? Bool == true {
+            if m["on"] as? Bool == true && Clock.nowMs() < soundUntil {
+                log("audio on: unavailable")
+                sendText(json(["t": "audio", "error": "unavailable"]))
+            } else if m["on"] as? Bool == true {
                 let t = Data((0..<32).map { _ in UInt8.random(in: 0...255) }).base64EncodedString()
                 audioTokens.insert(t)
                 queue.asyncAfter(deadline: .now() + 10) { audioTokens.remove(t) }
@@ -313,6 +318,7 @@ final class Session {
             authed = true
             log("audio socket \(sid) signed in")
             sendText(json(["t": "ok"]))
+            audioSockets.append(self)
             return startTone()
         }
         let now = Clock.nowMs()
@@ -539,6 +545,11 @@ Thread.detachNewThread {
                 for s in sessions { s.close(4004) }
             case "drop":
                 for s in sessions { s.drop() }
+            case "soundfail":
+                soundUntil = Clock.nowMs() + 60_000
+                for s in audioSockets where !s.closed { s.close(1011) }
+                audioSockets.removeAll()
+                log("sound broken for 60 s")
             case "stall":
                 silentUntil = Clock.nowMs() + 8000
                 log("silent for 8 s")
