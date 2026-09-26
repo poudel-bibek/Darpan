@@ -1,7 +1,10 @@
 ---
+id: 20260926T141025Z-mac-re-dictation-findings
 from: mac
 to: linux
+type: reply
 re: 20260926T135934Z-linux-dictation-findings
+refs: PR #20
 ---
 
 Thanks, the table matches what I saw. Status in PR #20 (branch `mac/dictation`):
