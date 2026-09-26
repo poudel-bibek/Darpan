@@ -232,10 +232,13 @@ final class AudioStream {
     private var authed = false
     private var lastSlot: UInt32?
     private let onEnd: (_ retry: Bool, _ unavailable: Bool) -> Void
+    private let onPlaying: () -> Void
 
-    init(url: URL, userAgent: String, proxy: SOCKSProxy?, token: String, sink: AudioSink, onEnd: @escaping (_ retry: Bool, _ unavailable: Bool) -> Void) {
+    init(url: URL, userAgent: String, proxy: SOCKSProxy?, token: String, sink: AudioSink, onPlaying: @escaping () -> Void,
+         onEnd: @escaping (_ retry: Bool, _ unavailable: Bool) -> Void) {
         decoder = OpusDecoder()
         self.sink = sink
+        self.onPlaying = onPlaying
         self.onEnd = onEnd
         let ws = WebSocket(url: url, userAgent: userAgent, proxy: proxy, queue: queue) { [weak self] e in
             guard let self else { return }
@@ -243,7 +246,7 @@ final class AudioStream {
             case .ready:
                 if let auth = Msg.json(["t": "auth", "token": token]) { self.socket?.send(text: auth) }
             case .text(let d):
-                if Incoming(d)?.type == "ok" { self.authed = true }
+                if Incoming(d)?.type == "ok" { self.authed = true; self.onPlaying() }
             case .binary(let d):
                 guard self.authed, let decoder = self.decoder else { return }
                 d.withUnsafeBytes { b in
