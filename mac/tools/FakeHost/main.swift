@@ -243,7 +243,7 @@ final class Session {
         case "key":
             let c = m["c"] as? String ?? "?", d = m["d"] as? Bool ?? false
             scene.lastKey = "\(c) \(d ? "↓" : "↑")"
-            log("key \(c) \(d ? "down" : "up")")
+            log("key \(c) \(d ? "down" : "up")" + (m["cmd"] as? Bool == true ? " cmd" : ""))
         case "rel":
             scene.buttons.removeAll()
             log("rel")

@@ -13,8 +13,8 @@ MAC="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$MAC")"
 DIST="$ROOT/dist"
 NAME=Darpan
-VERSION=1.1.0
-BUILD=2
+VERSION=1.2.0
+BUILD=3
 APP="$DIST/$NAME.app"
 
 cd "$MAC"
