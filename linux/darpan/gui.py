@@ -134,7 +134,7 @@ class Window(Adw.ApplicationWindow):
             except OSError:
                 st = None
             ts = tailscale.summary()
-            served = ts.get("state") == "Running" and tailscale.serving(self.cfg["port"])
+            served = ts.get("state") == "Running" and tailscale.serving(st["port"] if st else self.cfg["port"])
             return st, ts, served
         _bg(collect, self.apply)
         return True
@@ -229,7 +229,7 @@ class Window(Adw.ApplicationWindow):
             _bg(login, opened)
         elif label == "Publish":
             def publish():
-                return tailscale.serve(self.cfg["port"])
+                return tailscale.serve(control.host_port(self.cfg["port"]))
 
             def done(res):
                 if isinstance(res, Exception):

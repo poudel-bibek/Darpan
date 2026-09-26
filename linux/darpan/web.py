@@ -216,6 +216,8 @@ class Server:
             for k in ("LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"):
                 os.environ.pop(k, None)          # don't leak them to children
             self.srv = await asyncio.start_server(self._conn, sock=sock, limit=MAX_HEADER)
+            # The unit decides the port; everything else (status, Tailscale Serve) follows it.
+            self.cfg["port"] = sock.getsockname()[1]
             log.info("listening on %s:%d (socket from systemd)", *sock.getsockname()[:2])
             return
         self.srv = await asyncio.start_server(self._conn, self.cfg["bind"], self.cfg["port"],

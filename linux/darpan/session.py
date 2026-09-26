@@ -22,6 +22,10 @@ log = logging.getLogger("darpan.session")
 
 VHDR = struct.Struct(">BBHIQ")
 FILE_HDR = struct.Struct(">BI")
+UPLOAD_QUEUE_MAX = 2 << 20      # received but not yet written, per upload (clients keep ≤ 512 KiB)
+AUTH_TIMEOUT = 10               # s to sign in; clients connect only once they have the password
+UNAUTHED_MAX = 32               # connections not yet signed in, in total and per source
+UNAUTHED_PER_SOURCE = 4
 SHIFT_KC = keymap.x_keycode("ShiftLeft")
 
 
@@ -102,7 +106,7 @@ class Upload:
         self.tmp = os.path.join(self.dir, ".darpan-upload-%s.part" % secrets.token_hex(6))
         self.f = open(self.tmp, "xb")
         self.received = 0                  # bytes accepted from the socket (≥ n, the bytes on disk)
-        self.q = asyncio.Queue()           # chunks waiting for the writer; bounded by the client's window
+        self.q = asyncio.Queue()           # chunks waiting for the writer (received - n bytes)
         self.task = None
 
     def write(self, data):
@@ -174,7 +178,7 @@ class Session:
         ws.send_json({"t": "hello", "proto": config.PROTO, "app": config.APP, "ver": config.VERSION,
                       "host": config.hostname(), "nonce": _b64(nonce),
                       "kdf": {"alg": "pbkdf2-sha256", "salt": _b64(salt), "iter": hub.auth.iterations}})
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + AUTH_TIMEOUT
         try:
             while True:
                 msg = await asyncio.wait_for(ws.recv(), max(0.1, deadline - time.monotonic()))
@@ -189,6 +193,7 @@ class Session:
                     return
                 break
         except asyncio.TimeoutError:
+            hub.limiter.failure(self.source)   # holding a connection without signing in counts too
             ws.close(4002, "auth timeout")
             return
         except ValueError:
@@ -252,6 +257,7 @@ class Session:
         hub.limiter.success(self.source)
         self.authed = True
         hub.unauthed -= 1
+        hub._unauthed_done(self.source)
         self.client = str(m.get("client") or self.ua)[:120]
         log.info("session %s: %s from %s%s", self.sid, self.client, self.source,
                  " (%s)" % self.ts_user if self.ts_user else "")
@@ -396,8 +402,14 @@ class Session:
         self.inflight.clear()
         self.wd_after = 3.0
         self.paused_at = None
-        self.cap = cls(hub.display, fps, self.rc.kbps, self.window, on_start=self._cap_started,
-                       on_frame=self._cap_frame, on_exit=self._cap_exit, **kw)
+        mine = []
+
+        def current(fn):            # a replaced capture's queued frames and events are stale
+            return lambda *a: fn(*a) if mine and mine[0] is self.cap else None
+
+        self.cap = cls(hub.display, fps, self.rc.kbps, self.window, on_start=current(self._cap_started),
+                       on_frame=current(self._cap_frame), on_exit=current(self._cap_exit), **kw)
+        mine.append(self.cap)
         try:
             await self.cap.start()
         except Exception as e:
@@ -640,8 +652,14 @@ class Session:
 
     def on_fabort(self, m):
         up = self.uploads.pop(int(m.get("id", 0)), None)
-        if up and up.task:
-            up.task.cancel()              # the writer removes the partial file
+        if up:
+            self._cancel_upload(up)
+
+    def _cancel_upload(self, up):
+        # A task cancelled before it ever ran skips its own cleanup, so remove the partial file once
+        # the task is done either way; by then any in-flight write has finished (abort is idempotent).
+        up.task.add_done_callback(lambda _t: up.abort())
+        up.task.cancel()
 
     async def _upload_writer(self, up):
         """Disk writes happen on a worker thread, so a slow disk (checkpointing, writeback) never
@@ -679,8 +697,14 @@ class Session:
         chunk = data[FILE_HDR.size:]
         if up.received + len(chunk) > up.size:
             self.uploads.pop(fid)
-            up.task.cancel()
+            self._cancel_upload(up)
             self.ws.send_json({"t": "ferr", "id": fid, "e": "too much data"})
+            return
+        if up.received + len(chunk) - up.n > UPLOAD_QUEUE_MAX:
+            # PROTOCOL.md §7 allows 1 MiB un-acked: a client far past it would fill our memory
+            self.uploads.pop(fid)
+            self._cancel_upload(up)
+            self.ws.send_json({"t": "ferr", "id": fid, "e": "flow control: too much un-acked data"})
             return
         up.received += len(chunk)
         up.q.put_nowait(chunk)
@@ -731,6 +755,8 @@ class Hub:
         self._url_at = -1e9
         self._restore_keymap = None
         self._typing = asyncio.Lock()
+        self._screen = asyncio.Lock()     # set_mode / restore never interleave
+        self.unauthed_by = collections.Counter()
         self.loop = None
 
     async def start(self):
@@ -770,13 +796,19 @@ class Hub:
         fut = self.loop.run_in_executor(None, fetch)
         fut.add_done_callback(lambda f: setattr(self, "url", f.result()) if not f.exception() else None)
 
+    def _unauthed_done(self, source):
+        self.unauthed_by[source] -= 1
+        if self.unauthed_by[source] <= 0:
+            del self.unauthed_by[source]
+
     async def handle(self, ws, source, headers):
-        if self.unauthed >= 8:
+        if self.unauthed >= UNAUTHED_MAX or self.unauthed_by[source] >= UNAUTHED_PER_SOURCE:
             ws.send_json({"t": "denied", "reason": "busy", "retry": 5})
             ws.close(4005, "busy")
             return
         s = Session(self, ws, source, headers)
-        self.unauthed += 1          # Session decrements it the moment it authenticates
+        self.unauthed += 1          # Session decrements both the moment it authenticates
+        self.unauthed_by[source] += 1
         try:
             await s.run()
         except Exception:
@@ -784,6 +816,7 @@ class Hub:
         finally:
             if not s.authed:
                 self.unauthed -= 1
+                self._unauthed_done(source)
             if not ws.closed:
                 ws.close(1000)
 
@@ -811,11 +844,14 @@ class Hub:
                 os.unlink(self.repeat_marker)
             except FileNotFoundError:
                 pass
-        if os.path.exists(self.screen.state_file):
-            try:
-                await self.screen.restore()
-            except Exception:
-                log.exception("resolution restore failed")
+        async with self._screen:
+            if self.sessions:             # someone connected while we waited
+                return
+            if os.path.exists(self.screen.state_file):
+                try:
+                    await self.screen.restore()
+                except Exception:
+                    log.exception("resolution restore failed")
 
     # ---------------------------------------------------------------- keyboard
     def begin_control(self):
@@ -835,6 +871,7 @@ class Hub:
             if self._restore_keymap:
                 self._restore_keymap.cancel()
             bound, free = {}, x.spare_keycodes
+            spares = bool(free)            # none at all: skip what has no key instead of stalling
             for ch in s:
                 ks = x._keysym(ch)
                 k = x.layout_key(ks)
@@ -843,6 +880,8 @@ class Hub:
                     continue
                 kc = bound.get(ks)
                 if kc is None:
+                    if not spares:
+                        continue
                     if not free:
                         x.sync()
                         await asyncio.sleep(0.05)
@@ -940,10 +979,11 @@ class Hub:
 
     async def change_resolution(self, session, m):
         try:
-            if m.get("native"):
-                await self.screen.restore()
-            else:
-                await self.screen.set_mode(int(m["w"]), int(m["h"]))
+            async with self._screen:
+                if m.get("native"):
+                    await self.screen.restore()
+                else:
+                    await self.screen.set_mode(int(m["w"]), int(m["h"]))
         except (ValueError, KeyError, RuntimeError) as e:
             session.ws.send_json({"t": "notice", "level": "error", "text": "resolution change failed: %s" % e})
         await self.refresh_modes(broadcast=True)
