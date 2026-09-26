@@ -56,7 +56,13 @@ def _desktop_dir():
 class RateControl:
     """Delay-based AIMD. The moment frames start queueing somewhere on the path (ack RTT
     rises above the recent minimum by more than the frame's own serialisation time) the
-    bitrate drops; it only probes upward while the content actually uses the bits."""
+    bitrate drops. It probes upward while the content uses the bits, and after a few calm
+    seconds it also goes back to where it was before the last cut: a desktop is mostly quiet,
+    and one Wi-Fi hiccup mustn't leave every later screen change encoded at a fraction of the
+    chosen quality. Only acks carry news: a quiet screen sends no frames, so none come back, and
+    a tick without any is calm, whatever the last estimate said."""
+
+    CALM = 3.0                              # s without queueing before a quiet picture climbs back
 
     def __init__(self, start, cap, fps):
         self.cap = max(500, cap)
@@ -67,7 +73,9 @@ class RateControl:
         self.min_rtt = None
         self.q = 0.0
         self.sent = 0
-        self.last = time.monotonic()
+        self.acks = 0                       # since the last tick
+        self.before_cut = self.kbps         # where a quiet climb stops
+        self.last = self.calm_since = time.monotonic()
 
     def on_ack(self, now, rtt, size):
         w = self.win
@@ -79,6 +87,7 @@ class RateControl:
         self.min_rtt = w[0][1]
         q = rtt - self.min_rtt - size * 8.0 / (self.kbps * 1000.0)
         self.q += 0.25 * ((q if q > 0 else 0.0) - self.q)
+        self.acks += 1
 
     def tick(self, now):
         dt = now - self.last
@@ -87,11 +96,20 @@ class RateControl:
         used = self.sent * 8 / dt / 1000.0
         self.sent = 0
         self.last = now
+        if not self.acks:                   # nothing came back: the last estimate is old news
+            self.q = 0.0
+        self.acks = 0
         old = self.kbps
+        if self.q >= 0.010:
+            self.calm_since = now
         if self.q > 0.045:
+            self.before_cut = self.kbps
             self.kbps = max(self.floor, int(self.kbps * 0.7))
-        elif self.q < 0.010 and used > 0.6 * self.kbps:
-            self.kbps = min(self.cap, int(self.kbps * 1.15) + 250)
+        elif self.q < 0.010:
+            if used > 0.6 * self.kbps:                     # the content uses the bits: probe upward
+                self.kbps = min(self.cap, int(self.kbps * 1.15) + 250)
+            elif now - self.calm_since >= self.CALM:       # quiet: back to before the last cut, no higher
+                self.kbps = max(self.kbps, min(self.cap, self.before_cut, int(self.kbps * 1.15) + 250))
         return self.kbps if self.kbps != old else None
 
     def window(self):
@@ -328,8 +346,10 @@ class Session:
             self.ws.send_json({"t": "notice", "level": "error", "text": "unsupported codec"})
             return
         fps = int(m.get("fps") or self.hub.cfg["fps"])
-        self.params = {"fps": max(1, min(120, fps)), "bitrate": max(0, int(m.get("bitrate") or 0))}
-        if self.cap and self.paused_at is not None and self.cap.fps_ == self.params["fps"]:
+        self.params = {"fps": max(1, min(120, fps)), "bitrate": max(0, int(m.get("bitrate") or 0)),
+                       "gpu": m.get("gpu") == "full"}
+        if (self.cap and self.paused_at is not None and self.cap.fps_ == self.params["fps"] and
+                getattr(self.cap, "cuda", None) in (None, self.hub.no_vulkan or self.params["gpu"])):
             self._resume()
         else:
             self._task(self._start_capture())
@@ -342,6 +362,11 @@ class Session:
     def on_cfg(self, m):
         if not self.params:
             return
+        if "gpu" in m and (m["gpu"] == "full") != self.params["gpu"]:
+            self.params["gpu"] = m["gpu"] == "full"
+            if self.cap and self.paused_at is None and self.cap.encoder == "nvenc":
+                self._task(self._start_capture(restart=True))   # the other encoder; a key frame follows
+            # (on the software fallback it applies at the next NVENC retry)
         if "fps" in m:
             self.params["fps"] = max(1, min(120, int(m["fps"])))
             if self.cap:
@@ -416,7 +441,7 @@ class Session:
         self.withhold = 0
         use_nvenc = hub.encoder and time.monotonic() >= self.x264_until and cfg["encoder"] != "x264"
         cls = capture.NvencCapture if use_nvenc else capture.X264Capture
-        kw = {"preset": cfg["preset"], "gpu": cfg["gpu"], "cuda": hub.no_vulkan} if use_nvenc else {}
+        kw = {"preset": cfg["preset"], "gpu": cfg["gpu"], "cuda": hub.no_vulkan or p["gpu"]} if use_nvenc else {}
         fps = p["fps"] if use_nvenc else min(p["fps"], 30)   # software encoding: spare the CPU
         self.stream_id = (self.stream_id % 0xFFFF) + 1
         self.seq = 0
@@ -486,6 +511,12 @@ class Session:
         now = time.monotonic()
         if reason == "resize":
             delay = 0.3
+        elif reason == "no-nvenc" and self.params["gpu"] and not self.hub.no_vulkan:
+            log.warning("session %s: no GPU memory for Full GPU — the low-memory encoder instead", self.sid)
+            self.params["gpu"] = False             # for this connection; the next one asks again
+            self.ws.send_json({"t": "notice", "level": "info",
+                               "text": "Full GPU isn't available right now: the Linux computer's GPU memory is full"})
+            delay = 0
         elif reason == "no-nvenc":
             self._fall_back_to_x264("NVENC unavailable (GPU memory full?)")
             delay = 0
@@ -1216,7 +1247,8 @@ class Hub:
         return {"sessions": [{"sid": s.sid, "client": s.client, "source": s.source, "user": s.ts_user,
                               "since": int(s.since), "streaming": bool(s.cap and s.paused_at is None),
                               "w": s.w, "h": s.h, "kbps": s.rc.kbps if s.rc else None,
-                              "enc": s.cap.encoder if s.cap else None} for s in self.sessions],
+                              "enc": s.cap.encoder if s.cap else None, "api": s.cap.api if s.cap else None}
+                             for s in self.sessions],
                 "encoder": self.encoder, "restart_for_gpu": self.cfg["encoder"] != "x264" and capture.driver_restart_needed(),
                 "url": self.url, "port": self.cfg["port"],
                 "password_set": self.auth.configured}

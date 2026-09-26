@@ -66,6 +66,7 @@ class _Source:
         self.display, self.fps_, self.kbps, self.credits = display, fps, kbps, credits
         self.on_start, self.on_frame, self.on_exit = on_start, on_frame, on_exit
         self.stopped = False
+        self.api = None                  # how it encodes: "vulkan", "cuda" or "software"
 
 
 class NvencCapture(_Source):
@@ -103,6 +104,7 @@ class NvencCapture(_Source):
                     info = json.loads(data)
                     ev = info.get("ev")
                     if ev == "start":
+                        self.api = info.get("api")
                         self.on_start(info["w"], info["h"], "nvenc")
                     elif ev in ("resize", "error"):
                         reason = ev
@@ -175,6 +177,7 @@ class X264Capture(_Source):
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
+        self.api = "software"
         self.pipe = None
         self.loop = None
         self._t_frame = 0.0

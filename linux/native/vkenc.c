@@ -309,8 +309,10 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     // the video profile and what the encoder can do with it
     e->h264_profile = (VkVideoEncodeH264ProfileInfoKHR){VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR, NULL,
                                                          STD_VIDEO_H264_PROFILE_IDC_HIGH};
-    // LOW_LATENCY, not ULTRA_LOW_LATENCY: on NVIDIA's driver the latter costs about 1.6 ms more per
-    // 2560×1440 frame, and there's no queue for it to cut: each frame is encoded and waited for alone.
+    // LOW_LATENCY: single-pass rate control. ULTRA_LOW_LATENCY is NVENC's two-pass, about 1.6 dB
+    // sharper on text (quality_test.py) for 1.6 ms more per 2560×1440 frame, but it never encodes an
+    // unchanged picture as all P_Skip, so the probe can't tell a repaint of the same pixels from a change
+    // and every one of them would be sent. Higher quality levels add only a tenth of a dB for 1.3 ms.
     e->usage = (VkVideoEncodeUsageInfoKHR){VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR, &e->h264_profile,
                                            VK_VIDEO_ENCODE_USAGE_STREAMING_BIT_KHR,
                                            VK_VIDEO_ENCODE_CONTENT_DESKTOP_BIT_KHR,

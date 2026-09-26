@@ -607,8 +607,8 @@ async def run(args, tmp, probe_log):
             ws.send({"t": "ack", "id": sid, "n": seq})
     ok("file upload (path sanitised)", path and os.path.basename(path) == "test.bin" and open(path, "rb").read() == payload, path)
 
-    # idle: no damage → no frames (after the quality-refresh frames of the last change)
-    await pump(ws, 1.0)
+    # idle: no damage → no frames (after the quality-refresh frames of the last change, about 2 s)
+    await pump(ws, 2.5)
     n, _ = await pump(ws, 1.5)
     ok("static screen sends nothing", n == 0, "%d frames in 1.5 s" % n)
 
@@ -979,6 +979,53 @@ async def run(args, tmp, probe_log):
     ok("cap frees up when they close", kind == "text" and m.get("t") == "hello", m.get("t"))
     again.w.close()
 
+    # the rate controller: a delay spike cuts the bitrate once. A static desktop sends no frames, so no
+    # acks come back: a few such seconds bring it back to where it was, no higher. Content that uses
+    # the bits takes it on up to the ceiling.
+    from darpan.session import RateControl
+    t0 = time.monotonic()
+    rc = RateControl(12000, 15000, 60)
+    for i in range(8):
+        rc.on_ack(t0 + 0.05 * i, 0.030, 1000)                 # the path's own RTT
+    for i in range(8):
+        rc.on_ack(t0 + 0.4 + 0.05 * i, 0.300, 1000)           # a Wi-Fi hiccup: RTT spikes
+    rc.tick(t0 + 0.8)
+    cut, now, quiet = rc.kbps, t0 + 0.8, []
+    for step in range(24):                                      # 12 s of a static desktop: no frames, no acks
+        now += 0.5
+        rc.tick(now)
+        quiet.append(rc.kbps)
+    for step in range(12):                                      # then scrolling: frames use the bitrate
+        now += 0.5
+        for i in range(15):
+            rc.on_ack(now - 0.45 + 0.03 * i, 0.031, 800)
+        rc.sent = rc.kbps * 1000 // 8 * 4 // 10                 # 80 % of it, over the half-second tick
+        rc.tick(now)
+    ok("bitrate: one cut for a spike, back while quiet, up while used",
+       cut == 8400 and min(quiet) == cut and quiet[-1] == 12000 and rc.kbps == 15000,
+       "%d → %d → %d → %d" % (12000, cut, quiet[-1], rc.kbps))
+
+    # Full GPU: a warm resume on the other route restarts instead; no GPU memory for it → the lean route first
+    import collections
+    import types
+    from darpan.session import Session
+    sent, tasks = [], []
+    fake = types.SimpleNamespace(
+        params={"gpu": True}, hub=types.SimpleNamespace(no_vulkan=False, cfg={"fps": 60}), sid=0, paused_at=1.0,
+        cap=types.SimpleNamespace(fps_=60, cuda=False), errors=collections.deque(), x264_until=0.0, x264_backoff=60.0,
+        ws=types.SimpleNamespace(closed=False, send_json=sent.append), _resume=lambda: tasks.append("resume"),
+        _task=lambda c: (c.close(), tasks.append("restart")), _start_capture=lambda restart=False: asyncio.sleep(0))
+    fake._fall_back_to_x264 = lambda why: Session._fall_back_to_x264(fake, why)
+    Session.on_start(fake, {"fps": 60, "gpu": "full"})
+    Session.on_start(fake, {"fps": 60, "gpu": "lean"})
+    ok("warm resume only on the same route", tasks == ["restart", "resume"], tasks)
+    fake.params, fake.paused_at, tasks[:] = {"gpu": True}, None, []
+    Session._cap_exit(fake, "no-nvenc")
+    lean = not fake.params["gpu"] and not fake.x264_until and sent and sent[-1]["t"] == "notice"
+    Session._cap_exit(fake, "no-nvenc")
+    ok("Full GPU out of memory: lean first, then software", lean and fake.x264_until > 0 and tasks == ["restart"] * 2,
+       "%s %s" % (sent, tasks))
+
     # changing the password ends existing sessions
     env = dict(os.environ, XDG_CONFIG_HOME=os.path.join(tmp, "config"), XDG_RUNTIME_DIR=os.path.join(tmp, "run"),
                XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"), HOME=tmp,
@@ -1141,6 +1188,25 @@ async def run(args, tmp, probe_log):
        and not os.path.exists(lss.DIR) and all(edits) and calls == [["enable-linger", "darpan-test-a"],
        ["enable-linger", "darpan-test-b"], ["disable-linger", "darpan-test-a"], ["disable-linger", "darpan-test-b"]],
        "%s %s" % (edits, calls))
+    # "Full GPU on the Linux computer": the viewer picks NVENC through CUDA; off again, Vulkan Video
+    def routes():
+        out = subprocess.run([sys.executable, "-m", "darpan", "status"], env=args.host_env, cwd=args.root,
+                             capture_output=True, text=True, timeout=20).stdout
+        return "full" if "full GPU encoder" in out else "lean" if "low-memory encoder" in out else out.strip()[-80:]
+    c = await WS.connect("127.0.0.1", args.port)
+    _, h = await c.recv()
+    c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py gpu"})
+    while (await asyncio.wait_for(c.recv(), 10))[1].get("t") != "ok":
+        pass
+    c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 0, "gpu": "full"})
+    await pump(c, 2.0)
+    first = routes()
+    c.send({"t": "cfg", "gpu": "lean"})
+    await pump(c, 2.5)
+    second = routes()
+    c.w.close()
+    ok("Full GPU on: CUDA; off: Vulkan", (first, second) == ("full", "lean"), "%s, then %s" % (first, second))
+
     # each kind of client gets back the resolution it chose last time; Native forgets it. The test display
     # offers only 1920×1080, so count the host's switches to it.
     pw = open(os.path.join(tmp, "config", "darpan", "password.txt")).read().strip()
