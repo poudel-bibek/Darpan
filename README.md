@@ -65,7 +65,7 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 <td valign="top"><img src="docs/feature-clipboard.svg" width="100%" alt="Copying in a Linux terminal and pasting on the Mac, then back"><br>
 <b>Copy and paste</b><br>⌘C and ⌘V work both ways,<br>in Linux terminals too.</td>
 <td valign="top"><img src="docs/feature-files.svg" width="100%" alt="A file dropped on Darpan's window lands on the Linux desktop"><br>
-<b>Files</b><br>Drop files on the window<br>to send them to Linux.</td>
+<b>Files</b><br>Drop a file on the window:<br>it lands on the desktop.</td>
 </tr>
 </table>
 

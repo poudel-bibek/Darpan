@@ -124,7 +124,7 @@ def mac(s, content="", over=""):
     notch = SX + SW / 2 - 11
     menu = (f'<rect x="{SX}" y="{SY}" width="{SW}" height="6" fill="#fff" fill-opacity=".22"/>'
             + text(SX + 6, SY + 4.4, "Darpan", 3.9, "#fff", weight=700)
-            + "".join(text(SX + x, SY + 4.4, w, 3.9, "#fff") for x, w in ((25, "File"), (34.5, "Edit"), (44, "View"), (54, "Window")))
+            + "".join(text(SX + x, SY + 4.4, w, 3.9, "#fff") for x, w in ((25, "File"), (34.5, "Edit"), (44, "View"), (56, "Window")))
             + f'<g fill="none" stroke="#fff" stroke-width=".6" stroke-linecap="round" transform="translate({SX + SW - 34} {SY + 4.3})">'
               '<path d="M-2.4-1.6a3.4 3.4 0 0 1 4.8 0"/><path d="M-1.3-.5a1.8 1.8 0 0 1 2.6 0"/></g>'
             + f'<circle cx="{SX + SW - 34}" cy="{SY + 4.4}" r=".45" fill="#fff"/>'
