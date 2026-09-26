@@ -43,7 +43,8 @@ with Google, GitHub, Microsoft or Apple), then **Publish**. Darpan shows you an 
 it the first time, go to System Settings → Privacy & Security and click **Open Anyway**. Then click
 **Sign in** with the same account.
 
-**3. Connect.** Enter the address and password, and click **Connect**. That's it.
+**3. Connect.** Darpan lists your Linux computers. Click yours; the first time, enter the password
+Darpan shows on it. That's it.
 
 > **From a browser instead:** install [Tailscale](https://tailscale.com/download) on that device,
 > sign in with the same account, and open the address. In Chrome, *Install Darpan* turns it into its own window.
@@ -80,8 +81,8 @@ Plus full screen, screen resolutions to match your window, and a toolbar that tu
   lands at the Linux cursor, as if you had typed it.
 * **Sound** from the Linux computer plays on your Mac, or in the browser. The speaker button in the toolbar mutes it.
 * **Send files** by dropping them on the window. They land on the Linux computer's desktop.
-* **The toolbar** is the small tab at the top of the window. Hover over it for full screen, display and
-  quality, keyboard, clipboard, files and sound. Drag it sideways if it's in the way.
+* **The toolbar** is the small capsule at the upper right of the window. Point at it for full screen,
+  display and quality, keyboard, files, stats and sound. Drag it by its grip to put it anywhere.
 * **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
   screen, ⌃⌥⌘D disconnect, and ⌃⌥⌘⎋ to release the keyboard (press it again to capture). System shortcuts
   (⌘Tab, ⌘Space, Mission Control) stay on the Mac unless you turn on *Send ⌘Tab, ⌘Space…* in the
