@@ -21,7 +21,8 @@
 //           "b KBPS" bitrate · "f FPS" max frame rate · "r" encode now · "q" quit
 //
 // Exit codes: 0 normal, 2 error (also: the X server went away), 3 screen size changed (restart me),
-// 4 NVENC unavailable. DARPAN_NVENC_CUDA=1 skips Vulkan Video and encodes through CUDA.
+// 4 NVENC unavailable, 5 Vulkan Video failed after it started (NVENC through CUDA may still work).
+// DARPAN_NVENC_CUDA=1 skips Vulkan Video and encodes through CUDA.
 
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -494,6 +495,8 @@ static void parse_param_sets(Encoder *e, const uint8_t *ps, uint32_t ps_len) {
 
 #define MAX_KBPS 200000
 
+static int vk_failed;          // Vulkan Video broke after it started: exit 5, so the daemon tries CUDA
+
 // src: the frame buffer (page-aligned, src_size a multiple of the page size), read by the GPU.
 static int encoder_open(Encoder *e, int gpu, int preset, int matrix601, void *src, size_t src_size,
                         uint32_t src_pitch) {
@@ -659,7 +662,7 @@ static int encoder_encode(Encoder *e, int force_idr, int probe, uint32_t extra_f
     if (e->vk) {
         const uint8_t *bs;
         uint32_t n;
-        if (vkenc_encode(e->vk, force_idr, !probe, &bs, &n)) return -1;
+        if (vkenc_encode(e->vk, force_idr, !probe, &bs, &n)) { vk_failed = 1; return -1; }
         uint32_t enc_us = (uint32_t)(now_us() - t0);
         int skip = probe && probe_all_skip(&e->h264, bs, n);
         *out_bytes = n;
@@ -1048,7 +1051,7 @@ int main(int argc, char **argv) {
                 continue;
             }
             if (enc.vk) {
-                if (vkenc_convert(enc.vk)) { rc = 2; goto out; }
+                if (vkenc_convert(enc.vk)) { vk_failed = 1; goto out; }
             } else {
                 CUresult cr = cu.Memcpy2D(&cp);
                 if (cr != CUDA_SUCCESS) { logf_("cuMemcpy2D: %s", cu_err(cr)); rc = 2; goto out; }
@@ -1115,6 +1118,7 @@ int main(int argc, char **argv) {
               bench_enc / 1000.0 / bench_done, bench_bytes / 1024.0 / bench_done);
     }
 out:
+    if (vk_failed) rc = 5;
     free(rows);
     if (cap.pinned) cu.MemHostUnregister(cap.shm.shmaddr);
     encoder_close(&enc);

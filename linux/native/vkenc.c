@@ -586,6 +586,7 @@ fail:
 }
 
 int vkenc_encode(VkEnc *e, int idr, int reference, const uint8_t **out, uint32_t *len) {
+    if (getenv("DARPAN_TEST_VULKAN_FAIL")) { vlog("failing as the test asks"); return -1; }
     if (idr || e->ref_slot < 0) { idr = 1; reference = 1; }
     uint32_t frame_num = idr ? 0 : (e->ref_frame_num + 1) & 255;
     // Reference pictures count up by 2, so the viewer's stream has no gaps however many
@@ -671,7 +672,7 @@ int vkenc_encode(VkEnc *e, int idr, int reference, const uint8_t **out, uint32_t
     VkSubmitInfo2 si = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2, NULL, 0, e->converting ? 1 : 0, &wait, 1, &cbs, 0, NULL};
     VK(vkQueueSubmit2(e->eq, 1, &si, e->done));
     e->converting = 0;
-    VK(vkWaitForFences(e->dev, 1, &e->done, VK_TRUE, 5000000000ull));
+    VK(vkWaitForFences(e->dev, 1, &e->done, VK_TRUE, 1000000000ull));   // a frame takes milliseconds
     VK(vkResetFences(e->dev, 1, &e->done));
     struct { uint32_t offset, bytes; int32_t status; } fbk = {0};
     VK(vkGetQueryPoolResults(e->dev, e->query, 0, 1, sizeof fbk, &fbk, sizeof fbk,

@@ -71,9 +71,9 @@ class _Source:
 class NvencCapture(_Source):
     encoder = "nvenc"
 
-    def __init__(self, *a, preset=3, gpu=0, **kw):
+    def __init__(self, *a, preset=3, gpu=0, cuda=False, **kw):
         super().__init__(*a, **kw)
-        self.preset, self.gpu = preset, gpu
+        self.preset, self.gpu, self.cuda = preset, gpu, cuda
         self.proc = None
         self.task = None
 
@@ -84,7 +84,7 @@ class NvencCapture(_Source):
             args += ["--display", self.display]
         self.proc = await asyncio.create_subprocess_exec(
             *args, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=None,
-            limit=1 << 20)
+            limit=1 << 20, env=dict(os.environ, DARPAN_NVENC_CUDA="1") if self.cuda else None)
         if self.stopped:                  # stop() raced the spawn: don't leave an encoder behind
             self.proc.kill()
             await self.proc.wait()
@@ -119,6 +119,8 @@ class NvencCapture(_Source):
             reason = "resize"
         elif rc == 4:
             reason = "no-nvenc"
+        elif rc == 5:
+            reason = "vulkan"
         elif rc not in (0, -15) and reason == "exit":
             reason = "error"
         if not self.stopped:
