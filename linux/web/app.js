@@ -775,21 +775,27 @@
     throw new FsError(j.e || 'failed');
   }
   function fsPut(file, path, exists, onProgress) {    // XHR, not fetch: it reports upload progress
-    const xhr = new XMLHttpRequest();
-    const done = new Promise((resolve, reject) => {
+    let xhr = null, aborted = false;
+    const attempt = (retry) => new Promise((resolve, reject) => {
+      if (aborted) return reject(new FsError('cancelled'));
+      xhr = new XMLHttpRequest();
       xhr.open('PUT', '/fs/file?' + new URLSearchParams({ path, exists }));
       xhr.setRequestHeader('Authorization', 'Bearer ' + FS.token);
       xhr.upload.onprogress = (e) => onProgress(e.loaded / Math.max(1, e.total || file.size));
       xhr.onload = () => {
         let j = {};
         try { j = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
-        if (xhr.status === 201) resolve(j.path); else reject(new FsError(j.e || 'failed'));
+        if (xhr.status === 201) resolve(j.path);
+        else if (j.e === 'token' && retry) {          // reconnected meanwhile: the old token died with its session
+          FS.token = null; fsWait = null;
+          fsSession().then(() => attempt(false)).then(resolve, reject);
+        } else reject(new FsError(j.e || 'failed'));
       };
       xhr.onerror = () => reject(new FsError('network'));
       xhr.onabort = () => reject(new FsError('cancelled'));
       xhr.send(file);
     });
-    return { done, abort: () => xhr.abort() };
+    return { done: attempt(true), abort: () => { aborted = true; if (xhr) xhr.abort(); } };
   }
   async function fsDownload(path) {                 // a single-use link: the browser saves it like any download
     const { ticket } = await fsFetch('POST', '/fs/ticket', { path });
@@ -883,15 +889,19 @@
     p.textContent = text;
     $('fsList').replaceChildren(p);
   }
+  let fsSeq = 0;
   async function fsOpen(path, keepSel) {
+    const seq = ++fsSeq;
     try {
       const r = await fsFetch('GET', '/fs/list', { path });
+      if (seq !== fsSeq) return;                    // a newer folder was opened meanwhile
       const same = r.path === FS.path;
       FS.path = r.path; FS.entries = r.entries; FS.more = r.more;
       if (!(keepSel && same)) { FS.sel.clear(); FS.anchor = -1; }
       $('fsPath').value = FS.path;
       renderFiles();
     } catch (e) {
+      if (seq !== fsSeq) return;
       $('fsPath').value = path;
       showFsMessage(e.message);
     }
@@ -1019,13 +1029,17 @@
       if (e.type !== 'f' && e.type !== 'd') { finished(el, 'fail', FS_MSG.notfile); continue; }
       try {
         let files = [p];
-        if (e.type === 'd') files = (await fsFetch('GET', '/fs/list', { path: p, deep: 1 })).entries.filter((x) => x.type === 'f').map((x) => joinPath(p, x.name));
+        if (e.type === 'd') {
+          const r = await fsFetch('GET', '/fs/list', { path: p, deep: 1 });
+          if (r.more) { finished(el, 'fail', 'Over 50,000 items: receive a smaller folder'); continue; }
+          files = r.entries.filter((x) => x.type === 'f').map((x) => joinPath(p, x.name));
+        }
         for (const [i, f] of files.entries()) {
           if (i) await sleep(150);                  // browsers take a burst of downloads better when paced
           await fsDownload(f);
           progress(el, (i + 1) / files.length);
         }
-        finished(el, 'done', e.type === 'd' ? `${files.length} file${files.length === 1 ? '' : 's'} to your downloads` : 'to your downloads');
+        finished(el, 'done', e.type === 'd' ? `${files.length} file${files.length === 1 ? '' : 's'} to your downloads, without the folders` : 'to your downloads');
       } catch (err) { finished(el, 'fail', err.message); }
     }
   }
