@@ -3,18 +3,18 @@
 Things the owner should know: deviations from `MAC_PROMPT.md`, observations about the host and
 protocol (nothing in `linux/` or `PROTOCOL.md` was changed), and what hasn't been tested yet.
 
-## Host / protocol observations
+## Host / protocol observations (all resolved in host 1.0.1)
 
-* **Paste can race the clipboard on the host.** Before sending ⌘V the Mac sends `clip`, then the
-  key (PROTOCOL.md §6). The host handles `clip` in a task (`session.on_clip` →
-  `hub.set_clipboard`, which awaits `clip.write`) but injects `key` synchronously, so the remote
-  app can receive Ctrl+V before the X clipboard holds the new text. Then it pastes the previous
-  text. The browser client has the same race. A host-side fix: process `key` messages only after
-  a pending `set_clipboard` finished, or make the clipboard write synchronous when a session
-  sends `clip`. The Mac side can't wait for a confirmation because the protocol has none.
-* **Cursor images are sent once per session.** Later `cur` messages carry only the id, so a
-  client must cache by id (the Mac client does). That's worth a sentence in PROTOCOL.md §4.
-* **`stats.q` / `stats.win`** aren't documented in PROTOCOL.md; the Mac client ignores `win`.
+* **Paste race:** fixed on the host. A `clip` is fully applied before any later message from that
+  session is processed, so `clip` followed by Ctrl+V pastes the new text. The client keeps sending
+  `clip` right before the key.
+* **Cursor cache:** PROTOCOL.md §4 now says to cache cursor images by id for the whole session
+  (the Mac client does).
+* **`stats.win` / `stats.q`:** documented in PROTOCOL.md §3.4 (frames allowed in flight; smoothed
+  queueing delay in ms). The client shows neither.
+* Also in 1.0.1, with no client change needed: `modes.native` is the mode that *Native* restores,
+  and a paused viewer's encoder stays down until the next `start`.
+* The linux side accepted the deviations below.
 
 ## Deviations from MAC_PROMPT.md
 
