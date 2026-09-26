@@ -201,6 +201,7 @@ public final class KeyboardTranslator {
             for (kc, code) in held.sorted(by: { $0.key < $1.key }) {
                 held.removeValue(forKey: kc)
                 release(code, into: &out)
+                releaseModifiers(flagOnly.removeValue(forKey: kc) ?? [], into: &out)
             }
         }
         return flagOnlyPressed

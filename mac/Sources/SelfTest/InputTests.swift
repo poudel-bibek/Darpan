@@ -97,6 +97,16 @@ func inputTests() {
            "real ⌘ already held: only the V tap")
         check(kb.commandDown, "and the real ⌘ stays down")
         _ = kb.flagsChanged(keyCode: 0x37, flags: 0)
+        // A key held by a flag-only Shift that ⌘ releases forgets that Shift: a late key-up
+        // mustn't release a Shift pressed physically in between.
+        let shiftL = F.shift | F.leftShift
+        _ = kb.keyDown(keyCode: 0x00, isRepeat: false, flags: F.shift)
+        _ = kb.flagsChanged(keyCode: 0x37, flags: cmdL)
+        _ = kb.flagsChanged(keyCode: 0x37, flags: 0)
+        eq(kb.flagsChanged(keyCode: 0x38, flags: shiftL), [KeyEvent("ShiftLeft", true)], "physical Shift down")
+        eq(kb.keyUp(keyCode: 0x00, flags: shiftL), [], "late A up releases nothing")
+        _ = kb.flagsChanged(keyCode: 0x38, flags: 0)
+        check(kb.isIdle, "idle after the Shift sequence")
 
         // ⌘ → Super: letters aren't flagged (the flag means "⌘ was sent as Ctrl").
         kb.command = .super
