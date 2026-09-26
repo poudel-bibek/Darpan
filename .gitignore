@@ -1,0 +1,14 @@
+# build outputs (published as GitHub Release assets instead)
+dist/
+linux/native/porthole-capture
+linux/packaging/cache/
+mac/.build/
+mac/build/
+*.dmg
+*.deb
+# python / editors / OS
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/

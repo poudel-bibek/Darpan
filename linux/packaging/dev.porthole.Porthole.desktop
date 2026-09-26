@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Porthole
+GenericName=Remote Desktop
+Comment=Use this computer from your other devices
+Exec=porthole gui
+Icon=porthole
+Terminal=false
+Categories=Network;RemoteAccess;GTK;
+Keywords=remote;desktop;teamviewer;vnc;rdp;tailscale;
+StartupNotify=true
+StartupWMClass=dev.porthole.Porthole

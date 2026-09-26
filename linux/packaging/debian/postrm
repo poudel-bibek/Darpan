@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+case "$1" in
+remove|purge)
+    for uid in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $1}'); do
+        [ "$uid" -ge 1000 ] 2>/dev/null || continue
+        user=$(id -nu "$uid" 2>/dev/null) || continue
+        systemctl --user -M "$user@" daemon-reload >/dev/null 2>&1 || true
+    done
+    ;;
+esac
+exit 0

@@ -1,0 +1,20 @@
+[Unit]
+Description=Porthole host (remote desktop)
+Documentation=file:///usr/share/doc/porthole/README.md
+PartOf=graphical-session.target
+After=graphical-session.target porthole-net.service
+Wants=porthole-net.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/porthole serve
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+# Guard rails, far above normal use (idle ~25 MB; streaming adds the CUDA context)
+MemoryMax=1G
+TasksMax=64
+
+[Install]
+WantedBy=graphical-session.target

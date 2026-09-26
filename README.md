@@ -1,0 +1,106 @@
+<p align="center"><img src="logo.svg" width="120" alt="Porthole"></p>
+
+<h1 align="center">Porthole</h1>
+
+<p align="center">A small, fast, private window into your other computer.<br>
+Self-hosted remote desktop for a Linux workstation, used from a Mac (or any browser).</p>
+
+---
+
+## What you get
+
+* **Low latency.** The screen is grabbed the instant it changes (X11 damage events, no fixed
+  capture clock), encoded on the NVIDIA GPU's dedicated video engine (NVENC, ~3 ms), and sent
+  immediately. The mouse pointer is drawn on your Mac, so moving it has zero lag.
+* **Almost free while you train models.** Nothing runs until a viewer connects; a static screen
+  sends nothing at all. Measured on this machine (RTX 4090, 2560×1440):
+
+  | | cost |
+  |---|---|
+  | idle, nobody connected | 0 % CPU, 0 wake-ups, ~27 MB RAM (+ Tailscale ~33 MB) |
+  | streaming your desktop | ~0.3 % of one CPU core, ~250 MB of GPU memory |
+  | per changed frame | 2.1 ms capture + 3.2 ms encode, no CPU pixel copies |
+  | typical desktop work | ~0.4 Mbit/s (adapts up to 40 Mbit/s for video/scrolling) |
+
+  GPU memory is released ~15 s after you close or hide the viewer.
+* **Private and secure.** No ports are opened and nothing is reachable from the internet: a
+  bundled, unprivileged [Tailscale](https://tailscale.com) links only *your* devices with
+  end-to-end WireGuard encryption, direct peer-to-peer whenever possible. On top of that the
+  host asks for a password using a challenge–response (the password never crosses the wire)
+  with brute-force lockout. Runs as your user — no root daemon. The clipboard is never read
+  unless you're connected.
+* **Everything you need, nothing you don't:** clipboard sync both ways, file upload (drag and
+  drop), change the remote screen resolution (restored when you disconnect), quality/frame-rate
+  presets, special keys (Super, Alt+Tab, Ctrl+Alt+Del…), full screen, a toolbar that collapses to
+  a 46×14 px tab, and live stats.
+
+## Install on the Linux computer (the one you want to reach)
+
+```bash
+sudo apt install ./dist/porthole_1.0.0_amd64.deb
+```
+
+The package is self-contained (Tailscale is inside); apt pulls in the few standard Ubuntu
+packages it uses. Then open **Porthole** from the app grid (or run `porthole setup`):
+
+1. **Sign in to Tailscale** — click *Sign in*, use any Google/Microsoft/GitHub/Apple account (free).
+2. **Publish** — one click; if asked, enable HTTPS for your tailnet (one more click).
+3. Note the **address** and **password** shown in the window.
+
+For unattended use, open <https://login.tailscale.com/admin/machines>, find this computer and
+choose **Disable key expiry** (otherwise it drops off the network after 180 days).
+
+## Connect from the Mac
+
+1. Install Tailscale on the Mac (App Store or <https://tailscale.com/download>) and sign in with
+   the same account.
+2. Open the address (e.g. `https://workstation.example.ts.net`) in Chrome or Safari and
+   enter the password. Tick *Remember this device* to skip the password next time.
+   *Tip:* in Chrome use *Install Porthole* (address bar) for an app window; in full screen Chrome
+   also forwards shortcuts like ⌘W to the remote computer.
+3. The native Mac app (`dist/Porthole.dmg`, see `mac/`) adds system-shortcut capture (⌘Tab, ⌘Space)
+   and seamless clipboard sync.
+
+Keyboard: ⌘ acts as Ctrl on the remote computer by default (⌘C/⌘V copy and paste as you expect);
+switch it to Super in the keyboard menu. Keys are sent by position, so the Linux keyboard layout
+decides the characters; *Type it* in the clipboard menu types arbitrary text.
+
+## Everyday commands
+
+```text
+porthole status       address, password, who is connected
+porthole password     show it · --set to choose your own · --generate for a new random one
+porthole disconnect   kick every remote session
+porthole doctor       check display, GPU encoder, network, service
+porthole net          Tailscale status and whether your devices connect directly or via relay
+```
+
+Logs: `journalctl --user -u porthole -u porthole-net -f`
+
+## Limitations (honest ones)
+
+* **After a reboot someone must log in to the desktop** before Porthole can show it (it runs in
+  your desktop session, not as root). For true unattended access enable *Automatic Login*
+  (Settings → Users) — anyone with physical access then gets your desktop.
+* X11 sessions only (Ubuntu's default with NVIDIA drivers); Wayland isn't supported yet.
+* Without an NVIDIA GPU it falls back to software x264 (works, uses a few CPU cores while streaming).
+* Keep your current paid remote-access app until you've confirmed Porthole works from the Mac.
+
+## Uninstall
+
+```bash
+sudo apt remove porthole
+rm -rf ~/.config/porthole ~/.local/state/porthole ~/.local/share/porthole   # settings, password, Tailscale state
+```
+Also remove the machine from <https://login.tailscale.com/admin/machines>.
+
+## Repository layout
+
+```text
+PROTOCOL.md     the wire protocol — the contract every client implements
+MAC_PROMPT.md   instructions for building the macOS app (for a Claude instance on the Mac)
+linux/          host: Python daemon, C capture/NVENC encoder, browser client, packaging, tests
+mac/            native macOS client (Swift)
+dist/           built packages (.deb, .dmg) — not committed; attached to GitHub Releases
+```
+Developer notes: [linux/README.md](linux/README.md), [mac/README.md](mac/README.md).

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Porthole">
+  <defs>
+    <linearGradient id="brass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8CF72"/>
+      <stop offset="1" stop-color="#C4861C"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.36" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#3E74DC"/>
+      <stop offset="1" stop-color="#0D1A3A"/>
+    </radialGradient>
+  </defs>
+  <circle cx="64" cy="64" r="58" fill="url(#brass)" stroke="#8A5A10" stroke-width="2"/>
+  <circle cx="64" cy="64" r="41" fill="#8A5A10"/>
+  <circle cx="64" cy="64" r="38" fill="url(#glass)"/>
+  <g fill="#9E6716">
+    <circle cx="114" cy="64" r="4"/><circle cx="99.4" cy="99.4" r="4"/><circle cx="64" cy="114" r="4"/><circle cx="28.6" cy="99.4" r="4"/>
+    <circle cx="14" cy="64" r="4"/><circle cx="28.6" cy="28.6" r="4"/><circle cx="64" cy="14" r="4"/><circle cx="99.4" cy="28.6" r="4"/>
+  </g>
+  <path d="M38 60A27 27 0 0 1 60 37" fill="none" stroke="#fff" stroke-opacity=".32" stroke-width="5" stroke-linecap="round"/>
+  <path d="M56 46V76L63 69L68 80L73 78L68 67H78Z" fill="#fff" stroke="#0D1A3A" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>

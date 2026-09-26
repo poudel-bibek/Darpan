@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+each_user() {
+    for uid in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $1}'); do
+        [ "$uid" -ge 1000 ] 2>/dev/null || continue
+        user=$(id -nu "$uid" 2>/dev/null) || continue
+        systemctl --user -M "$user@" "$@" >/dev/null 2>&1 || true
+    done
+}
+case "$1" in
+remove|deconfigure)
+    each_user stop porthole.service porthole-net.service
+    systemctl --global disable porthole.service porthole-net.service >/dev/null 2>&1 || true
+    ;;
+esac
+find /opt/porthole -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
+exit 0

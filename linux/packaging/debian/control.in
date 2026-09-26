@@ -1,0 +1,15 @@
+Package: porthole
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: amd64
+Maintainer: Darpan maintainers <maintainers@darpan.invalid>
+Installed-Size: @SIZE@
+Depends: python3 (>= 3.10), python3-gi, gir1.2-gstreamer-1.0, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-ugly, libx11-6, libxext6, libxdamage1, libxfixes3, libxtst6, xclip, x11-xserver-utils, systemd
+Recommends: gir1.2-gtk-4.0, gir1.2-adw-1
+Description: fast, private remote desktop host
+ Porthole lets you use this computer from your other devices, in a browser
+ or a native app. The screen is captured only when it changes and encoded on
+ the NVIDIA GPU (NVENC), so it costs next to nothing while the machine trains
+ models. Connections travel end-to-end encrypted over a bundled, unprivileged
+ Tailscale; nothing is exposed to the internet and no root daemon is added.

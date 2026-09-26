@@ -1,0 +1,291 @@
+# Porthole — wire protocol, version 1
+
+This is the contract between the **host** (Linux machine being controlled) and any
+**client** (the browser client served by the host, or a native macOS app).
+Everything a client needs is in this file.
+
+Design goals, in priority order: **low latency**, **low host overhead**, **security**,
+simplicity. The host never queues video: if the network or the client falls behind,
+the host encodes fewer frames instead of buffering stale ones.
+
+---
+
+## 1. Transport
+
+* One **WebSocket** per client session, path **`/ws`**.
+  * Normal remote use: `wss://<host>.<tailnet>.ts.net/ws` (HTTPS terminated by Tailscale
+    on the host, valid certificate).
+  * On the host itself (testing): `ws://127.0.0.1:47470/ws`.
+* The host serves the browser client at `/` over the same origin.
+* `GET /api/info` (no auth) returns JSON:
+  ```json
+  {"app":"porthole","ver":"1.0.0","proto":1,"host":"workstation",
+   "url":"https://workstation.example.ts.net"}
+  ```
+  `url` is the canonical HTTPS address when known, else `null`.
+* **Text frames** carry UTF-8 JSON objects. Every object has a string field `"t"` (type).
+  Unknown `"t"` values and unknown fields MUST be ignored (forward compatibility).
+* **Binary frames** start with a 1-byte kind:
+  * `0x01` VIDEO (host → client)
+  * `0x02` FILE_CHUNK (client → host)
+* Max text message: 2 MiB. Max binary message: 8 MiB. Larger messages close the session.
+* Clients SHOULD disable Nagle (TCP_NODELAY) where the platform allows it.
+
+### Close codes
+
+| code | meaning |
+|------|---------|
+| 4000 | protocol error |
+| 4001 | authentication failed / locked out |
+| 4002 | authentication timeout (no valid `auth` within 30 s) |
+| 4003 | disconnected by the host user |
+| 4004 | host shutting down / restarting |
+| 4005 | too many sessions |
+
+---
+
+## 2. Authentication (challenge–response, the password never crosses the wire)
+
+1. Immediately after the WebSocket opens, the host sends:
+   ```json
+   {"t":"hello","proto":1,"app":"porthole","ver":"1.0.0","host":"workstation",
+    "kdf":{"alg":"pbkdf2-sha256","salt":"<base64>","iter":200000},
+    "nonce":"<base64 of 32 random bytes>"}
+   ```
+2. The client derives the key and the proof:
+   ```
+   pw    = UTF-8 bytes of the password after Unicode NFC normalisation
+   key   = PBKDF2-HMAC-SHA256(pw, base64decode(salt), iter, 32 bytes)
+   proof = HMAC-SHA256(key, UTF-8("porthole-auth-v1") || base64decode(nonce))
+   ```
+   and sends
+   ```json
+   {"t":"auth","proof":"<base64 of proof>","client":"Chrome 131 on macOS","ver":"1.0.0"}
+   ```
+   `client` is a free-form human-readable description (shown in the host UI).
+   All base64 in this protocol is standard base64 **with** padding.
+3. Host replies either
+   ```json
+   {"t":"ok","sid":"<hex session id>","screen":{"w":2560,"h":1440},
+    "codecs":["h264"],"caps":["clip","files","text","cursor","res"],"url":"https://…",
+    "enc":"nvenc","gpu":"NVIDIA GeForce RTX 4090"}
+   ```
+   or
+   ```json
+   {"t":"denied","reason":"password|locked|no_password|busy","retry":30}
+   ```
+   followed by close 4001. `retry` = seconds until another attempt is accepted.
+* Brute-force protection: after 5 consecutive failures from one source the host locks that
+  source out (30 s, doubling each time, max 1 h). There is also a global limit.
+* **Remembering a device**: a client MAY store `key` (not the password) together with
+  `salt` and `iter`, and reuse it while the host still sends the same `salt`+`iter`.
+  If they change (the password was changed), the client must ask for the password again.
+* Before `ok`, the host ignores every message except `auth`.
+
+---
+
+## 3. Video
+
+### 3.1 Starting / stopping
+
+Client → host:
+```json
+{"t":"start","codec":"h264","fps":60,"bitrate":0}
+```
+* `fps`: maximum frame rate (1–120, default 60). The host only sends frames when the
+  screen actually changes, so a static screen costs ~0 bandwidth regardless.
+* `bitrate`: maximum kbit/s; `0` = automatic (adaptive, the default).
+
+Host → client, before the first frame of every new stream:
+```json
+{"t":"stream","id":3,"codec":"h264","w":2560,"h":1440,"fps":60,"enc":"nvenc"}
+```
+`id` (uint16) changes every time the encoder is (re)started. Frames whose stream id does
+not match the latest `stream` message MUST be discarded. The first frame of every stream
+is a key frame.
+
+`{"t":"stop"}` pauses streaming: no more frames are encoded. The host keeps the encoder warm
+for ~15 s (so `start` resumes instantly with a new `stream` id and a key frame) and then tears
+it down completely. Clients SHOULD send `stop` when their window is hidden/minimised and
+`start` again when visible.
+
+Mid-stream changes: `{"t":"cfg","fps":30,"bitrate":8000}` (any subset of the `start`
+fields). If the change needs a new encoder the host announces a new `stream`.
+
+`{"t":"kf"}` asks for a key frame (e.g. after a decoder error). Rate-limited by the host.
+
+### 3.2 VIDEO frame (binary, host → client), big-endian
+
+| offset | size | field |
+|-------:|-----:|-------|
+| 0  | 1 | kind = `0x01` |
+| 1  | 1 | flags: bit0 = KEY (IDR; contains SPS+PPS), bit1 = REFRESH (quality refinement of unchanged content) |
+| 2  | 2 | stream id (uint16) |
+| 4  | 4 | frame sequence number (uint32, starts at 0 for each stream, +1 per frame) |
+| 8  | 8 | capture timestamp, microseconds, host monotonic clock (uint64) |
+| 16 | … | payload |
+
+For `h264` the payload is exactly one **access unit in Annex-B format** (start codes
+`00 00 00 01` / `00 00 01`). Key frames carry SPS and PPS in-band. Profile is High or
+Main, **no B-frames** (decode order == display order), 4:2:0, 8-bit. Colour: BT.709,
+limited range unless the VUI says otherwise. Resolution == the `stream` message's w×h.
+
+### 3.3 Flow control — clients MUST ack every frame
+
+After a frame has been **decoded** (or dropped by the client), send
+```json
+{"t":"ack","id":3,"n":1234}
+```
+(`id` = stream id, `n` = sequence number). The host keeps only a small window of
+unacknowledged frames in flight; if acks stop, the host stops encoding. This is what
+keeps latency low on slow links — do not ack early "to go faster".
+
+### 3.4 Latency / clock
+
+`{"t":"ping","c":<client clock, ms, float>}` → host answers immediately
+`{"t":"pong","c":<echoed>,"s":<host monotonic clock, µs>}`.
+Round-trip time = now − c. Host-clock offset ≈ s − (c + rtt/2)·1000, which lets the client
+estimate capture→display latency from the VIDEO timestamp. Send a ping about every 2 s.
+
+Host → client about once per second while streaming (informational):
+```json
+{"t":"stats","fps":58,"kbps":4200,"enc_ms":3.2,"cap_ms":2.1,"br":12000,"win":4,"rtt":18.5,"q":0.4}
+```
+`br` = current target bitrate (kbit/s, adapted to the network), `win` = frames allowed in
+flight, `rtt` = minimum ack round-trip (ms), `q` = smoothed queueing delay (ms).
+
+Frames with the REFRESH flag re-encode pixels that were captured earlier (to sharpen them once
+the screen settles); their timestamp is the original capture time, so exclude them from
+latency measurements.
+
+---
+
+## 4. Cursor (drawn by the client → zero-latency pointer)
+
+The video stream does **not** contain the mouse pointer. The client draws the pointer
+itself, using the real shape from the host:
+
+```json
+{"t":"cur","id":7,"w":24,"h":24,"hx":4,"hy":4,"png":"<base64 PNG, RGBA>"}
+```
+* First time an `id` is used the message contains the image; afterwards the host may
+  send just `{"t":"cur","id":7}` to switch back to a cached shape.
+* `{"t":"cur","id":0}` means the pointer is hidden.
+* Image and hotspot are in **host screen pixels**; scale them by the same factor used to
+  display the video.
+
+---
+
+## 5. Input (client → host)
+
+Coordinates are integers in the **current stream's pixel space** (0 … w−1, 0 … h−1).
+
+| message | meaning |
+|---|---|
+| `{"t":"mm","x":812,"y":400}` | pointer moved (absolute). Coalesce: send at most one per display frame, but never delay it. |
+| `{"t":"mb","b":0,"d":true}` | button down (`d:false` = up). `b` uses DOM numbering: 0 left, 1 middle, 2 right, 3 back, 4 forward. Send an `mm` first if the position changed (or include `"x"`,`"y"`). |
+| `{"t":"wh","dx":0,"dy":120}` | wheel. Units of **1/120 notch** (120 = one wheel click). `dy>0` scrolls **down** (content moves up), `dx>0` scrolls right. The host accumulates and emits discrete notches. |
+| `{"t":"key","c":"KeyA","d":true}` | physical key down/up. `c` = W3C `KeyboardEvent.code` (list in §8). Auto-repeat: send additional `d:true` events while the key is held (the host disables its own auto-repeat while a client is in control). |
+| `{"t":"rel"}` | release every key and button the host believes is pressed. Send on focus loss. |
+| `{"t":"txt","s":"héllo ✓"}` | type Unicode text (best effort; for IME output and "type clipboard"). |
+
+The host also releases everything when a session ends.
+
+**Mac guidance** (browser and native): map ⌘ Command → `ControlLeft`/`ControlRight` by
+default (user-switchable to `MetaLeft`/`MetaRight` = Linux Super), ⌥ Option → `AltLeft`/
+`AltRight`, ⌃ Control → `ControlLeft`/`ControlRight`. macOS delivers CapsLock as a state
+toggle: send a `CapsLock` down+up pair on every state change. Browsers on macOS never deliver
+key-up for keys pressed while ⌘ is held: send those as an immediate down+up pair.
+
+---
+
+## 6. Clipboard (text)
+
+`{"t":"clip","text":"…"}` in either direction, max 1 MiB of UTF-8.
+* Host → client: sent when the host clipboard changes, and once after `ok`.
+* Client → host: the host becomes the clipboard owner with this text. Clients should send
+  it right before sending a paste shortcut, or whenever the local clipboard changes.
+* Neither side echoes back text it just received.
+
+---
+
+## 7. File upload (client → host)
+
+1. `{"t":"fput","id":1,"name":"report.pdf","size":123456}` (`id` uint32 chosen by client)
+2. Host: `{"t":"fok","id":1}` or `{"t":"ferr","id":1,"e":"reason"}`.
+3. Client sends the bytes in order as FILE_CHUNK binary messages:
+   `[0x02][uint32 id, big-endian][up to 256 KiB of data]`.
+4. Host acks progress `{"t":"fack","id":1,"n":<total bytes received>}`. Keep at most
+   1 MiB un-acked.
+5. When `size` bytes have arrived: `{"t":"fdone","id":1,"path":"/home/…/Downloads/Porthole/report.pdf"}`.
+   Client may abort with `{"t":"fabort","id":1}`.
+
+Files land in `~/Downloads/Porthole/` (name sanitised, never overwrites: ` (1)` suffix).
+
+---
+
+## 8. Remote resolution
+
+Host → client after `ok` and whenever it changes:
+```json
+{"t":"modes","output":"DP-0","current":[2560,1440],"native":[2560,1440],
+ "modes":[[2560,1440],[1920,1080],[1280,720]],"changed":false}
+```
+`native` is the mode the monitor had before any client changed it; `changed` is true while a
+client-selected mode is active. Client → host:
+
+* `{"t":"res","w":1920,"h":1080}` — switch the host monitor to one of `modes`.
+* `{"t":"res","native":true}` — restore the original mode.
+* `{"t":"modes"}` — ask for a fresh `modes` message.
+
+The host restores the original mode automatically when the last session ends. A resolution
+change produces `screen`, `modes` and a new `stream`.
+
+## 9. Other host → client messages
+
+* `{"t":"screen","w":3840,"h":2160}` — host screen size changed (a new `stream` follows
+  if streaming).
+* `{"t":"notice","level":"info|warn|error","text":"…"}` — show to the user.
+* `{"t":"bye","reason":"…"}` — sent right before the host closes the socket.
+
+---
+
+## 10. Key codes (`KeyboardEvent.code` values accepted in `key`)
+
+```
+KeyA … KeyZ   Digit0 … Digit9   F1 … F24
+Escape Backquote Minus Equal Backspace Tab BracketLeft BracketRight Backslash
+CapsLock Semicolon Quote Enter ShiftLeft ShiftRight Comma Period Slash
+ControlLeft ControlRight MetaLeft MetaRight AltLeft AltRight Space ContextMenu
+IntlBackslash IntlRo IntlYen
+Insert Delete Home End PageUp PageDown ArrowUp ArrowDown ArrowLeft ArrowRight
+PrintScreen ScrollLock Pause
+NumLock NumpadDivide NumpadMultiply NumpadSubtract NumpadAdd NumpadEnter
+NumpadDecimal NumpadEqual NumpadComma Numpad0 … Numpad9
+AudioVolumeMute AudioVolumeDown AudioVolumeUp
+MediaPlayPause MediaStop MediaTrackNext MediaTrackPrevious
+Lang1 Lang2 KanaMode Convert NonConvert
+```
+Keys are **physical positions** (US-QWERTY names); the host's keyboard layout decides
+which character they produce. Use `txt` to type characters that have no key.
+
+---
+
+## 11. Typical session
+
+```
+C: (connect wss://host/ws)
+H: hello {salt, iter, nonce}
+C: auth {proof}
+H: ok {screen, enc}
+H: modes {current, native, modes}
+H: cur {id, png}                ← current pointer shape
+H: clip {text}                  ← current host clipboard
+C: start {codec:"h264", fps:60, bitrate:0}
+H: stream {id:1, w, h}
+H: [VIDEO id=1 n=0 KEY]  C: ack {id:1,n:0}
+H: [VIDEO id=1 n=1]      C: ack {id:1,n:1}
+C: mm / mb / key / wh …   (any time after ok)
+C: ping                   H: pong
+C: stop                   (window hidden → host encoder shut down)
+```

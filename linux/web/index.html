@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0e">
+<title>Porthole</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============================== sign-in ============================== -->
+<main id="login" class="login">
+  <form id="loginForm" class="card" autocomplete="on">
+    <img class="mark" src="favicon.svg" alt="" width="56" height="56">
+    <h1>Porthole</h1>
+    <p id="hostName" class="host">connecting…</p>
+    <input id="user" type="text" name="username" autocomplete="username" hidden>
+    <label class="field">
+      <span>Password</span>
+      <input id="password" type="password" name="password" autocomplete="current-password" required minlength="1" spellcheck="false">
+    </label>
+    <label class="check"><input id="remember" type="checkbox" checked> Remember this device</label>
+    <button id="connectBtn" type="submit" class="primary">Connect</button>
+    <p id="loginMsg" class="msg" role="status"></p>
+    <p id="insecure" class="msg warn" hidden>This page must be opened over HTTPS for video decoding. <a id="secureLink" href="#">Open the secure address</a>.</p>
+  </form>
+</main>
+
+<!-- ============================== viewer =============================== -->
+<section id="viewer" class="viewer" hidden>
+  <div id="stage" class="stage"><canvas id="screen" class="screen"></canvas></div>
+  <textarea id="sink" class="sink" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-hidden="true"></textarea>
+
+  <!-- collapsible toolbar: a small pill at the top; hover or click to expand -->
+  <nav id="bar" class="bar collapsed" aria-label="Remote session">
+    <button id="pill" class="pill" title="Show toolbar"><i id="dot" class="dot"></i><span class="grip"></span></button>
+    <div class="tools">
+      <button data-act="fullscreen" title="Full screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      <button data-panel="display" title="Display &amp; quality"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></button>
+      <button data-panel="keys" title="Keyboard"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></button>
+      <button data-panel="clip" title="Clipboard"><svg viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4.5V3h6v1.5"/></svg></button>
+      <button data-act="upload" title="Send files to the remote computer"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg></button>
+      <button data-act="stats" title="Connection stats"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></button>
+      <span class="sep"></span>
+      <button data-act="disconnect" class="danger" title="Disconnect"><svg viewBox="0 0 24 24"><path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/></svg></button>
+    </div>
+
+    <div id="panel-display" class="panel" hidden>
+      <h3>Remote resolution</h3>
+      <div id="modes" class="list"></div>
+      <h3>Scaling</h3>
+      <div class="seg" data-setting="scale"><button data-v="fit">Fit</button><button data-v="actual">Actual size</button></div>
+      <h3>Quality</h3>
+      <div class="seg" data-setting="quality"><button data-v="0">Auto</button><button data-v="3000">Low</button><button data-v="10000">Balanced</button><button data-v="20000">High</button><button data-v="50000">Max</button></div>
+      <h3>Frame rate</h3>
+      <div class="seg" data-setting="fps"><button data-v="30">30</button><button data-v="60">60</button><button data-v="120">120</button></div>
+    </div>
+
+    <div id="panel-keys" class="panel" hidden>
+      <h3>Send keys</h3>
+      <div class="grid">
+        <button data-combo="MetaLeft">Super</button>
+        <button data-combo="AltLeft+Tab">Alt+Tab</button>
+        <button data-combo="AltLeft+F4">Alt+F4</button>
+        <button data-combo="ControlLeft+AltLeft+KeyT">Terminal</button>
+        <button data-combo="ControlLeft+AltLeft+Delete">Ctrl+Alt+Del</button>
+        <button data-combo="PrintScreen">PrtSc</button>
+        <button data-combo="Escape">Esc</button>
+        <button data-combo="MetaLeft+KeyL">Lock</button>
+        <button data-combo="ControlLeft+AltLeft+ArrowLeft">Desk ←</button>
+        <button data-combo="ControlLeft+AltLeft+ArrowRight">Desk →</button>
+      </div>
+      <h3 class="mac-only">⌘ Command sends</h3>
+      <div class="seg mac-only" data-setting="cmd"><button data-v="ctrl">Ctrl</button><button data-v="super">Super</button></div>
+      <h3>Scrolling</h3>
+      <div class="row"><input id="scrollSpeed" type="range" min="0.25" max="3" step="0.25" aria-label="Scroll speed"><label class="check"><input id="invertScroll" type="checkbox"> Reverse</label></div>
+    </div>
+
+    <div id="panel-clip" class="panel wide" hidden>
+      <h3>Remote clipboard</h3>
+      <textarea id="remoteClip" readonly rows="3" placeholder="Copy something on the remote computer…"></textarea>
+      <div class="row"><button id="copyRemote">Copy to this device</button></div>
+      <h3>Send to remote</h3>
+      <textarea id="localClip" rows="3" placeholder="Paste text here"></textarea>
+      <div class="row"><button id="sendClip">Set remote clipboard</button><button id="typeClip">Type it</button></div>
+    </div>
+  </nav>
+
+  <div id="stats" class="stats" hidden></div>
+  <div id="overlay" class="overlay" hidden><div class="spinner"></div><p id="overlayMsg">Reconnecting…</p></div>
+  <div id="drop" class="drop" hidden><p>Drop files to send them to the remote computer</p></div>
+  <input id="fileInput" type="file" multiple hidden>
+</section>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
