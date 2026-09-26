@@ -530,10 +530,10 @@ class Session:
         if reason == "resize":
             delay = 0.3
         elif reason == "no-nvenc" and self.params["gpu"] and not self.hub.no_vulkan:
-            log.warning("session %s: no GPU memory for Full GPU — the low-memory encoder instead", self.sid)
+            log.warning("session %s: no GPU memory for the more-GPU encoder — the standard one instead", self.sid)
             self.params["gpu"] = False             # for this connection; the next one asks again
             self.ws.send_json({"t": "notice", "level": "info",
-                               "text": "Full GPU isn't available right now: the Linux computer's GPU memory is full"})
+                               "text": "Can't use more of the Linux computer's GPU right now: its memory is full"})
             delay = 0
         elif reason == "no-nvenc":
             self._fall_back_to_x264("NVENC unavailable (GPU memory full?)")
