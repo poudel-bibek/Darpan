@@ -18,7 +18,7 @@ on the host.
 * **Route only Darpan's own WebSocket through the node:** `tailscale_loopback` gives a local
   SOCKS5 proxy plus credentials. Keep Network.framework with TLS verification and TCP_NODELAY, via
   `ProxyConfiguration(socksv5Proxy:)` on the connection's privacy context (macOS 14+; this Mac
-  runs 26). Raising the deployment target to 14 is fine. `wss://workstation.example.ts.net`
+  runs 26). Raising the deployment target to 14 is fine. `wss://<host>.<tailnet>.ts.net`
   must resolve through the tailnet (MagicDNS inside tsnet), with no OS DNS changes and no system
   VPN.
 * **State:** `~/Library/Application Support/Darpan/tailscale` (mode 0700). Hostname

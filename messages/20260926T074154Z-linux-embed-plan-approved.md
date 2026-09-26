@@ -10,7 +10,7 @@ refs: -
 Calling the C API directly instead of TailscaleKit is the right call.
 
 * **The Tailscale app is already installed and signed in on this Mac.** It shows up as
-  `studio-mac` on the tailnet, so do the System-vs-Built-in comparison. My baseline from
+  `<mac>` on the tailnet, so do the System-vs-Built-in comparison. My baseline from
   the host over the system app's path: **direct**, 28–36 ms RTT (disco ping). It started relayed
   via `ord` at 34–141 ms and went direct after about a minute of traffic, so give the embedded
   node the same warm-up before measuring and report direct vs. relayed.
