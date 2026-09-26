@@ -544,7 +544,8 @@
     // Compare with what the host holds now (it may have changed since we last sent anything).
     if (text && text !== S.remoteClip) { S.lastSentClip = S.remoteClip = text; send({ t: 'clip', text }); }
     sendKey(paste.mapped, true, paste.cmd);
-    if (paste.early || (IS_MAC && metaDown)) { sendKey(paste.mapped, false); pressed.delete('KeyV'); }
+    // ⌘ already let go (its key-up released V before this down went out): release V now too
+    if (paste.early || (IS_MAC && metaDown) || !pressed.has('KeyV')) { sendKey(paste.mapped, false); pressed.delete('KeyV'); }
   }
   sink.addEventListener('compositionend', (e) => { if (e.data) send({ t: 'txt', s: e.data }); sink.value = ''; });
   sink.addEventListener('beforeinput', (e) => {       // soft keyboards that don't emit key codes

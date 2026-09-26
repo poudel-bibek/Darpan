@@ -503,12 +503,25 @@ async def run(args, tmp, probe_log):
     set_class(b"xterm", b"XTerm")
     term = await press_state("KeyC", kc_c, True, True)
     ctrl = await press_state("KeyC", kc_c, True, False)
+    # two overlapping ⌘ letters in a terminal: Shift stays down until the last one is released
+    mark = len(open(probe_log).readlines())
+    ws.send({"t": "key", "c": "ControlLeft", "d": True})
+    ws.send({"t": "key", "c": "KeyC", "d": True, "cmd": True})
+    ws.send({"t": "key", "c": "KeyA", "d": True, "cmd": True})
+    ws.send({"t": "key", "c": "KeyC", "d": False})
+    ws.send({"t": "key", "c": "KeyA", "d": True, "cmd": True})     # a repeat of the key still held
+    ws.send({"t": "key", "c": "KeyA", "d": False})
+    ws.send({"t": "key", "c": "ControlLeft", "d": False})
+    await pump(ws, 0.4)
+    overlap = [int(l.split("state=")[1].split()[0]) for l in open(probe_log).readlines()[mark:]
+               if l.startswith("KEY press keycode=%d " % kc_a)]
     after = await press_state("KeyA", kc_a, False, False)
     set_class(b"probe", b"Probe")
     xl.XCloseDisplay(xd)
     ok("⌘C outside terminals: Ctrl+C", plain == [4], "state %s" % plain)
     ok("⌘C in a terminal: Ctrl+Shift+C", term == [5], "state %s" % term)
     ok("⌃C in a terminal stays Ctrl+C", ctrl == [4], "state %s" % ctrl)
+    ok("overlapping ⌘ letters keep Shift", overlap == [5, 5], "states %s" % overlap)
     ok("no Shift left behind", after == [0], "state %s" % after)
 
     # liveness: a peer that stops answering pings is dropped; one that answers is kept, even idle

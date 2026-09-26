@@ -604,7 +604,9 @@ class Session:
         x.key(kc, down)
         if not down and kc in self.cmd_shift:
             self.cmd_shift.discard(kc)
-            x.key(SHIFT_KC, False)
+            # the last ⌘ letter lets go of our Shift; never one the user is holding
+            if not self.cmd_shift and SHIFT_KC not in self.keys:
+                x.key(SHIFT_KC, False)
 
     def on_rel(self, m):
         self._release_all()
