@@ -108,7 +108,8 @@ public struct Incoming {
     }
 
     public func int(_ key: String) -> Int? {
-        guard let v = double(key), v >= Double(Int.min), v <= Double(Int.max) else { return nil }
+        // Double(Int.max) rounds up to 2^63, which Int(_:) can't hold: compare with `<`.
+        guard let v = double(key), v >= Double(Int.min), v < Double(Int.max) else { return nil }
         return Int(v)
     }
 

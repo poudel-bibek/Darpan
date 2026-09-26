@@ -40,7 +40,10 @@ final class VideoView: NSView, VideoSink {
     private var pointer: CGPoint?                           // last position, for panning in Actual size
     private var lastSent: (x: Int, y: Int)?
     private(set) var buttonsDown = Set<Int>()
-    private var cursors: [Int: NSCursor] = [:]
+    private var cursorImages: [Int: Client.Cursor] = [:]  // as sent: host pixels
+    private var cursors: [Int: NSCursor] = [:]           // at `cursorScale`
+    private var cursorScale: CGFloat = 0
+    private var cursorId = -1
     private var cursor = NSCursor.arrow
     private var tracking: NSTrackingArea?
 
@@ -108,7 +111,9 @@ final class VideoView: NSView, VideoSink {
         } else {
             displayLayer.flushAndRemoveImage()
         }
+        cursorImages.removeAll()
         cursors.removeAll()
+        cursorId = -1
         setCursor(.arrow)
     }
 
@@ -140,6 +145,12 @@ final class VideoView: NSView, VideoSink {
         videoRect = r
         surface.frame = r
         window?.invalidateCursorRects(for: self)
+        if cursorId > 0, abs(pointsPerPixel - cursorScale) > 0.001 { showCursor(cursorId) }
+    }
+
+    /// View points per stream pixel.
+    private var pointsPerPixel: CGFloat {
+        streamSize.width > 0 && videoRect.width > 0 ? videoRect.width / streamSize.width : 1
     }
 
     /// Device pixels of the view, for picking a remote resolution that fills it.
@@ -226,12 +237,31 @@ final class VideoView: NSView, VideoSink {
 
     // MARK: - cursor
 
+    /// The host sends each image once per session, later only its id (PROTOCOL.md §4).
     func setCursor(_ c: Client.Cursor) {
-        if let png = c.png, let image = NSImage(data: png), c.width > 0, c.height > 0 {
-            image.size = NSSize(width: c.width, height: c.height)     // one remote pixel per point
-            cursors[c.id] = NSCursor(image: image, hotSpot: NSPoint(x: c.hotX, y: c.hotY))
+        if c.png != nil, c.width > 0, c.height > 0 {
+            cursorImages[c.id] = c
+            cursors[c.id] = nil
         }
-        setCursor(c.id == 0 ? Self.hiddenCursor : cursors[c.id] ?? .arrow)
+        showCursor(c.id)
+    }
+
+    /// Image and hotspot scaled like the video (PROTOCOL.md §4), but never smaller than 12 pt
+    /// tall: a 4K screen fit into a small window would otherwise leave an unusable pointer.
+    private func showCursor(_ id: Int) {
+        cursorId = id
+        guard id != 0 else { return setCursor(Self.hiddenCursor) }
+        let scale = pointsPerPixel
+        if scale != cursorScale {
+            cursors.removeAll()
+            cursorScale = scale
+        }
+        if cursors[id] == nil, let c = cursorImages[id], let png = c.png, let image = NSImage(data: png) {
+            let k = max(scale, 12 / CGFloat(c.height))
+            image.size = NSSize(width: CGFloat(c.width) * k, height: CGFloat(c.height) * k)
+            cursors[id] = NSCursor(image: image, hotSpot: NSPoint(x: CGFloat(c.hotX) * k, y: CGFloat(c.hotY) * k))
+        }
+        setCursor(cursors[id] ?? .arrow)
     }
 
     private func setCursor(_ c: NSCursor) {

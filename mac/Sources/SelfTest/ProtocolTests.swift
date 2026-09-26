@@ -38,6 +38,8 @@ func protocolTests() {
         eq(mb.int("b"), 2, "mb.b")
         eq(mb.bool("d"), false, "mb.d")
         eq(Incoming(Data(Msg.ping(12345.678).utf8))!.double("c"), 12345.678, "ping.c")
+        let huge = Incoming(Data(#"{"t":"stream","id":9223372036854775807,"w":1e300,"h":-9223372036854775809}"#.utf8))!
+        check(huge.int("id") == nil && huge.int("w") == nil && huge.int("h") == Int.min, "out-of-range numbers are nil, not a trap")
         eq(Incoming(Data(Msg.txt("héllo ✓\n\"x\"")!.utf8))!.string("s"), "héllo ✓\n\"x\"", "txt round trip")
         eq(Incoming(Data(Msg.cfg(fps: 60, bitrate: 0).utf8))!.int("bitrate"), 0, "cfg.bitrate")
         let modes = Incoming(Data(#"{"t":"modes","current":[2560,1440],"modes":[[2560,1440],[1920,1080],["x",1]],"changed":false}"#.utf8))!

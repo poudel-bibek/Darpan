@@ -301,11 +301,14 @@ final class Session: NSObject {
     private func type(_ text: String) {
         // The host types at most 4096 characters per message.
         var chunk = String.UnicodeScalarView()
+        var n = 0                                        // UnicodeScalarView.count is O(n)
         for u in text.unicodeScalars {
             chunk.append(u)
-            if chunk.count >= Msg.maxTypedText {
+            n += 1
+            if n >= Msg.maxTypedText {
                 client.send(Msg.txt(String(chunk)))
                 chunk = String.UnicodeScalarView()
+                n = 0
             }
         }
         if !chunk.isEmpty { client.send(Msg.txt(String(chunk))) }
