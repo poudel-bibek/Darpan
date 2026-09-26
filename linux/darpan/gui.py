@@ -28,6 +28,12 @@ def _bg(fn, done=None):
     threading.Thread(target=run, daemon=True).start()
 
 
+HTTPS_STEP = ("Tailscale asks once to allow secure addresses for your devices. Turn it on in the page that opens; "
+              "Darpan finishes by itself.")
+MAGICDNS_STEP = ("Tailscale asks once to turn on MagicDNS, which gives your devices their names. Turn it on in the "
+                 "page that opens; Darpan finishes by itself.")
+
+
 def _open(url):
     try:
         Gio.AppInfo.launch_default_for_uri(url, None)
@@ -131,6 +137,7 @@ class Window(Adw.ApplicationWindow):
         g = Adw.PreferencesGroup()
         self.enc = Adw.ActionRow(title="Video encoder", subtitle="…")
         g.add(self.enc)
+        g.add(Adw.ActionRow(title="Version", subtitle=config.VERSION, subtitle_selectable=True))
         page.add(g)
 
         self.refresh()
@@ -178,9 +185,7 @@ class Window(Adw.ApplicationWindow):
                    "Making this computer's secure address on your private network…",
                    Gtk.Spinner(spinning=True, width_request=32, height_request=32))
         self.https_url = None
-        self.https_step = self._step("https", "channel-secure-symbolic", "One last click",
-                                     "Tailscale asks once to allow secure addresses for your devices. Turn it on in "
-                                     "the page that opens; Darpan finishes by itself.",
+        self.https_step = self._step("https", "channel-secure-symbolic", "One last click", HTTPS_STEP,
                                      self._pill("Open the page", lambda *_: self.https_url and _open(self.https_url)))
         self.ready_pw = Gtk.Label(selectable=True)
         self.ready_pw.add_css_class("title-1")
@@ -243,14 +248,18 @@ class Window(Adw.ApplicationWindow):
         ok, msg = res
         if ok:
             self.refresh()
+            return False
+        if "MagicDNS" in msg:                    # turned on in Tailscale's DNS page too
+            url, text = "https://login.tailscale.com/admin/dns", MAGICDNS_STEP
         elif msg.startswith("https://"):
-            if self.https_url != msg:
-                _open(msg)                       # once; the button opens it again
-            self.https_url = msg
-            self.stack.set_visible_child_name("https")
+            url, text = msg, HTTPS_STEP
         else:
-            self.https_step.set_description(msg)
-            self.stack.set_visible_child_name("https")
+            return False                         # e.g. just before sign-in completes: tried again soon
+        if self.https_url != url:
+            _open(url)                           # once; the button opens it again
+        self.https_url = url
+        self.https_step.set_description(text)
+        self.stack.set_visible_child_name("https")
         return False
 
     def on_get_started(self, _btn):
