@@ -26,10 +26,13 @@ echo "==> self-tests"
 swift run -c release SelfTest
 
 echo "==> release builds"
+# No build machine paths in the binary: #file strings and debug info name paths relative to the
+# repository, and the symbol table (with its object file paths) is stripped.
+MAP=(-Xswiftc -file-prefix-map -Xswiftc "$ROOT/=" -Xcc "-ffile-prefix-map=$ROOT/=")
 BINS=()
 for arch in arm64 x86_64; do
-    swift build -c release --arch "$arch" --product "$NAME"
-    BINS+=("$(swift build -c release --arch "$arch" --show-bin-path)/$NAME")
+    swift build -c release --arch "$arch" --product "$NAME" "${MAP[@]}"
+    BINS+=("$(swift build -c release --arch "$arch" --show-bin-path "${MAP[@]}")/$NAME")
 done
 
 echo "==> $APP"
@@ -37,6 +40,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 lipo -create "${BINS[@]}" -output "$APP/Contents/MacOS/$NAME"
 lipo -info "$APP/Contents/MacOS/$NAME"
+strip -S -x "$APP/Contents/MacOS/$NAME"
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -83,6 +87,7 @@ else
     codesign --force --deep -s - "$APP"
 fi
 codesign --verify --deep --strict "$APP"
+if grep -rlaF /Users/ "$APP"; then echo "the app contains a home path"; exit 1; fi
 
 echo "==> $DIST/$NAME.dmg"
 STAGE="$(mktemp -d)"

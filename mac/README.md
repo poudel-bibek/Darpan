@@ -34,8 +34,8 @@ Install and first launch: see *Mac app* in the [main README](../README.md#mac-ap
   Accessibility. They're only taken while the viewer is the front window.
 * **Clipboard**: text copied on either side is available on the other. Items that password
   managers mark as concealed are only sent when you paste them with ⌘V.
-* **Files**: drop files on the window (or use the toolbar). They land in `~/Downloads/Darpan/` on
-  the remote computer. Folders aren't sent; zip them first.
+* **Files**: drop files on the window (or use the toolbar). They land on the remote
+  computer's desktop. Folders aren't sent; zip them first.
 * **Sound**: the remote computer's sound plays on the Mac. It's on by default; the speaker button in
   the toolbar, or View → Play Sound, mutes it. It keeps playing while the viewer is hidden, and the
   Mac's audio device is used only while sound actually arrives (it's released after 2 s without any).
