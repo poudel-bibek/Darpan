@@ -117,7 +117,7 @@ hardware in about 4 ms.
 * **After a restart**, Darpan can show the Linux login screen, so you log in from your Mac with
   nobody at the Linux computer. Turn on *Show the login screen* in the Darpan window, once.
 * **Video**: *Balanced* suits most networks. At *Higher Quality* and *Max*, the Mac app gets full
-  colour (4:4:4), so coloured text such as code stays crisp. Turn on *Full GPU on the Linux computer*
+  colour (4:4:4) on Macs that decode it in hardware, so coloured text such as code stays crisp. Turn on *Full GPU on the Linux computer*
   for the sharpest, fastest video, especially when scrolling fast; it uses about 280 MB of the Linux
   computer's GPU memory while you're connected, instead of about 40 MB.
 * **Resolution**: pick one in the toolbar's display panel. The Linux computer remembers it, for the
