@@ -318,7 +318,7 @@ The host's sound (whatever plays on its default output) goes over a **separate W
 |-------:|-----:|-------|
 | 0  | 1 | kind = `0x03` |
 | 1  | 1 | flags: bit0 = FIRST (first packet after silence or dropped packets: restart the jitter buffer) |
-| 2  | 4 | slot (uint32): counts 10 ms slots; a jump of n means n − 1 slots that had nothing to send |
+| 2  | 4 | slot (uint32): counts captured 10 ms frames; a jump of n means n − 1 silent frames weren't sent. While nothing plays at all the host receives no frames, so the count just continues; FIRST marks the restart |
 | 6  | 8 | capture timestamp, microseconds, host monotonic clock (the clock video uses) |
 | 14 | … | one Opus packet: 10 ms, 48 kHz, stereo |
 

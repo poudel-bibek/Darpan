@@ -834,12 +834,19 @@ class Hub:
         now = time.monotonic()
         for t in [t for t, (_, exp) in self.audio_tokens.items() if exp < now]:
             del self.audio_tokens[t]
+        for t in [t for t, (s, _) in self.audio_tokens.items() if s is session][:-1]:
+            del self.audio_tokens[t]                        # at most 2 live tokens per session
         token = secrets.token_bytes(32)
         self.audio_tokens[token] = (session, now + AUDIO_TOKEN_TTL)
         return token
 
     async def handle_audio(self, ws, source):
         """A viewer's sound socket: its first message is {"t":"auth","token":…}, then packets flow."""
+        if self.unauthed >= UNAUTHED_MAX or self.unauthed_by[source] >= UNAUTHED_PER_SOURCE:
+            ws.close(4005, "busy")
+            return
+        self.unauthed += 1
+        self.unauthed_by[source] += 1
         session = None
         try:
             msg = await asyncio.wait_for(ws.recv(), 5)
@@ -850,12 +857,14 @@ class Hub:
                 session = ent[0]
         except (asyncio.TimeoutError, ValueError, TypeError):
             pass
-        if not session:
-            self.limiter.failure(source)
+        finally:
+            self.unauthed -= 1
+            self._unauthed_done(source)
+        if not session:                   # a 256-bit token can't be guessed: no lockout for this
             ws.close(4001, "denied")
             return
         ws.send_json({"t": "ok"})
-        self.listeners[ws] = [session, False]
+        self.listeners[ws] = [session, True]          # its first packet carries FIRST
         session.sound.add(ws)
         try:
             if self.sound is None:

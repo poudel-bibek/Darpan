@@ -533,6 +533,12 @@ async def run(args, tmp, probe_log):
     snd2.send({"t": "auth", "token": grant["token"]})
     kind, m = await snd2.recv()
     ok("audio token is single-use", kind == "close" and m == 4001, str(m))
+    idle = [await WS.connect("127.0.0.1", args.port, "/audio") for _ in range(4)]   # never sign in
+    extra = await WS.connect("127.0.0.1", args.port, "/audio")
+    kind, m = await extra.recv()
+    ok("/audio: unauthenticated sockets capped per source", kind == "close" and m == 4005, str(m))
+    for c in idle + [extra]:
+        c.w.close()
     # PipeWire restarting ends pw-record: the host starts a new one for the listener
     subprocess.run(["pkill", "-f", os.path.join(tmp, "bin", "pw-record")])
     pkts.clear()

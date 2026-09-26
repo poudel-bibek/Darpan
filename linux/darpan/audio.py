@@ -111,13 +111,9 @@ class Capture:
         proc, self.proc = self.proc, None
         if proc:
             self.loop.remove_reader(proc.stdout.fileno())
-            proc.terminate()
-            try:
-                proc.wait(2)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
             proc.stdout.close()
+            proc.terminate()
+            self.loop.call_later(2, _reap, proc)     # never wait on the event loop
             log.info("sound: stopped")
         if self.opus:
             self.opus.close()
@@ -140,10 +136,13 @@ class Capture:
         self.buf += chunk
         if self.header:                                # RIFF … "data" <size>: PCM follows
             i = self.buf.find(b"data")
-            if i < 0 or len(self.buf) < i + 8:
+            if i < 0 and len(self.buf) > 4096:         # no WAV header after all: treat it as PCM
+                self.header = False
+            elif i < 0 or len(self.buf) < i + 8:
                 return
-            del self.buf[:i + 8]
-            self.header = False
+            else:
+                del self.buf[:i + 8]
+                self.header = False
         while len(self.buf) >= FRAME_BYTES:
             pcm = bytes(self.buf[:FRAME_BYTES])
             del self.buf[:FRAME_BYTES]
@@ -154,3 +153,9 @@ class Capture:
             captured = now - len(self.buf) / FRAME_BYTES * FRAME / RATE   # later frames are still queued
             self.on_packet(HDR.pack(3, FIRST if self.gap else 0, self.seq, int(captured * 1e6)) + self.opus.encode(pcm))
             self.gap = False
+
+
+def _reap(proc):
+    if proc.poll() is None:
+        proc.kill()
+        proc.wait()

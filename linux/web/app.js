@@ -199,8 +199,13 @@
     }
     if (SND.ctx.state === 'suspended') SND.ctx.resume().catch(() => {});   // needs a click or key first
   }
-  function startSound() {
-    if (S.connected && settings.audio && S.caps.includes('audio') && 'AudioDecoder' in window) send({ t: 'audio', on: true });
+  // Ask for sound only once it can actually play (a page that hasn't had a click yet can't), so the
+  // host doesn't capture for nobody; the first click or key then starts it.
+  async function startSound() {
+    if (!(S.connected && settings.audio && S.caps.includes('audio') && 'AudioDecoder' in window)) return;
+    try { await soundContext(); await SND.ctx.resume(); } catch { /* not allowed yet */ }
+    if (SND.ctx && SND.ctx.state === 'running') { SND.pending = false; if (S.connected) send({ t: 'audio', on: true }); }
+    else SND.pending = true;
   }
   function stopSound() {
     clearTimeout(SND.idle);
@@ -211,7 +216,7 @@
     SND.dec = null;
   }
   H.audio = async (m) => {
-    if (m.error || !settings.audio) return;
+    if (m.error || !settings.audio || !S.connected) return;
     try { await soundContext(); } catch { return; }
     stopSound();
     const dec = SND.dec = new AudioDecoder({
@@ -247,7 +252,10 @@
     ws.onclose = () => { if (SND.ws === ws) SND.ws = null; };
   };
   for (const ev of ['pointerdown', 'keydown']) {
-    addEventListener(ev, () => { if (SND.ctx && SND.ctx.state === 'suspended') SND.ctx.resume().catch(() => {}); }, true);
+    addEventListener(ev, () => {
+      if (SND.pending) startSound();
+      else if (SND.ctx && SND.ctx.state === 'suspended' && SND.ws) SND.ctx.resume().catch(() => {});
+    }, true);
   }
 
   function onClosed(ev) {
