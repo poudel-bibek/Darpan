@@ -34,6 +34,8 @@
     </filter>
   </defs>
   <g transform="translate(64 64)" stroke-linejoin="round">
+    <!-- the petals, a touch smaller so their tips stay inside the 128 box -->
+    <g transform="scale(.975)">
     <g fill="url(#outer)" stroke="#D98AA6" stroke-opacity=".35" stroke-width=".8">
       <use href="#petal"/><use href="#petal" transform="rotate(45)"/><use href="#petal" transform="rotate(90)"/><use href="#petal" transform="rotate(135)"/>
       <use href="#petal" transform="rotate(180)"/><use href="#petal" transform="rotate(225)"/><use href="#petal" transform="rotate(270)"/><use href="#petal" transform="rotate(315)"/>
@@ -41,6 +43,7 @@
     <g filter="url(#lift)" fill="url(#inner)" stroke="#D98AA6" stroke-opacity=".35" stroke-width=".7">
       <use href="#bud" transform="rotate(22.5)"/><use href="#bud" transform="rotate(67.5)"/><use href="#bud" transform="rotate(112.5)"/><use href="#bud" transform="rotate(157.5)"/>
       <use href="#bud" transform="rotate(202.5)"/><use href="#bud" transform="rotate(247.5)"/><use href="#bud" transform="rotate(292.5)"/><use href="#bud" transform="rotate(337.5)"/>
+    </g>
     </g>
     <g stroke="#8E5B0E">
       <circle r="38" fill="url(#gold)" stroke-width="1.5"/>
