@@ -174,7 +174,10 @@ class Window(Adw.ApplicationWindow):
                          "%d device%s connected" % (n, "" if n == 1 else "s") if n else "Waiting for a connection", None)
         if st:
             gpu = st.get("encoder")
-            self.enc.set_subtitle(("NVENC hardware · " + gpu) if gpu else "Software (x264)")
+            if st.get("restart_for_gpu"):
+                self.enc.set_subtitle("Software (x264) · the NVIDIA driver was updated: restart to use the GPU")
+            else:
+                self.enc.set_subtitle(("NVENC hardware · " + gpu) if gpu else "Software (x264)")
             self._sessions(st.get("sessions") or [])
         return False
 

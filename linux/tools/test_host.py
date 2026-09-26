@@ -927,6 +927,20 @@ async def run(args, tmp, probe_log):
     await asyncio.sleep(3.3)
     ok("close aborts a stuck peer", stuck.aborted, "after 3 s")
 
+    # an NVIDIA driver update before a restart: the loaded module and the libraries differ
+    from darpan import capture as darpan_capture
+    nv_k, nv_l = os.path.join(tmp, "nvidia-version"), os.path.join(tmp, "libcuda.so.1")
+    with open(nv_k, "w") as f:
+        f.write("NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  595.91.07  Release Build  (b)  2026\n")
+    darpan_capture.NV_KERNEL, darpan_capture.NV_LIB = nv_k, nv_l
+    seen = []
+    for lib in ("libcuda.so.595.91.07", "libcuda.so.600.12"):
+        os.symlink(lib, nv_l)
+        seen.append(darpan_capture.driver_restart_needed())
+        os.remove(nv_l)
+    seen.append(darpan_capture.driver_restart_needed())     # no NVIDIA libraries
+    ok("GPU: restart note after a driver update", seen == [False, True, False], seen)
+
     # at most 4 connections per source may wait unauthenticated; a 5th is told "busy"
     waiting = []
     for _ in range(4):

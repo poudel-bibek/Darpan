@@ -1150,7 +1150,8 @@ class Hub:
                               "since": int(s.since), "streaming": bool(s.cap and s.paused_at is None),
                               "w": s.w, "h": s.h, "kbps": s.rc.kbps if s.rc else None,
                               "enc": s.cap.encoder if s.cap else None} for s in self.sessions],
-                "encoder": self.encoder, "url": self.url, "port": self.cfg["port"],
+                "encoder": self.encoder, "restart_for_gpu": capture.driver_restart_needed(),
+                "url": self.url, "port": self.cfg["port"],
                 "password_set": self.auth.configured}
 
     def kick(self, sid=None, code=4003, reason="disconnected by host"):
