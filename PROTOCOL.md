@@ -12,7 +12,8 @@ the host encodes fewer frames instead of buffering stale ones.
 
 ## 1. Transport
 
-* One **WebSocket** per client session, path **`/ws`**.
+* One **WebSocket** per client session, path **`/ws`**, plus an optional second one, **`/audio`**,
+  for sound (§12).
   * Normal remote use: `wss://<host>.<tailnet>.ts.net/ws` (HTTPS terminated by Tailscale
     on the host, valid certificate).
   * On the host itself (testing): `ws://127.0.0.1:47470/ws`.
@@ -28,6 +29,7 @@ the host encodes fewer frames instead of buffering stale ones.
 * **Binary frames** start with a 1-byte kind:
   * `0x01` VIDEO (host → client)
   * `0x02` FILE_CHUNK (client → host)
+  * `0x03` AUDIO (host → client, on `/audio` only)
 * Max text message: 2 MiB. Max binary message: 8 MiB. Larger messages close the session.
 * Clients SHOULD disable Nagle (TCP_NODELAY) where the platform allows it.
 
@@ -37,7 +39,7 @@ the host encodes fewer frames instead of buffering stale ones.
 |------|---------|
 | 4000 | protocol error |
 | 4001 | authentication failed / locked out |
-| 4002 | authentication timeout (no valid `auth` within 30 s) |
+| 4002 | authentication timeout (no valid `auth` within 10 s) |
 | 4003 | disconnected by the host user |
 | 4004 | host shutting down / restarting |
 | 4005 | too many sessions |
@@ -294,3 +296,34 @@ C: mm / mb / key / wh …   (any time after ok)
 C: ping                   H: pong
 C: stop                   (window hidden → host encoder shut down)
 ```
+
+---
+
+## 12. Audio (host → client)
+
+The host's sound (whatever plays on its default output) goes over a **separate WebSocket**, so
+10 ms audio packets never wait behind a large video frame on the same connection.
+
+1. `ok.caps` contains `"audio"` when the host can capture sound. The client then sends
+   `{"t":"audio","on":true}` on `/ws`.
+2. The host answers
+   `{"t":"audio","token":"<base64, 32 bytes>","codec":"opus","rate":48000,"channels":2,"frame_ms":10,"pre_skip":120}`
+   or `{"t":"audio","error":"unavailable"}`. The token works **once**, for **10 s**. `pre_skip` is the
+   encoder's delay in samples at 48 kHz.
+3. The client opens `/audio` (same origin as `/ws`) and, within 5 s, sends `{"t":"auth","token":"…"}`.
+   The host answers `{"t":"ok"}`, or closes with 4001 for a bad or expired token.
+4. Then the host sends AUDIO messages, big-endian:
+
+| offset | size | field |
+|-------:|-----:|-------|
+| 0  | 1 | kind = `0x03` |
+| 1  | 1 | flags: bit0 = FIRST (first packet after silence or dropped packets: restart the jitter buffer) |
+| 2  | 4 | slot (uint32): counts captured 10 ms frames; a jump of n means n − 1 silent frames weren't sent. While nothing plays at all the host receives no frames, so the count just continues; FIRST marks the restart |
+| 6  | 8 | capture timestamp, microseconds, host monotonic clock (the clock video uses) |
+| 14 | … | one Opus packet: 10 ms, 48 kHz, stereo |
+
+* Nothing is sent while nothing plays, and digital silence isn't sent. Clients play gaps as silence.
+* If a client's link falls behind (more than 32 KiB unsent), the host drops its audio packets rather
+  than delaying them; the next packet sent to it has FIRST set.
+* `{"t":"audio","on":false}` on `/ws`, or closing `/audio`, stops it. `/audio` closes with 4003 when
+  its session ends. Each viewer has its own token and socket; they share one capture on the host.

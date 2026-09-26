@@ -1,7 +1,7 @@
 """HTTP/1.1 + WebSocket (RFC 6455) server on asyncio — standard library only.
 
 Only three kinds of request exist: the web client's static files (held in memory,
-pre-gzipped), GET /api/info, and the /ws WebSocket. Everything else is refused early.
+pre-gzipped), GET /api/info, and the /ws and /audio WebSockets. Everything else is refused early.
 """
 import asyncio
 import base64
@@ -246,8 +246,8 @@ class Server:
                 if not _host_allowed(headers.get("host")):
                     self._simple(writer, 421, "Misdirected Request")
                     break
-                if path == "/ws":
-                    await self._websocket(reader, writer, peer, headers)
+                if path in ("/ws", "/audio"):
+                    await self._websocket(reader, writer, peer, headers, path)
                     return
                 keep = self._respond(writer, method, path, headers)
                 await writer.drain()
@@ -321,7 +321,7 @@ class Server:
             writer.write(body)
         return keep
 
-    async def _websocket(self, reader, writer, peer, headers):
+    async def _websocket(self, reader, writer, peer, headers, path):
         key = headers.get("sec-websocket-key", "")
         if (headers.get("upgrade", "").lower() != "websocket" or "upgrade" not in headers.get("connection", "").lower()
                 or headers.get("sec-websocket-version") != "13" or len(key) != 24):
@@ -346,4 +346,8 @@ class Server:
                 source = xff.split(",")[0].strip()[:64]
         except ValueError:
             pass
-        await self.hub.handle(WebSocket(reader, writer), source, headers)
+        ws = WebSocket(reader, writer)
+        if path == "/audio":
+            await self.hub.handle_audio(ws, source)
+        else:
+            await self.hub.handle(ws, source, headers)

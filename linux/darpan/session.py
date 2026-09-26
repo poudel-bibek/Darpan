@@ -13,6 +13,7 @@ import struct
 import time
 import zlib
 
+from . import audio
 from . import auth, capture, config, keymap, tailscale
 from .clipboard import Clipboard
 from .screen import Screen
@@ -26,6 +27,7 @@ UPLOAD_QUEUE_MAX = 2 << 20      # received but not yet written, per upload (clie
 AUTH_TIMEOUT = 10               # s to sign in; clients connect only once they have the password
 UNAUTHED_MAX = 32               # connections not yet signed in, in total and per source
 UNAUTHED_PER_SOURCE = 4
+AUDIO_TOKEN_TTL = 10            # s to open /audio with a token
 SHIFT_KC = keymap.x_keycode("ShiftLeft")
 
 
@@ -169,6 +171,7 @@ class Session:
         self.cursors_sent = set()
         self.uploads = {}
         self.tasks = set()
+        self.sound = set()               # this viewer's /audio sockets
 
     # ------------------------------------------------------------------ lifecycle
     async def run(self):
@@ -268,7 +271,8 @@ class Session:
         hub._refresh_url()
         w, h = hub.x.size
         self.ws.send_json({"t": "ok", "sid": self.sid, "screen": {"w": w, "h": h}, "codecs": ["h264"],
-                           "caps": ["clip", "files", "text", "cursor", "res"], "url": hub.url,
+                           "caps": ["clip", "files", "text", "cursor", "res"] + (["audio"] if hub.audio_ok else []),
+                           "url": hub.url,
                            "enc": "nvenc" if hub.encoder else "x264", "gpu": hub.encoder})
         if hub.modes:
             self.ws.send_json(dict(hub.modes, t="modes"))
@@ -280,6 +284,10 @@ class Session:
     async def _close(self):
         hub = self.hub
         hub.sessions.discard(self)
+        for t in [t for t, (s, _) in hub.audio_tokens.items() if s is self]:
+            del hub.audio_tokens[t]
+        for ws in list(self.sound):
+            ws.close(4003, "session ended")
         writers = [u.task for u in self.uploads.values() if u.task]
         for t in list(self.tasks):
             t.cancel()
@@ -635,6 +643,25 @@ class Session:
     def on_modes(self, m):
         self._task(self.hub.refresh_modes(send_to=self))
 
+    # ------------------------------------------------------------------ sound
+    def on_audio(self, m):
+        hub = self.hub
+        if not m.get("on"):
+            for ws in list(self.sound):
+                ws.close(1000)
+            return
+        try:
+            if not hub.audio_ok:
+                raise OSError("no PipeWire or libopus")
+            if hub.audio_pre_skip is None:
+                hub.audio_pre_skip = audio.lookahead()
+        except OSError as e:
+            log.info("sound unavailable: %s", e)
+            self.ws.send_json({"t": "audio", "error": "unavailable"})
+            return
+        self.ws.send_json({"t": "audio", "token": _b64(hub.audio_token(self)), "codec": "opus", "rate": audio.RATE,
+                           "channels": audio.CHANNELS, "frame_ms": 10, "pre_skip": hub.audio_pre_skip})
+
     # ------------------------------------------------------------------ uploads
     def on_fput(self, m):
         fid, size = int(m.get("id", 0)) & 0xFFFFFFFF, int(m.get("size", -1))
@@ -724,7 +751,7 @@ class Session:
         "start": on_start, "stop": on_stop, "cfg": on_cfg, "kf": on_kf, "ack": on_ack,
         "mm": on_mm, "mb": on_mb, "wh": on_wh, "key": on_key, "rel": on_rel, "txt": on_txt,
         "clip": on_clip, "ping": on_ping, "res": on_res, "modes": on_modes,
-        "fput": on_fput, "fabort": on_fabort,
+        "fput": on_fput, "fabort": on_fabort, "audio": on_audio,
     }
 
 
@@ -757,6 +784,12 @@ class Hub:
         self._typing = asyncio.Lock()
         self._screen = asyncio.Lock()     # set_mode / restore never interleave
         self.unauthed_by = collections.Counter()
+        self.audio_ok = audio.available()
+        self.audio_pre_skip = None
+        self.audio_tokens = {}           # token -> (session, expiry): single use, 10 s
+        self.listeners = {}              # /audio socket -> [session, dropped since last packet]
+        self.sound = None                # audio.Capture while anyone listens
+        self.audio_fails = 0
         self.loop = None
 
     async def start(self):
@@ -795,6 +828,96 @@ class Hub:
 
         fut = self.loop.run_in_executor(None, fetch)
         fut.add_done_callback(lambda f: setattr(self, "url", f.result()) if not f.exception() else None)
+
+    # ---------------------------------------------------------------- sound
+    def audio_token(self, session):
+        now = time.monotonic()
+        for t in [t for t, (_, exp) in self.audio_tokens.items() if exp < now]:
+            del self.audio_tokens[t]
+        for t in [t for t, (s, _) in self.audio_tokens.items() if s is session][:-1]:
+            del self.audio_tokens[t]                        # at most 2 live tokens per session
+        token = secrets.token_bytes(32)
+        self.audio_tokens[token] = (session, now + AUDIO_TOKEN_TTL)
+        return token
+
+    async def handle_audio(self, ws, source):
+        """A viewer's sound socket: its first message is {"t":"auth","token":…}, then packets flow."""
+        if self.unauthed >= UNAUTHED_MAX or self.unauthed_by[source] >= UNAUTHED_PER_SOURCE:
+            ws.close(4005, "busy")
+            return
+        self.unauthed += 1
+        self.unauthed_by[source] += 1
+        session = None
+        try:
+            msg = await asyncio.wait_for(ws.recv(), 5)
+            m = json.loads(msg[1]) if msg and msg[0] else {}
+            token = base64.b64decode(m.get("token", ""), validate=True) if isinstance(m, dict) else b""
+            ent = self.audio_tokens.pop(token, None)         # single use
+            if ent and ent[1] >= time.monotonic() and ent[0] in self.sessions:
+                session = ent[0]
+        except (asyncio.TimeoutError, ValueError, TypeError):
+            pass
+        finally:
+            self.unauthed -= 1
+            self._unauthed_done(source)
+        if not session:                   # a 256-bit token can't be guessed: no lockout for this
+            ws.close(4001, "denied")
+            return
+        ws.send_json({"t": "ok"})
+        self.listeners[ws] = [session, True]          # its first packet carries FIRST
+        session.sound.add(ws)
+        try:
+            if self.sound is None:
+                self._audio_start()
+            while await ws.recv() is not None:               # nothing to read; wait for the close
+                pass
+        except OSError as e:
+            log.warning("sound: %s", e)
+        finally:
+            self.listeners.pop(ws, None)
+            session.sound.discard(ws)
+            if not self.listeners and self.sound:
+                self.sound.stop()
+                self.sound = None
+            if not ws.closed:
+                ws.close(1000)
+
+    def _audio_start(self):
+        self.sound = audio.Capture(self.loop, self._audio_packet, self._audio_exited)
+        try:
+            self.sound.start()
+        except OSError:
+            self.sound = None
+            raise
+
+    def _audio_exited(self, ran):
+        # PipeWire restarted, say: start again for the listeners, but give up after 3 quick failures
+        self.sound = None
+        self.audio_fails = 0 if ran > 5 else self.audio_fails + 1
+        if self.listeners and self.audio_fails < 3:
+            self.loop.call_later(2, self._audio_retry)
+        else:
+            for ws in list(self.listeners):
+                ws.close(1011, "sound unavailable")
+
+    def _audio_retry(self):
+        if self.sound is None and self.listeners:
+            try:
+                self._audio_start()
+            except OSError as e:
+                log.warning("sound: %s", e)
+                self._audio_exited(0)
+
+    def _audio_packet(self, pkt):
+        for ws, ent in self.listeners.items():
+            if ws.buffered > 32 * 1024:          # a slow link: drop sound rather than delay it
+                ent[1] = True
+                continue
+            out = pkt
+            if ent[1]:                           # packets were dropped: the client restarts its buffer
+                out = pkt[:1] + bytes((pkt[1] | audio.FIRST,)) + pkt[2:]
+                ent[1] = False
+            ws.send_binary(out)
 
     def _unauthed_done(self, source):
         self.unauthed_by[source] -= 1

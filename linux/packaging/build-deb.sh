@@ -26,7 +26,7 @@ install -d -m 0755 "$R/DEBIAN" "$R/opt/darpan/darpan" "$R/opt/darpan/native" "$R
     "$R/usr/share/icons/hicolor/scalable/apps" "$R/usr/share/doc/darpan"
 install -m 0644 darpan/*.py "$R/opt/darpan/darpan/"
 install -m 0755 native/darpan-capture "$R/opt/darpan/native/"
-install -m 0644 web/index.html web/app.js web/style.css web/favicon.svg web/manifest.webmanifest "$R/opt/darpan/web/"
+install -m 0644 web/index.html web/app.js web/audio-worklet.js web/style.css web/favicon.svg web/manifest.webmanifest "$R/opt/darpan/web/"
 tar -xzf "$TGZ" -C "$STAGE"
 # only the daemon: the host drives it through its LocalAPI, so the 33 MB CLI isn't needed
 install -m 0755 "$STAGE/tailscale_${TSVER}_amd64/tailscaled" "$R/opt/darpan/tailscale/"

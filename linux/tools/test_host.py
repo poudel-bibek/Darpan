@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import base64
 import ctypes
+import ctypes.util
 import hashlib
 import hmac
 import json
@@ -22,6 +23,25 @@ import tempfile
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FAKE_PW_RECORD = r'''#!/usr/bin/env python3
+# Stand-in for pw-record in tests: writes a WAV header, then paced 48 kHz stereo s16 PCM on stdout:
+# 1 s of a 1 kHz tone, 0.3 s of digital silence, repeated. Logs its arguments and when it's started.
+import math, os, struct, sys, time
+with open(os.environ["DARPAN_FAKE_PW_LOG"], "a") as f:
+    f.write("START " + " ".join(sys.argv[1:]) + "\n")
+out = sys.stdout.buffer
+out.write(b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 2, 48000, 48000 * 4, 4, 16)
+          + b"data" + struct.pack("<I", 0xFFFFFFFF))
+tone = b"".join(struct.pack("<hh", v, v) for v in (int(9000 * math.sin(2 * math.pi * 1000 * i / 48000)) for i in range(480)))
+t0, n = time.monotonic(), 0
+while True:
+    k = n % 130                                  # 130 chunks of 10 ms: 100 tone, then 30 silent
+    out.write(tone if k < 100 else bytes(len(tone)))
+    out.flush()
+    n += 1
+    time.sleep(max(0.0, t0 + n * 0.01 - time.monotonic()))
+'''
+
 PROBE_APP = r'''
 import ctypes, sys, time
 x = ctypes.CDLL("libX11.so.6")
@@ -464,6 +484,72 @@ async def run(args, tmp, probe_log):
     w.close()
     ok("Origin: null refused", " 403 " in line, line)
 
+    # sound: token on the main socket, packets on /audio, Opus that decodes to the tone
+    ok("audio in capabilities", "audio" in msgs.get("ok", {}).get("caps", []), str(msgs.get("ok", {}).get("caps")))
+    ws.send({"t": "audio", "on": True})
+    _, grant = await pump(ws, 2, want="audio")
+    ok("audio token granted", grant and grant.get("token") and grant.get("codec") == "opus" and grant.get("frame_ms") == 10,
+       str({k: v for k, v in (grant or {}).items() if k != "token"}))
+    snd = await WS.connect("127.0.0.1", args.port, "/audio")
+    snd.send({"t": "auth", "token": grant["token"]})
+    kind, m = await snd.recv()
+    ok("audio socket accepted", kind == "text" and m.get("t") == "ok", str(m))
+    opus = ctypes.CDLL(ctypes.util.find_library("opus"))
+    opus.opus_decoder_create.restype = ctypes.c_void_p
+    opus.opus_decoder_create.argtypes = [ctypes.c_int32, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+    opus.opus_decode.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32, ctypes.POINTER(ctypes.c_int16), ctypes.c_int, ctypes.c_int]
+    dec = opus.opus_decoder_create(48000, 2, ctypes.byref(ctypes.c_int()))
+    pcm = (ctypes.c_int16 * (5760 * 2))()
+    pkts, samples, t_first, t_last = [], [], None, None
+
+    async def listen(c, seconds):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            try:
+                kind, data = await asyncio.wait_for(c.recv(), max(0.01, end - time.monotonic()))
+            except asyncio.TimeoutError:
+                break
+            if kind == "binary":
+                pkts.append((time.monotonic(), data))
+
+    await asyncio.gather(listen(snd, 3.0), pump(ws, 3.0))
+    heads = [struct.unpack(">BBIQ", d[:14]) for _, d in pkts]
+    for _, d in pkts:
+        n = opus.opus_decode(dec, d[14:], len(d) - 14, pcm, 5760, 0)
+        samples.extend(pcm[0:n * 2:2])
+    good = [h for h in heads if h[0] == 3]
+    firsts = [i for i, h in enumerate(heads) if h[1] & 1]
+    jumps = [b[2] - a[2] for a, b in zip(heads, heads[1:]) if b[2] - a[2] > 1]
+    zc = sum(1 for a, b in zip(samples[4800:], samples[4801:]) if (a < 0) != (b < 0))
+    tone_secs = max(1, len(samples) - 4800) / 48000
+    ok("audio packets: kind 3, ~100/s", len(good) == len(pkts) and 150 <= len(pkts) <= 260, "%d packets in 3 s" % len(pkts))
+    ok("audio decodes to the 1 kHz tone", abs(zc / 2 / tone_secs - 1000) < 60, "%.0f Hz" % (zc / 2 / tone_secs))
+    ok("silence not sent; restart flagged", jumps and all(28 <= j <= 32 for j in jumps) and len(firsts) >= 2 and firsts[0] == 0,
+       "gaps %s, first-flags at %s" % (jumps, firsts[:4]))
+    started = open(os.path.join(tmp, "pw.log")).read()
+    ok("pw-record: passive monitor capture", "stream.capture.sink = true" in started and "node.passive = true" in started
+       and started.count("START") == 1, started.strip()[:90])
+    snd2 = await WS.connect("127.0.0.1", args.port, "/audio")
+    snd2.send({"t": "auth", "token": grant["token"]})
+    kind, m = await snd2.recv()
+    ok("audio token is single-use", kind == "close" and m == 4001, str(m))
+    idle = [await WS.connect("127.0.0.1", args.port, "/audio") for _ in range(4)]   # never sign in
+    extra = await WS.connect("127.0.0.1", args.port, "/audio")
+    kind, m = await extra.recv()
+    ok("/audio: unauthenticated sockets capped per source", kind == "close" and m == 4005, str(m))
+    for c in idle + [extra]:
+        c.w.close()
+    # PipeWire restarting ends pw-record: the host starts a new one for the listener
+    subprocess.run(["pkill", "-f", os.path.join(tmp, "bin", "pw-record")])
+    pkts.clear()
+    await asyncio.gather(listen(snd, 4.0), pump(ws, 4.0))
+    restarted = open(os.path.join(tmp, "pw.log")).read().count("START")
+    ok("capture restarts after pw-record exits", restarted == 2 and len(pkts) > 50, "%d starts, %d packets after" % (restarted, len(pkts)))
+    snd.w.close()
+    await asyncio.sleep(1.0)
+    left = subprocess.run(["pgrep", "-f", os.path.join(tmp, "bin", "pw-record")], capture_output=True, text=True).stdout.split()
+    ok("capture stops when nobody listens", not left, "pids %s" % left)
+
     # liveness: a peer that stops answering pings is dropped; one that answers is kept, even idle
     async def session(answer=True):
         c = await WS.connect("127.0.0.1", args.port)
@@ -602,7 +688,13 @@ def main():
             if os.path.exists("/tmp/.X11-unix/X%d" % n):
                 break
             time.sleep(0.1)
+    fakebin = os.path.join(tmp, "bin")
+    os.makedirs(fakebin)
+    with open(os.path.join(fakebin, "pw-record"), "w") as f:
+        f.write(FAKE_PW_RECORD)
+    os.chmod(os.path.join(fakebin, "pw-record"), 0o755)
     env = dict(os.environ, DISPLAY=args.display, XDG_CONFIG_HOME=os.path.join(tmp, "config"),
+               PATH=fakebin + os.pathsep + os.environ.get("PATH", ""), DARPAN_FAKE_PW_LOG=os.path.join(tmp, "pw.log"),
                XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"),
                XDG_RUNTIME_DIR=os.path.join(tmp, "run"), HOME=tmp, PYTHONPATH=args.root)
     os.makedirs(env["XDG_RUNTIME_DIR"], mode=0o700)
