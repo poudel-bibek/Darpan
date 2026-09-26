@@ -65,10 +65,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connectWindow.showWindow(nil)
     }
 
-    @objc func showHelp(_ sender: Any?) {
-        NSWorkspace.shared.open(AppInfo.website.appendingPathComponent("tree/main/mac#readme"))
-    }
-
     @objc func showAbout(_ sender: Any?) {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: AppInfo.name,

@@ -6,7 +6,6 @@ import Security
 enum AppInfo {
     static let name = "Darpan"
     static let bundleID = Bundle.main.bundleIdentifier ?? "dev.darpan.Darpan"
-    static let website = URL(string: "https://github.com/OWNER/darpan")!
 }
 
 enum NetworkMode: String, CaseIterable {

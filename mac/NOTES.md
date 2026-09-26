@@ -1,6 +1,6 @@
 # Notes on the Mac client
 
-Things the owner should know: deviations from `MAC_PROMPT.md`, observations about the host and
+Deviations from `MAC_PROMPT.md`, observations about the host and
 protocol (nothing in `linux/` or `PROTOCOL.md` was changed), and what hasn't been tested yet.
 
 ## Host / protocol observations (all resolved in host 1.0.1)
