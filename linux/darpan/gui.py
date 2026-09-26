@@ -1,6 +1,7 @@
 """Darpan status window (GTK 4 + libadwaita): address, password, network sign-in and
 connected devices. All slow calls run on a worker thread; the UI never blocks."""
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -11,7 +12,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
-from . import auth, config, control, login_screen, tailscale  # noqa: E402
+from . import auth, config, control, login_screen, tailscale, update  # noqa: E402
 
 APP_ID = "dev.darpan.Darpan"
 
@@ -45,6 +46,11 @@ class Window(Adw.ApplicationWindow):
         self.toasts = Adw.ToastOverlay()
         view = Adw.ToolbarView()
         view.add_top_bar(Adw.HeaderBar())
+        self.update = Adw.Banner(button_label="Update")      # shown when APT knows a newer Darpan
+        self.update.connect("button-clicked", self.on_update)
+        view.add_top_bar(self.update)
+        _bg(update.available, self._update_found)
+        GLib.timeout_add_seconds(3600, self._check_update)     # the system refreshes APT's lists daily
         page = Adw.PreferencesPage()
         view.set_content(page)
         self.toasts.set_child(view)
@@ -260,6 +266,30 @@ class Window(Adw.ApplicationWindow):
                 self.refresh()
                 return False
             _bg(publish, done)
+
+    def _check_update(self):
+        if self.update.get_sensitive():                        # not while one is being installed
+            _bg(update.available, self._update_found)
+        return True
+
+    def _update_found(self, version):
+        if isinstance(version, str):
+            self.update.set_title("Darpan %s is available" % version)
+        self.update.set_revealed(isinstance(version, str))
+
+    def on_update(self, banner):
+        banner.set_sensitive(False)
+        banner.set_title("Updating…")
+
+        def done(ok):
+            darpan = shutil.which("darpan")
+            if ok is True and darpan:
+                os.execv(darpan, [darpan, "gui"])          # the new version's window
+            banner.set_sensitive(True)
+            _bg(update.available, self._update_found)
+            if ok is not True:
+                self._toast("Not updated")
+        _bg(update.install, done)
 
     def on_login_screen(self, row, _pspec):
         want = row.get_active()
