@@ -148,6 +148,7 @@
   H.ok = (m) => {
     S.connected = true; S.retry = 0; S.sid = m.sid; S.screen = m.screen; S.enc = m.enc; S.caps = m.caps || [];
     S.password = null; S.clipSeen = false;
+    FS.token = null; fsWait = null;   // a new session: file requests need its token
     if (S.remember) writeJSON(KEY_SLOT, { salt: S.salt, iter: S.iter, key: b64enc(S.key) });
     else forget(KEY_SLOT);
     $('overlay').hidden = true;
@@ -662,7 +663,6 @@
   }
   H.clip = (m) => {
     S.remoteClip = m.text;
-    $('remoteClip').value = m.text;
     if (!S.clipSeen) { S.clipSeen = true; return; }     // don't clobber this device's clipboard on connect
     if (copyResolve) { const r = copyResolve; copyResolve = null; r(m.text); return; }
     writeLocal(m.text);
@@ -682,14 +682,14 @@
     } catch { /* not supported */ }
   });
 
-  // ------------------------------------------------------------ uploads
+  // ------------------------------------------------------------ uploads over /ws (hosts without §7.1)
   const queue = [];
   let up = null, nextId = 1;
   function enqueue(files) { for (const f of files) queue.push(f); pump(); }
   function pump() {
     if (up || !queue.length || !S.connected) return;
     const f = queue.shift();
-    up = { id: nextId++, f, sent: 0, acked: 0, busy: false, el: toast(`Sending ${f.name}…`, { ttl: 0 }) };
+    up = { id: nextId++, f, sent: 0, acked: 0, busy: false, el: xferUI('up', f.name, true) };
     send({ t: 'fput', id: up.id, name: f.name, size: f.size });
   }
   async function sendChunks() {
@@ -713,28 +713,438 @@
   H.fack = (m) => {
     if (!up || up.id !== m.id) return;
     up.acked = m.n;
-    up.el.textContent = `Sending ${up.f.name}… ${Math.floor(100 * m.n / Math.max(1, up.f.size))}%`;
+    progress(up.el, m.n / Math.max(1, up.f.size));
     sendChunks();
   };
   H.fdone = (m) => {
-    if (up && up.id === m.id) { up.el.remove(); up = null; }
-    toast('Saved to ' + m.path.replace(/^\/home\/[^/]+/, '~'));
+    if (up && up.id === m.id) { finished(up.el, 'done', 'on the desktop'); up = null; }
     pump();
   };
   H.ferr = (m) => {
-    if (up && up.id === m.id) { up.el.remove(); up = null; }
-    toast('Upload failed: ' + m.e, { error: true });
+    if (up && up.id === m.id) { finished(up.el, 'fail', m.e); up = null; }
     pump();
   };
-  $('fileInput').addEventListener('change', (e) => { enqueue(e.target.files); e.target.value = ''; });
+
+  // ------------------------------------------------------------ files (PROTOCOL.md §7.1)
+  // The remote computer's files in a window of their own: browse, Send and Receive. File data
+  // travels over separate HTTP requests, never over /ws, so video and input never wait for it.
+  const ICON = {
+    dir: '<svg viewBox="0 0 24 24"><path d="M3 7.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-7L10 5H5a2 2 0 0 0-2 2.5z"/></svg>',
+    file: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+    other: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg>',
+    up: '<svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+    down: '<svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
+    x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  };
+  const FS_MSG = { notfound: 'Not found', denied: 'Permission denied', exists: 'Already exists', notdir: 'Not a folder',
+    isdir: 'It’s a folder', notfile: 'Not a regular file', nospace: 'The disk is full', busy: 'Busy', token: 'The session ended',
+    invalid: 'Not a valid path', failed: 'Failed', network: 'Connection lost', cancelled: 'Cancelled', range: 'Failed' };
+  class FsError extends Error { constructor(code) { super(FS_MSG[code] || code); this.code = code; } }
+  const FS = { token: null, home: '', inbox: '', ready: null, path: '', entries: [], view: [], more: false, sel: new Set(), anchor: -1,
+    sort: { key: 'name', dir: 1 }, xfers: [], running: 0 };
+  S.fs = FS;                                        // for automated tests
+  const filesWin = $('files');
+  const hasFs = () => (S.caps || []).includes('fs');
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const joinPath = (d, n) => (d.endsWith('/') ? d : d + '/') + n;
+  const parentOf = (p) => { const q = p.replace(/\/+$/, ''); const i = q.lastIndexOf('/'); return i <= 0 ? '/' : q.slice(0, i); };
+  const baseName = (p) => p.replace(/\/+$/, '').split('/').pop() || '/';
+  const fmtSize = (n) => n < 1000 ? n + ' B' : n < 1e6 ? (n / 1e3).toFixed(1) + ' KB' : n < 1e9 ? (n / 1e6).toFixed(1) + ' MB' : (n / 1e9).toFixed(2) + ' GB';
+  const fmtDate = (t) => new Date(t * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+  let fsWait = null;
+  function fsSession() {                            // the session's file token, asked for once
+    if (FS.token) return Promise.resolve();
+    if (!fsWait) {
+      fsWait = new Promise((resolve, reject) => {
+        FS.ready = resolve;
+        send({ t: 'fs' });
+        setTimeout(() => { fsWait = null; reject(new FsError('network')); }, 5000);
+      });
+    }
+    return fsWait;
+  }
+  H.fs = (m) => { FS.token = m.token; FS.home = m.home; FS.inbox = m.inbox; if (FS.ready) FS.ready(); };
+
+  async function fsFetch(method, path, params, retry = true) {
+    await fsSession();
+    const r = await fetch(path + '?' + new URLSearchParams(params), { method, cache: 'no-store', headers: { Authorization: 'Bearer ' + FS.token } });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) return j;
+    if (j.e === 'token' && retry) { FS.token = null; fsWait = null; return fsFetch(method, path, params, false); }   // reconnected meanwhile
+    throw new FsError(j.e || 'failed');
+  }
+  function fsPut(file, path, exists, onProgress) {    // XHR, not fetch: it reports upload progress
+    const xhr = new XMLHttpRequest();
+    const done = new Promise((resolve, reject) => {
+      xhr.open('PUT', '/fs/file?' + new URLSearchParams({ path, exists }));
+      xhr.setRequestHeader('Authorization', 'Bearer ' + FS.token);
+      xhr.upload.onprogress = (e) => onProgress(e.loaded / Math.max(1, e.total || file.size));
+      xhr.onload = () => {
+        let j = {};
+        try { j = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+        if (xhr.status === 201) resolve(j.path); else reject(new FsError(j.e || 'failed'));
+      };
+      xhr.onerror = () => reject(new FsError('network'));
+      xhr.onabort = () => reject(new FsError('cancelled'));
+      xhr.send(file);
+    });
+    return { done, abort: () => xhr.abort() };
+  }
+  async function fsDownload(path) {                 // a single-use link: the browser saves it like any download
+    const { ticket } = await fsFetch('POST', '/fs/ticket', { path });
+    const a = document.createElement('a');
+    a.href = '/fs/file?' + new URLSearchParams({ ticket });
+    a.download = baseName(path);
+    document.body.append(a);
+    a.click();
+    a.remove();
+  }
+
+  // a transfer's line: in the window's list, or as a toast for files dropped on the desktop
+  function xferUI(dir, name, inToast) {
+    const el = document.createElement('div');
+    el.className = inToast ? 'toast xfer-toast' : 'xfer';
+    el.innerHTML = (dir === 'down' ? ICON.down : ICON.up) + '<span class="name"></span><span class="pbar"><i></i></span><span class="pct"></span>' +
+      (inToast ? '' : '<button class="x" title="Cancel">' + ICON.x + '</button>');
+    el.querySelector('.name').textContent = name;
+    (inToast ? $('toasts') : $('fsXfers')).append(el);
+    return el;
+  }
+  function progress(el, f) {
+    el.querySelector('.pbar i').style.width = Math.round(f * 100) + '%';
+    el.querySelector('.pct').textContent = Math.floor(f * 100) + '%';
+  }
+  function finished(el, state, note) {
+    el.classList.add(state);
+    if (state === 'done') progress(el, 1);
+    el.querySelector('.pct').textContent = state === 'done' ? '✓' : state === 'fail' ? '!' : '';
+    if (note) { el.title = note; el.querySelector('.name').textContent += ' — ' + note; }
+    // a failed line in the window stays until dismissed with its ×; everything else goes by itself
+    if (state !== 'fail' || !el.querySelector('.x')) setTimeout(() => el.remove(), state === 'fail' ? 6000 : 3500);
+  }
+
+  function queueXfer(x) {                           // x: {dir, name, file, exists, toast}
+    x.state = 'queued';
+    x.el = xferUI('up', x.name, x.toast);
+    x.el.querySelector('.x')?.addEventListener('click', () => {
+      if (x.state === 'running') x.req.abort();
+      else { x.state = 'cancelled'; x.el.remove(); }
+    });
+    FS.xfers.push(x);
+    pumpXfers();
+  }
+  function pumpXfers() {
+    while (FS.running < 2) {                        // the host takes 4 requests at once: leave room for browsing
+      const x = FS.xfers.find((y) => y.state === 'queued');
+      if (!x) break;
+      x.state = 'running';
+      FS.running++;
+      (async () => {
+        try {
+          await fsSession();
+          x.req = fsPut(x.file, joinPath(x.dir, x.name), x.exists, (f) => progress(x.el, f));
+          const final = await x.req.done;
+          x.state = 'done';
+          finished(x.el, 'done', x.toast ? 'on the desktop' : (baseName(final) !== x.name ? 'saved as ' + baseName(final) : ''));
+          if (x.dir === FS.path && !filesWin.hidden) refreshSoon();
+        } catch (e) {
+          if (e.code === 'busy') { x.state = 'wait'; setTimeout(() => { x.state = 'queued'; pumpXfers(); }, 800); return; }
+          x.state = e.code === 'cancelled' ? 'cancelled' : 'fail';
+          if (x.state === 'cancelled') x.el.remove(); else finished(x.el, 'fail', e.message);
+        } finally {
+          FS.running--;
+          pumpXfers();
+        }
+      })();
+    }
+    FS.xfers = FS.xfers.filter((y) => y.state === 'queued' || y.state === 'running' || y.state === 'wait');
+  }
+  let refreshTimer = 0;
+  function refreshSoon() { clearTimeout(refreshTimer); refreshTimer = setTimeout(() => fsOpen(FS.path, true), 300); }
+
+  // ---- the window
+  async function openFiles() {
+    filesWin.hidden = false;
+    bar.querySelector('[data-act=files]').classList.add('on');
+    $('filesTitle').textContent = 'Files on ' + ((S.info && S.info.host) || location.hostname);
+    filesWin.focus({ preventScroll: true });
+    try { await fsSession(); } catch (e) { return showFsMessage(e.message); }
+    fsOpen(FS.path || FS.home);
+  }
+  function closeFiles() {
+    filesWin.hidden = true;
+    bar.querySelector('[data-act=files]').classList.remove('on');
+    focusSink();
+  }
+  function showFsMessage(text) {
+    const p = document.createElement('div');
+    p.className = 'files-empty';
+    p.textContent = text;
+    $('fsList').replaceChildren(p);
+  }
+  async function fsOpen(path, keepSel) {
+    try {
+      const r = await fsFetch('GET', '/fs/list', { path });
+      const same = r.path === FS.path;
+      FS.path = r.path; FS.entries = r.entries; FS.more = r.more;
+      if (!(keepSel && same)) { FS.sel.clear(); FS.anchor = -1; }
+      $('fsPath').value = FS.path;
+      renderFiles();
+    } catch (e) {
+      $('fsPath').value = path;
+      showFsMessage(e.message);
+    }
+  }
+  function renderFiles() {
+    const { key, dir } = FS.sort;
+    const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    FS.view = FS.entries.filter((e) => $('fsHidden').checked || !e.name.startsWith('.'))
+      .sort((a, b) => ((b.type === 'd') - (a.type === 'd')) || (key === 'name' ? byName(a, b) : (a[key] - b[key]) || byName(a, b)) * dir);
+    const rows = FS.view.map((e, i) => {
+      const row = document.createElement('div');
+      row.className = 'file' + (e.type === 'd' ? ' dir' : '');
+      row.setAttribute('role', 'option');
+      row.dataset.i = i;
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.innerHTML = e.type === 'd' ? ICON.dir : e.type === 'f' ? ICON.file : ICON.other;
+      const label = document.createElement('span');
+      label.textContent = e.name;
+      name.append(label);
+      const size = document.createElement('div');
+      size.className = 'size';
+      size.textContent = e.type === 'f' ? fmtSize(e.size) : '';
+      const when = document.createElement('div');
+      when.className = 'when';
+      when.textContent = e.mtime ? fmtDate(e.mtime) : '';
+      row.append(name, size, when);
+      return row;
+    });
+    $('fsList').replaceChildren(...rows);
+    if (!rows.length) showFsMessage('This folder is empty');
+    else if (FS.more) { const p = document.createElement('div'); p.className = 'files-empty'; p.textContent = 'Showing the first 20,000 items'; $('fsList').append(p); }
+    for (const b of document.querySelectorAll('.files-cols button')) b.className = b.dataset.sort === key ? (dir > 0 ? 'asc' : 'desc') : '';
+    updateSel();
+  }
+  function updateSel() {
+    for (const row of $('fsList').querySelectorAll('.file')) {
+      const on = FS.sel.has(FS.view[+row.dataset.i].name);
+      row.classList.toggle('sel', on);
+      row.setAttribute('aria-selected', on);
+    }
+    const n = FS.sel.size;
+    $('fsSel').textContent = n ? `${n} selected` : `${FS.view.length} item${FS.view.length === 1 ? '' : 's'}`;
+    $('fsReceive').disabled = !n;
+  }
+  $('fsList').addEventListener('click', (e) => {
+    const row = e.target.closest('.file');
+    if (!row) { FS.sel.clear(); return updateSel(); }
+    const i = +row.dataset.i, name = FS.view[i].name;
+    if (e.shiftKey && FS.anchor >= 0) {
+      if (!(e.metaKey || e.ctrlKey)) FS.sel.clear();
+      for (let k = Math.min(FS.anchor, i); k <= Math.max(FS.anchor, i); k++) FS.sel.add(FS.view[k].name);
+    } else if (e.metaKey || e.ctrlKey) {
+      if (FS.sel.has(name)) FS.sel.delete(name); else FS.sel.add(name);
+      FS.anchor = i;
+    } else {
+      FS.sel.clear();
+      FS.sel.add(name);
+      FS.anchor = i;
+    }
+    updateSel();
+  });
+  $('fsList').addEventListener('dblclick', (e) => {
+    const row = e.target.closest('.file');
+    if (!row) return;
+    const ent = FS.view[+row.dataset.i];
+    if (ent.type === 'd') fsOpen(joinPath(FS.path, ent.name));
+    else if (ent.type === 'f') fsReceive([ent]);
+  });
+  for (const b of document.querySelectorAll('.files-cols button')) {
+    b.addEventListener('click', () => {
+      FS.sort = { key: b.dataset.sort, dir: FS.sort.key === b.dataset.sort ? -FS.sort.dir : 1 };
+      renderFiles();
+    });
+  }
+  filesWin.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-fs]')?.dataset.fs;
+    if (a === 'close') closeFiles();
+    else if (a === 'up') fsOpen(parentOf(FS.path));
+    else if (a === 'home') fsOpen(FS.home);
+    else if (a === 'refresh') fsOpen(FS.path, true);
+    else if (a === 'mkdir') newFolderRow();
+  });
+  filesWin.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('fsAsk').hidden) { e.preventDefault(); closeFiles(); } });
+  $('fsPath').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); fsOpen($('fsPath').value.trim() || '/'); } });
+  $('fsHidden').addEventListener('change', renderFiles);
+
+  function newFolderRow() {                         // a row with a name field; Enter creates the folder
+    const row = document.createElement('div');
+    row.className = 'file dir';
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.innerHTML = ICON.dir;
+    const input = document.createElement('input');
+    input.className = 'path';
+    input.value = 'New folder';
+    name.append(input);
+    row.append(name);
+    $('fsList').prepend(row);
+    input.select();
+    let done = false;
+    const finish = async (create) => {
+      if (done) return;
+      done = true;
+      const n = input.value.trim();
+      if (create && n && !n.includes('/')) {
+        try { await fsFetch('POST', '/fs/mkdir', { path: joinPath(FS.path, n) }); } catch (e) { toast(`Couldn’t create “${n}”: ${e.message}`, { error: true }); }
+      }
+      await fsOpen(FS.path, true);
+      if (create) { FS.sel = new Set([n]); updateSel(); }
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(false));
+  }
+
+  // ---- Receive: the selection, a single-use link per file; a folder arrives as its files
+  async function fsReceive(ents = FS.view.filter((e) => FS.sel.has(e.name))) {
+    for (const e of ents) {
+      const p = joinPath(FS.path, e.name), el = xferUI('down', e.name, false);
+      el.querySelector('.x').remove();
+      if (e.type !== 'f' && e.type !== 'd') { finished(el, 'fail', FS_MSG.notfile); continue; }
+      try {
+        let files = [p];
+        if (e.type === 'd') files = (await fsFetch('GET', '/fs/list', { path: p, deep: 1 })).entries.filter((x) => x.type === 'f').map((x) => joinPath(p, x.name));
+        for (const [i, f] of files.entries()) {
+          if (i) await sleep(150);                  // browsers take a burst of downloads better when paced
+          await fsDownload(f);
+          progress(el, (i + 1) / files.length);
+        }
+        finished(el, 'done', e.type === 'd' ? `${files.length} file${files.length === 1 ? '' : 's'} to your downloads` : 'to your downloads');
+      } catch (err) { finished(el, 'fail', err.message); }
+    }
+  }
+  $('fsReceive').addEventListener('click', () => fsReceive());
+
+  // ---- Send: files or a folder into the folder shown, asking before anything is replaced
+  function ask(name) {
+    return new Promise((resolve) => {
+      $('fsAskText').textContent = `“${name}” already exists here.`;
+      $('fsAskAll').checked = false;
+      $('fsAsk').hidden = false;
+      for (const b of $('fsAsk').querySelectorAll('[data-ask]')) {
+        b.onclick = () => { $('fsAsk').hidden = true; resolve({ how: b.dataset.ask, all: $('fsAskAll').checked }); };
+      }
+    });
+  }
+  async function fsMkdirOk(p) { try { await fsFetch('POST', '/fs/mkdir', { path: p }); } catch (e) { if (e.code !== 'exists') throw e; } }
+  async function freeFolder(dir, name) {            // "name (1)", "name (2)"…: the first that can be created
+    for (let n = 1; ; n++) {
+      try { await fsFetch('POST', '/fs/mkdir', { path: joinPath(dir, `${name} (${n})`) }); return `${name} (${n})`; } catch (e) { if (e.code !== 'exists') throw e; }
+    }
+  }
+  async function fsSend(items, dir) {               // items: [{file, rel: "name" or "folder/…/name"}]
+    let names;
+    try { names = new Set((dir === FS.path ? FS.entries : (await fsFetch('GET', '/fs/list', { path: dir })).entries).map((e) => e.name)); }
+    catch (e) { return toast(`Can’t send to ${dir}: ${e.message}`, { error: true }); }
+    const groups = new Map();                       // top-level name → a file, or a folder's files
+    for (const it of items) {
+      const top = it.rel.split('/')[0];
+      if (!groups.has(top)) groups.set(top, []);
+      groups.get(top).push(it);
+    }
+    let always = null;
+    for (const [top, its] of groups) {
+      const folder = its[0].rel.includes('/');
+      let how = 'fail';
+      if (names.has(top)) {
+        const a = always || await ask(top);
+        if (a.all) always = a;
+        if (a.how === 'skip') continue;
+        how = a.how;
+      }
+      if (!folder) { queueXfer({ dir, name: top, file: its[0].file, exists: how }); continue; }
+      try {
+        const root = joinPath(dir, how === 'rename' ? await freeFolder(dir, top) : top);
+        await fsMkdirOk(root);
+        const dirs = new Set();
+        for (const it of its) { const parts = it.rel.split('/').slice(1, -1); for (let k = 1; k <= parts.length; k++) dirs.add(parts.slice(0, k).join('/')); }
+        for (const d of [...dirs].sort((a, b) => a.split('/').length - b.split('/').length)) await fsMkdirOk(joinPath(root, d));
+        for (const it of its) {
+          const rest = it.rel.split('/').slice(1);
+          queueXfer({ dir: rest.length > 1 ? joinPath(root, rest.slice(0, -1).join('/')) : root, name: rest[rest.length - 1], file: it.file,
+            exists: how === 'replace' ? 'replace' : 'fail' });
+        }
+      } catch (e) { toast(`Couldn’t send “${top}”: ${e.message}`, { error: true }); }
+    }
+    if (dir === FS.path) refreshSoon();
+  }
+  $('fsSend').addEventListener('click', () => $('fsFiles').click());
+  $('fsSendFolder').addEventListener('click', () => $('fsFolder').click());
+  $('fsFiles').addEventListener('change', (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    if (!hasFs()) enqueue(files);
+    else fsSend(files.map((file) => ({ file, rel: file.name })), FS.path);
+  });
+  $('fsFolder').addEventListener('change', (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    fsSend(files.map((file) => ({ file, rel: file.webkitRelativePath || file.name })), FS.path);
+  });
+
+  // ---- moving the window by its title
+  let winDrag = null;
+  $('filesHead').addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    const r = filesWin.getBoundingClientRect();
+    winDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    $('filesHead').setPointerCapture(e.pointerId);
+  });
+  $('filesHead').addEventListener('pointermove', (e) => {
+    if (!winDrag) return;
+    const x = Math.min(innerWidth - 60, Math.max(60 - filesWin.offsetWidth, e.clientX - winDrag.dx));
+    const y = Math.min(innerHeight - 40, Math.max(0, e.clientY - winDrag.dy));
+    Object.assign(filesWin.style, { left: x + 'px', top: y + 'px', transform: 'none' });
+  });
+  $('filesHead').addEventListener('pointerup', () => { winDrag = null; });
+
+  // ---- dropping files: into the window's folder when dropped on it, else onto the desktop
   let dragDepth = 0;
-  window.addEventListener('dragenter', (e) => { if (S.connected && e.dataTransfer?.types.includes('Files')) { dragDepth++; $('drop').hidden = false; e.preventDefault(); } });
-  window.addEventListener('dragover', (e) => { if (S.connected) e.preventDefault(); });
-  window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('drop').hidden = true; } });
+  const overFiles = (e) => !filesWin.hidden && !!e.target.closest?.('#files');
+  window.addEventListener('dragenter', (e) => {
+    if (S.connected && e.dataTransfer?.types.includes('Files')) { dragDepth++; $('drop').hidden = false; e.preventDefault(); }
+  });
+  window.addEventListener('dragover', (e) => {
+    if (!S.connected) return;
+    e.preventDefault();
+    const inside = overFiles(e);
+    filesWin.classList.toggle('target', inside);
+    $('drop').classList.toggle('over-files', inside);
+  });
+  window.addEventListener('dragleave', () => {
+    if (--dragDepth <= 0) { dragDepth = 0; $('drop').hidden = true; filesWin.classList.remove('target'); }
+  });
   window.addEventListener('drop', (e) => {
     e.preventDefault();
-    dragDepth = 0; $('drop').hidden = true;
-    if (S.connected && e.dataTransfer?.files.length) enqueue(e.dataTransfer.files);
+    dragDepth = 0;
+    $('drop').hidden = true;
+    filesWin.classList.remove('target');
+    const dt = e.dataTransfer;
+    if (!S.connected || !dt?.files.length) return;
+    const folders = [...dt.items].filter((i) => i.webkitGetAsEntry?.()?.isDirectory).length;
+    const files = [...dt.files].filter((_, i) => !dt.items[i]?.webkitGetAsEntry?.()?.isDirectory);
+    if (folders) toast('To send a folder, use Send folder… in Files.');
+    if (!files.length) return;
+    if (!hasFs()) return enqueue(files);
+    if (overFiles(e)) return fsSend(files.map((file) => ({ file, rel: file.name })), FS.path);
+    fsSession().then(() => { for (const file of files) queueXfer({ dir: FS.inbox, name: file.name, file, exists: 'rename', toast: true }); },
+      () => enqueue(files));
   });
 
   // ------------------------------------------------------------ resolution
@@ -821,7 +1231,10 @@
   for (const b of document.querySelectorAll('[data-panel]')) b.addEventListener('click', () => togglePanel(b.dataset.panel, b));
   for (const b of document.querySelectorAll('[data-combo]')) b.addEventListener('click', () => combo(b.dataset.combo));
   bar.querySelector('[data-act=fullscreen]').addEventListener('click', toggleFullscreen);
-  bar.querySelector('[data-act=upload]').addEventListener('click', () => $('fileInput').click());
+  bar.querySelector('[data-act=files]').addEventListener('click', () => {
+    if (!hasFs()) $('fsFiles').click();                // a host without §7.1: straight to the desktop over /ws
+    else if (filesWin.hidden) openFiles(); else closeFiles();
+  });
   bar.querySelector('[data-act=stats]').addEventListener('click', () => { settings.stats = !settings.stats; saveSettings(); applySettings(); });
   bar.querySelector('[data-act=audio]').addEventListener('click', () => {
     settings.audio = !settings.audio; saveSettings(); applySettings();
@@ -856,18 +1269,6 @@
     bar.querySelector('[data-act=audio]').classList.toggle('on', !!settings.audio);
     layout();
   }
-
-  $('copyRemote').addEventListener('click', () => {
-    navigator.clipboard?.writeText(S.remoteClip).then(() => toast('Copied'), () => toast('Copy failed', { error: true }));
-  });
-  $('sendClip').addEventListener('click', () => {
-    const t = $('localClip').value;
-    if (t) { S.lastSentClip = S.remoteClip = t; send({ t: 'clip', text: t }); toast('Remote clipboard set'); }
-  });
-  $('typeClip').addEventListener('click', () => {
-    const t = $('localClip').value;
-    if (t) { send({ t: 'txt', s: t }); focusSink(); }
-  });
 
   async function toggleFullscreen() {
     const el = document.documentElement;
