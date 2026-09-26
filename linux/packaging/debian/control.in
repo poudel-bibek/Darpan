@@ -12,6 +12,6 @@ Replaces: porthole
 Description: fast, private remote desktop host
  Darpan lets you use this computer from your other devices, in a browser
  or a native app. The screen is captured only when it changes and encoded on
- the NVIDIA GPU (NVENC), so it costs next to nothing while the machine trains
- models. Connections travel end-to-end encrypted over a bundled, unprivileged
+ the NVIDIA GPU (NVENC), so it costs next to nothing on a machine that is busy
+ with other work. Connections travel end-to-end encrypted over a bundled, unprivileged
  Tailscale; nothing is exposed to the internet and no root daemon is added.

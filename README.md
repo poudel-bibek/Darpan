@@ -1,131 +1,134 @@
+> [!IMPORTANT]
+> **Private pre-release.** Do not publish this repository, its history, or its releases as-is.
+> Publish only from a fresh repository created from a sanitized snapshot — see
+> [Publishing](#publishing).
+
 <p align="center"><img src="logo.svg" width="120" alt="Darpan"></p>
 
 <h1 align="center">Darpan</h1>
 
-<p align="center"><b>Darpan</b> — Sanskrit for <i>mirror</i>. Your other computer, mirrored here:<br>
-small, fast and private. Self-hosted remote desktop for a Linux workstation, used from a Mac (or any browser).</p>
+<p align="center"><b>Darpan</b> (Sanskrit: <i>mirror</i>) — a fast, private, self-hosted remote desktop.<br>
+The host runs on a Linux workstation; clients are a native macOS app and any modern browser.</p>
 
 ---
 
-## What you get
+## Highlights
 
-* **Low latency.** The screen is grabbed the instant it changes (X11 damage events, no fixed
-  capture clock), encoded on the NVIDIA GPU's dedicated video engine (NVENC, ~3 ms), and sent
-  immediately. The mouse pointer is drawn on your Mac, so moving it has zero lag.
-* **Almost free while you train models.** Nothing runs until a viewer connects; a static screen
-  sends nothing at all. Measured on this machine (RTX 4090, 2560×1440):
+* **Low latency.** The screen is captured the moment it changes (X11 damage events, no fixed
+  capture clock), encoded on the GPU's dedicated video engine (NVENC, ~3 ms) and sent at once.
+  The pointer is drawn locally on the client, so it never lags.
+* **Near-zero cost on a busy machine.** Nothing runs until a viewer connects, and a static screen
+  sends nothing. Measured on a 2560×1440 desktop with an RTX 4090:
 
   | | cost |
   |---|---|
-  | idle, nobody connected | 0 % CPU, 0 wake-ups, ~27 MB RAM (+ Tailscale ~33 MB) |
-  | streaming your desktop | ~0.3 % of one CPU core, ~250 MB of GPU memory |
+  | idle, no viewer | 0 % CPU, no wake-ups, ~27 MB RAM (+ ~33 MB for the network daemon) |
+  | streaming | ~0.3 % of one CPU core, ~250 MB of GPU memory |
   | per changed frame | 2.1 ms capture + 3.2 ms encode, no CPU pixel copies |
-  | typical desktop work | ~0.4 Mbit/s (adapts up to 40 Mbit/s for video/scrolling) |
+  | typical desktop work | ~0.4 Mbit/s (adapts up to 40 Mbit/s for video and scrolling) |
 
-  GPU memory is released ~15 s after you close or hide the viewer.
-* **Private and secure.** No ports are opened and nothing is reachable from the internet: a
-  bundled, unprivileged [Tailscale](https://tailscale.com) links only *your* devices with
-  end-to-end WireGuard encryption, direct peer-to-peer whenever possible. On top of that the
-  host asks for a password using a challenge–response (the password never crosses the wire)
-  with brute-force lockout. Runs as your user — no root daemon. The clipboard is never read
-  unless you're connected.
-* **Everything you need, nothing you don't:** clipboard sync both ways, file upload (drag and
-  drop), change the remote screen resolution (restored when you disconnect), quality/frame-rate
-  presets, special keys (Super, Alt+Tab, Ctrl+Alt+Del…), full screen, a toolbar that collapses to
-  a 46×14 px tab, and live stats.
+  GPU memory is released ~15 s after the viewer closes or is hidden.
+* **Private by design.** No ports are opened and nothing is reachable from the internet. A
+  bundled, unprivileged [Tailscale](https://tailscale.com) node connects only your own devices,
+  end-to-end encrypted with WireGuard and peer-to-peer whenever possible. The host also requires a
+  password, verified by challenge–response (it never crosses the network) with brute-force
+  lockout. It runs as your user, with no root daemon; the clipboard is read only while a viewer
+  is connected.
+* **Complete, not bloated.** Two-way clipboard sync, file upload by drag and drop, remote screen
+  resolution changes (reverted on disconnect), quality and frame-rate presets, special keys,
+  full screen, a toolbar that collapses to a small tab, and live statistics.
 
-## Install on the Linux computer (the one you want to reach)
+## Requirements
+
+* **Host:** Ubuntu 24.04 (or similar) on an X11 session; an NVIDIA GPU for hardware encoding
+  (other GPUs fall back to software encoding).
+* **Clients:** macOS 14 or later for the native app; Chrome, Safari, Edge or Firefox for the
+  browser client.
+
+## Install the host
 
 ```bash
-sudo apt install ./dist/darpan_1.0.2_amd64.deb
+sudo apt install ./darpan_<version>_amd64.deb
 ```
 
-The package is self-contained (Tailscale is inside); apt pulls in the few standard Ubuntu
-packages it uses. It replaces an earlier *Porthole* install automatically, keeping your address,
-password and Tailscale sign-in. Then open **Darpan** from the app grid (or run `darpan setup`):
+The package is self-contained (the Tailscale node is included); apt installs the few standard
+packages it depends on. Then open **Darpan** from the application grid, or run `darpan setup`:
 
-1. **Sign in to Tailscale** — click *Sign in*, use any Google/Microsoft/GitHub/Apple account (free).
-2. **Publish** — one click; if asked, enable HTTPS for your tailnet (one more click).
-3. Note the **address** and **password** shown in the window.
+1. **Sign in** to Tailscale (any Google, Microsoft, GitHub or Apple account; free for personal use).
+2. **Publish** the host on your tailnet; enable HTTPS for the tailnet if prompted.
+3. Note the **address** and **password** shown.
 
-For unattended use, open <https://login.tailscale.com/admin/machines>, find this computer and
-choose **Disable key expiry** (otherwise it drops off the network after 180 days).
+For unattended use, disable key expiry for the host in the Tailscale admin console
+(<https://login.tailscale.com/admin/machines>); otherwise the device must sign in again after
+180 days.
 
-## Connect from the Mac
+## Connect
 
-1. Install Tailscale on the Mac (App Store or <https://tailscale.com/download>) and sign in with
-   the same account.
-2. Open the address (e.g. `https://workstation.example.ts.net`) in Chrome or Safari and
-   enter the password. Tick *Remember this device* to skip the password next time.
-   *Tip:* in Chrome use *Install Darpan* (address bar) for an app window; in full screen Chrome
-   also forwards shortcuts like ⌘W to the remote computer.
-3. Or use the native Mac app (below): hardware video decoding, every shortcut goes to the remote computer,
-   seamless clipboard sync.
+**macOS app.** Download `Darpan.dmg` from the latest release, open it and drag **Darpan** to
+**Applications**. The app is not notarized: on first launch, allow it in System Settings →
+Privacy & Security (**Open Anyway**). Enter the host address and password; with *Remember on this
+Mac* only a key derived from the password is kept, in the Keychain. See
+[mac/README.md](mac/README.md) for shortcut capture and other details.
 
-Keyboard: ⌘ acts as Ctrl on the remote computer by default (⌘C/⌘V copy and paste as you expect);
-switch it to Super in the keyboard menu. Keys are sent by position, so the Linux keyboard layout
-decides the characters; *Type it* in the clipboard menu types arbitrary text.
+**Browser.** On a device signed in to the same tailnet, open the host address
+(`https://<machine>.<tailnet>.ts.net`) and enter the password. In Chrome, *Install Darpan* gives
+an app window, and in full screen shortcuts such as ⌘W reach the remote computer.
 
-## Mac app
+**Keyboard.** ⌘ acts as Ctrl on the remote computer by default (so ⌘C/⌘V copy and paste as
+expected) and can be switched to Super. Keys are sent by position, so the host's keyboard layout
+determines the characters; *Type it* in the clipboard panel types arbitrary text.
 
-1. Download `Darpan.dmg` from the [latest release](https://github.com/OWNER/darpan/releases/latest),
-   open it and drag **Darpan** to **Applications**.
-2. First launch: the app isn't notarized, so macOS blocks it once. Open it, then go to
-   System Settings → Privacy & Security and click **Open Anyway**. Or run
-   `xattr -dr com.apple.quarantine /Applications/Darpan.app` once.
-3. Enter the address and password. With *Remember on this Mac*, only a key derived from the
-   password is kept, in the Keychain, and it never leaves this Mac.
-4. Optional: to send ⌘Tab, ⌘Space and Mission Control to the remote computer too, turn on *Send
-   ⌘Tab, ⌘Space…* in the viewer's keyboard panel. Then allow Darpan in System Settings → Privacy
-   & Security → Accessibility. The app is signed ad hoc, so after installing a new version macOS
-   treats it as a new app: remove Darpan from the Accessibility list, add it again and restart it.
-
-While the viewer is in front every key goes to the remote computer, ⌘Q and ⌘W included. These
-shortcuts stay on the Mac:
-* ⌃⌥⌘D disconnect
-* ⌃⌥⌘F full screen
-* ⌃⌥⌘⎋ release the keyboard (press again to capture it)
-
-A minimised or hidden viewer stops the video. More in [mac/README.md](mac/README.md).
-
-SHA-256 of `Darpan.dmg` 1.0.0: `9e7f47ac5c0c7a9a4f023818f214beae957e28ab9f3766a60286d460b43573d0`
-
-## Everyday commands
+## Command line
 
 ```text
-darpan status       address, password, who is connected
-darpan password     show it · --set to choose your own · --generate for a new random one
-darpan disconnect   kick every remote session
-darpan doctor       check display, GPU encoder, network, service
-darpan net          Tailscale status and whether your devices connect directly or via relay
+darpan status       address, password and connected devices
+darpan password     show the password; --set to choose one, --generate for a new random one
+darpan disconnect   end all remote sessions
+darpan doctor       check the display, GPU encoder, network and service
+darpan net          network status and whether devices connect directly or via a relay
 ```
 
 Logs: `journalctl --user -u darpan -u darpan-net -f`
 
-## Limitations (honest ones)
+## Known limitations
 
-* **After a reboot someone must log in to the desktop** before Darpan can show it (it runs in
-  your desktop session, not as root). For true unattended access enable *Automatic Login*
-  (Settings → Users) — anyone with physical access then gets your desktop.
-* X11 sessions only (Ubuntu's default with NVIDIA drivers); Wayland isn't supported yet.
-* Without an NVIDIA GPU it falls back to software x264 (works, uses a few CPU cores while streaming).
-* Keep your current paid remote-access app until you've confirmed Darpan works from the Mac.
+* The host runs in the desktop session, so after a reboot someone must log in before Darpan can
+  show the screen. Automatic login removes this requirement, at the cost of physical security.
+* X11 sessions only; Wayland is not supported yet.
+* Without an NVIDIA GPU, encoding falls back to software x264, which uses several CPU cores while
+  streaming.
 
 ## Uninstall
 
 ```bash
 sudo apt remove darpan
-rm -rf ~/.config/darpan ~/.local/state/darpan ~/.local/share/darpan   # settings, password, Tailscale state
+rm -rf ~/.config/darpan ~/.local/state/darpan ~/.local/share/darpan   # settings, password, network state
 ```
-Also remove the machine from <https://login.tailscale.com/admin/machines>.
+
+Also remove the device from the Tailscale admin console.
 
 ## Repository layout
 
 ```text
-PROTOCOL.md     the wire protocol — the contract every client implements
-MAC_PROMPT.md   instructions for building the macOS app (for a Claude instance on the Mac)
-linux/          host: Python daemon, C capture/NVENC encoder, browser client, packaging, tests
-mac/            native macOS client (Swift)
-dist/           built packages (.deb, .dmg) — not committed; attached to GitHub Releases
+PROTOCOL.md        wire protocol: the contract every client implements
+MAC_PROMPT.md      design brief for the macOS client
+dev-messageboard/  asynchronous coordination between contributors
+linux/             host: Python daemon, C capture/NVENC encoder, browser client, packaging, tests
+mac/               native macOS client (Swift)
+scripts/           repository maintenance (privacy check)
+dist/              build output (.deb, .dmg); not committed, attached to releases
 ```
+
 Developer notes: [linux/README.md](linux/README.md), [mac/README.md](mac/README.md).
+
+## Publishing
+
+This repository's history, pull requests and releases contain development data (names, host and
+device identifiers, e-mail addresses in commit metadata). Rewriting history does not remove it:
+GitHub keeps pull-request copies of old commits. To publish:
+
+1. Run `scripts/check-private-data.sh` until it reports nothing. It scans the working tree against
+   generic patterns plus an untracked, local denylist (`.private-denylist`, one pattern per line).
+2. Create a **new** repository from a snapshot of the tree (no history), committed with a
+   GitHub no-reply address.
+3. Rebuild the packages from that snapshot and create fresh releases; don't copy the old ones.

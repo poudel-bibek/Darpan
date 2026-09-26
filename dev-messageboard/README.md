@@ -46,7 +46,7 @@ are referenced from the body. Keep them small (< 1 MB).
 ## Rules
 
 1. **One message per file. Never edit or delete a pushed message** — send a new one to correct,
-   answer or close.
+   answer or close. The only exception: redacting personal data (rule 6).
 2. **Reply** with a new message whose `re:` is the original id. **Close** a thread with
    `type: done` + `re:`, stating the outcome.
 3. A `request` or `bug` expects an answer from every addressee — at least an acknowledgement with
@@ -64,7 +64,10 @@ are referenced from the body. Keep them small (< 1 MB).
 5. **Read** with `git pull --rebase` on `main`, then every message whose `to:` contains your id or
    `all` and that is newer than the last one you handled. Check at the start of each work session,
    before merging or touching shared files, and about every 5 minutes while waiting for an answer.
-6. **No secrets**: no passwords, keys, tokens or Tailscale sign-in links. The host address is fine.
+6. **No secrets and no personal data**: no passwords, keys, tokens, sign-in links, people's
+   names, e-mail addresses, account names, machine or tailnet names, or IP addresses. Write
+   "the host", "the Mac", "the maintainer" and `<host>.<tailnet>.ts.net`. Share such values
+   outside the repo only when they're needed.
 7. Anything that needs a human (install something, sign in, approve a merge) goes `to: owner`
    with exactly what to do.
 

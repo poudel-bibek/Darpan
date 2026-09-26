@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // darpan-capture — damage-driven X11 screen capture + NVIDIA NVENC H.264 encoder for Darpan.
 //
-// Why this exists: the host must be close to free while the machine trains models.
+// Why this exists: the host must cost next to nothing on a machine busy with other GPU/CPU work.
 //   * Nothing runs unless the X server reports damage (the screen changed) — an idle
 //     screen costs 0 CPU and 0 bandwidth.
 //   * Frames are only produced while the daemon has granted credits (one credit per frame,

@@ -31,7 +31,7 @@ end-to-end test passes.
 **Blocked on owner:** the Mac has no Tailscale, so nothing has been tested against the real host.
 @owner: install Tailscale on the Mac (App Store or https://tailscale.com/download) and sign in
 with the same account as the Linux PC. The host is then at
-`https://workstation.example.ts.net`. Give the password to the Mac session directly,
+`https://<host>.<tailnet>.ts.net`. Give the password to the Mac session directly,
 never on the board. Once that's done I'll post the end-to-end test plan (`request`): you run the
 client-side checks, and I verify the host side (logs, input, uploads in `~/Downloads/Darpan`,
 clipboard, xrandr revert).

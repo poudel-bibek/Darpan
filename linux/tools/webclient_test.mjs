@@ -1,14 +1,24 @@
 // Browser end-to-end test: headless Chrome ↔ real host on a private Xvfb display.
 // No npm dependencies: speaks the Chrome DevTools Protocol over Node's built-in WebSocket.
 //   node tools/webclient_test.mjs
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const CHROME = process.env.CHROME || '/home/user/.omp/puppeteer/chrome/linux-150.0.7871.24/chrome-linux64/chrome';
+// Chrome/Chromium: $CHROME, else the first browser found in PATH or a puppeteer/playwright cache.
+const CHROME = process.env.CHROME || findChrome();
+function findChrome() {
+  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+    const r = spawnSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' });
+    if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
+  }
+  const r = spawnSync('sh', ['-c', 'ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux*/chrome "$HOME"/.*/puppeteer/chrome/linux-*/chrome-linux64/chrome 2>/dev/null | tail -1'], { encoding: 'utf8' });
+  if (r.stdout.trim()) return r.stdout.trim();
+  throw new Error('no Chrome/Chromium found: set CHROME=/path/to/chrome');
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 const ok = (name, cond, detail = '') => { results.push(!!cond); console.log(`  ${cond ? 'PASS' : 'FAIL'} ${name.padEnd(36)} ${detail}`); };
