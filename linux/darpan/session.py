@@ -56,7 +56,11 @@ def _desktop_dir():
 class RateControl:
     """Delay-based AIMD. The moment frames start queueing somewhere on the path (ack RTT
     rises above the recent minimum by more than the frame's own serialisation time) the
-    bitrate drops; it only probes upward while the content actually uses the bits."""
+    bitrate drops. It probes upward while the content uses the bits, and also after a few
+    calm seconds: a desktop is mostly quiet, and one Wi-Fi hiccup mustn't leave every later
+    screen change encoded at a fraction of the chosen quality."""
+
+    CALM = 3.0                              # s without queueing before a quiet picture climbs back
 
     def __init__(self, start, cap, fps):
         self.cap = max(500, cap)
@@ -67,7 +71,7 @@ class RateControl:
         self.min_rtt = None
         self.q = 0.0
         self.sent = 0
-        self.last = time.monotonic()
+        self.last = self.calm_since = time.monotonic()
 
     def on_ack(self, now, rtt, size):
         w = self.win
@@ -88,9 +92,11 @@ class RateControl:
         self.sent = 0
         self.last = now
         old = self.kbps
+        if self.q >= 0.010:
+            self.calm_since = now
         if self.q > 0.045:
             self.kbps = max(self.floor, int(self.kbps * 0.7))
-        elif self.q < 0.010 and used > 0.6 * self.kbps:
+        elif self.q < 0.010 and (used > 0.6 * self.kbps or now - self.calm_since >= self.CALM):
             self.kbps = min(self.cap, int(self.kbps * 1.15) + 250)
         return self.kbps if self.kbps != old else None
 
@@ -328,7 +334,8 @@ class Session:
             self.ws.send_json({"t": "notice", "level": "error", "text": "unsupported codec"})
             return
         fps = int(m.get("fps") or self.hub.cfg["fps"])
-        self.params = {"fps": max(1, min(120, fps)), "bitrate": max(0, int(m.get("bitrate") or 0))}
+        self.params = {"fps": max(1, min(120, fps)), "bitrate": max(0, int(m.get("bitrate") or 0)),
+                       "gpu": m.get("gpu") == "full"}
         if self.cap and self.paused_at is not None and self.cap.fps_ == self.params["fps"]:
             self._resume()
         else:
@@ -342,6 +349,10 @@ class Session:
     def on_cfg(self, m):
         if not self.params:
             return
+        if "gpu" in m and (m["gpu"] == "full") != self.params["gpu"]:
+            self.params["gpu"] = m["gpu"] == "full"
+            if self.cap and self.paused_at is None and self.cap.encoder == "nvenc":
+                self._task(self._start_capture(restart=True))   # the other encoder; a key frame follows
         if "fps" in m:
             self.params["fps"] = max(1, min(120, int(m["fps"])))
             if self.cap:
@@ -416,7 +427,7 @@ class Session:
         self.withhold = 0
         use_nvenc = hub.encoder and time.monotonic() >= self.x264_until and cfg["encoder"] != "x264"
         cls = capture.NvencCapture if use_nvenc else capture.X264Capture
-        kw = {"preset": cfg["preset"], "gpu": cfg["gpu"], "cuda": hub.no_vulkan} if use_nvenc else {}
+        kw = {"preset": cfg["preset"], "gpu": cfg["gpu"], "cuda": hub.no_vulkan or p["gpu"]} if use_nvenc else {}
         fps = p["fps"] if use_nvenc else min(p["fps"], 30)   # software encoding: spare the CPU
         self.stream_id = (self.stream_id % 0xFFFF) + 1
         self.seq = 0
@@ -1216,7 +1227,8 @@ class Hub:
         return {"sessions": [{"sid": s.sid, "client": s.client, "source": s.source, "user": s.ts_user,
                               "since": int(s.since), "streaming": bool(s.cap and s.paused_at is None),
                               "w": s.w, "h": s.h, "kbps": s.rc.kbps if s.rc else None,
-                              "enc": s.cap.encoder if s.cap else None} for s in self.sessions],
+                              "enc": s.cap.encoder if s.cap else None, "api": s.cap.api if s.cap else None}
+                             for s in self.sessions],
                 "encoder": self.encoder, "restart_for_gpu": self.cfg["encoder"] != "x264" and capture.driver_restart_needed(),
                 "url": self.url, "port": self.cfg["port"],
                 "password_set": self.auth.configured}

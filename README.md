@@ -130,6 +130,9 @@ hardware in about 4 ms.
   land on the Linux desktop. The browser has the same window, with the Linux side only.
 * **After a restart**, Darpan can show the Linux login screen, so you log in from your Mac with
   nobody at the Linux computer. Turn on *Show the login screen* in the Darpan window, once.
+* **Video**: *Balanced* suits most networks. Turn on *Full GPU on the Linux computer* for the sharpest,
+  fastest video, especially when scrolling fast; it uses about 250 MB of the Linux computer's GPU
+  memory while you're connected, instead of about 40 MB.
 * **Resolution**: pick one in the toolbar's display panel. The Linux computer remembers it, for the
   Mac app and for each browser, and switches back to it the next time you connect; *Native* goes back
   to normal.

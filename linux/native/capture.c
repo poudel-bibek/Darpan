@@ -958,9 +958,11 @@ int main(int argc, char **argv) {
     int dirty = 1, force = 1, want_idr = 1;
     int ref_next = 0;               // a probe was sent: the next picture must be a reference
     uint64_t min_interval = 1000000u / (unsigned)fps, next_allowed = 0;
-    // Quality refresh: after the screen settles, re-encode the same pixels a couple of times so
-    // the encoder can refine detail that the first (rate-limited) encode had to approximate.
-    static const uint32_t refresh_delay_ms[] = {90, 400};
+    // Quality refresh: after the screen settles, re-encode the same pixels six times over about 2 s,
+    // so the encoder can refine detail the first (rate-limited) encode had to approximate. Two left
+    // text visibly soft; six bring it close to what 4:2:0 allows (measured: 31.8 → 33.5 dB PSNR at
+    // 12 Mbit/s, 2560×1440). Nothing is sent once they're done.
+    static const uint32_t refresh_delay_ms[] = {90, 200, 300, 400, 500, 600};
     int refresh_step = -1;          // -1 = nothing scheduled
     uint64_t refresh_at = 0;
     uint64_t last_ts = 0;

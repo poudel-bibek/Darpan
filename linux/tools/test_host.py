@@ -607,8 +607,8 @@ async def run(args, tmp, probe_log):
             ws.send({"t": "ack", "id": sid, "n": seq})
     ok("file upload (path sanitised)", path and os.path.basename(path) == "test.bin" and open(path, "rb").read() == payload, path)
 
-    # idle: no damage → no frames (after the quality-refresh frames of the last change)
-    await pump(ws, 1.0)
+    # idle: no damage → no frames (after the quality-refresh frames of the last change, about 2 s)
+    await pump(ws, 2.5)
     n, _ = await pump(ws, 1.5)
     ok("static screen sends nothing", n == 0, "%d frames in 1.5 s" % n)
 
@@ -979,6 +979,25 @@ async def run(args, tmp, probe_log):
     ok("cap frees up when they close", kind == "text" and m.get("t") == "hello", m.get("t"))
     again.w.close()
 
+    # the rate controller: a delay spike cuts the bitrate; a few calm seconds bring a quiet picture back up
+    from darpan.session import RateControl
+    t0 = time.monotonic()
+    rc = RateControl(12000, 15000, 60)
+    for i in range(8):
+        rc.on_ack(t0 + 0.05 * i, 0.030, 1000)                 # the path's own RTT
+    for i in range(8):
+        rc.on_ack(t0 + 0.4 + 0.05 * i, 0.300, 1000)           # a Wi-Fi hiccup: RTT spikes
+    rc.tick(t0 + 0.8)
+    cut = rc.kbps
+    now = t0 + 0.8
+    for step in range(24):                                      # 12 s of a quiet desktop on a calm path
+        now += 0.5
+        for i in range(4):
+            rc.on_ack(now - 0.1 * i, 0.031, 800)
+        rc.sent = 2000                                          # a few small frames: far below the bitrate
+        rc.tick(now)
+    ok("bitrate: cut by a spike, back once calm", cut < 12000 and rc.kbps == 15000, "%d → %d → %d" % (12000, cut, rc.kbps))
+
     # changing the password ends existing sessions
     env = dict(os.environ, XDG_CONFIG_HOME=os.path.join(tmp, "config"), XDG_RUNTIME_DIR=os.path.join(tmp, "run"),
                XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"), HOME=tmp,
@@ -1141,6 +1160,25 @@ async def run(args, tmp, probe_log):
        and not os.path.exists(lss.DIR) and all(edits) and calls == [["enable-linger", "darpan-test-a"],
        ["enable-linger", "darpan-test-b"], ["disable-linger", "darpan-test-a"], ["disable-linger", "darpan-test-b"]],
        "%s %s" % (edits, calls))
+    # "Full GPU on the Linux computer": the viewer picks NVENC through CUDA; off again, Vulkan Video
+    def routes():
+        out = subprocess.run([sys.executable, "-m", "darpan", "status"], env=args.host_env, cwd=args.root,
+                             capture_output=True, text=True, timeout=20).stdout
+        return "full" if "full GPU encoder" in out else "lean" if "low-memory encoder" in out else out.strip()[-80:]
+    c = await WS.connect("127.0.0.1", args.port)
+    _, h = await c.recv()
+    c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py gpu"})
+    while (await asyncio.wait_for(c.recv(), 10))[1].get("t") != "ok":
+        pass
+    c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 0, "gpu": "full"})
+    await pump(c, 2.0)
+    first = routes()
+    c.send({"t": "cfg", "gpu": "lean"})
+    await pump(c, 2.5)
+    second = routes()
+    c.w.close()
+    ok("Full GPU on: CUDA; off: Vulkan", (first, second) == ("full", "lean"), "%s, then %s" % (first, second))
+
     # each kind of client gets back the resolution it chose last time; Native forgets it. The test display
     # offers only 1920×1080, so count the host's switches to it.
     pw = open(os.path.join(tmp, "config", "darpan", "password.txt")).read().strip()

@@ -12,7 +12,7 @@
   if (IS_MAC) document.documentElement.classList.add('mac');
 
   // ------------------------------------------------------------ settings (per viewer)
-  const DEFAULTS = { quality: '15000', fps: '60', scale: 'fit', cmd: 'ctrl', scroll: 1, invert: false, stats: false, pillX: 0.5, audio: true };
+  const DEFAULTS = { quality: '15000', fps: '60', fullGpu: false, scale: 'fit', cmd: 'ctrl', scroll: 1, invert: false, stats: false, pillX: 0.5, audio: true };
   const readJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
   const writeJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
   const forget = (k) => { try { localStorage.removeItem(k); } catch { /* ignore */ } };
@@ -293,7 +293,7 @@
 
   // ------------------------------------------------------------ video
   function startStream() {
-    if (S.connected && !document.hidden) send({ t: 'start', codec: 'h264', fps: +settings.fps, bitrate: +settings.quality });
+    if (S.connected && !document.hidden) send({ t: 'start', codec: 'h264', fps: +settings.fps, bitrate: +settings.quality, gpu: settings.fullGpu ? 'full' : 'lean' });
   }
   H.stream = (m) => {
     resetDecoder(false);
@@ -1323,9 +1323,14 @@
       });
     }
   }
-  const scrollEl = $('scrollSpeed'), invertEl = $('invertScroll');
+  const scrollEl = $('scrollSpeed'), invertEl = $('invertScroll'), fullGpuEl = $('fullGpu');
   scrollEl.addEventListener('input', () => { settings.scroll = +scrollEl.value; saveSettings(); });
   invertEl.addEventListener('change', () => { settings.invert = invertEl.checked; saveSettings(); });
+  fullGpuEl.addEventListener('change', () => {           // the Linux computer's GPU, not this one's
+    settings.fullGpu = fullGpuEl.checked;
+    saveSettings();
+    send({ t: 'cfg', gpu: settings.fullGpu ? 'full' : 'lean' });
+  });
 
   function applySettings() {
     for (const seg of document.querySelectorAll('.seg[data-setting]')) {
@@ -1333,6 +1338,7 @@
     }
     scrollEl.value = settings.scroll;
     invertEl.checked = !!settings.invert;
+    fullGpuEl.checked = !!settings.fullGpu;
     $('stats').hidden = !settings.stats;
     bar.querySelector('[data-act=stats]').classList.toggle('on', !!settings.stats);
     bar.querySelector('[data-act=audio]').classList.toggle('on', !!settings.audio);

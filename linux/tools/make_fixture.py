@@ -81,7 +81,8 @@ try:
 finally:
     if cap and cap.poll() is None:
         cap.kill()
-    xvfb.kill()
+    xvfb.terminate()                                           # not kill: it removes its socket and lock
+    xvfb.wait(5)
 
 stream = b"".join(aus)
 idr, nonref = [], []

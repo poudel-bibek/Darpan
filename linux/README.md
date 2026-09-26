@@ -16,7 +16,7 @@ tools/        end-to-end tests and dev helpers
 1. The X server reports damage → `darpan-capture` wakes (it sleeps in `poll()` otherwise).
 2. If the daemon has granted a credit: `XShmGetImage` into a shared-memory segment. The GPU imports
    that segment (`VK_EXT_external_memory_host`), a compute shader (`rgb2nv12.comp`) turns BGRx into
-   NV12, and Vulkan Video encodes it on NVENC (`vkenc.c`: quality level 3 of 7, CBR with a 4-frame
+   NV12, and Vulkan Video encodes it on NVENC (`vkenc.c`: ultra-low-latency tuning, quality level 2 of 7, CBR with a 4-frame
    VBV, 1 reference frame, infinite GOP, IDR on demand). That's about 40 MB of VRAM at 2560×1440.
    Without Vulkan Video, the segment is `cuMemHostRegister`-pinned, copied by DMA into a CUDA buffer
    and encoded by NVENC through CUDA, whose context alone takes about 200 MB. With a compositor most
@@ -27,7 +27,7 @@ tools/        end-to-end tests and dev helpers
    scatter-gather write (TCP_NODELAY).
 4. The client decodes it (WebCodecs / VideoToolbox), draws it the moment it exists, and acks.
    One credit per ack: a slow link means fewer frames, never a queue. A delay-based AIMD
-   controller adapts the bitrate; after the screen settles two "refresh" frames sharpen text.
+   controller adapts the bitrate; after the screen settles six "refresh" frames sharpen text.
 
 ## Build & run from source
 
@@ -44,6 +44,7 @@ python3 tools/test_host.py            # 20 protocol/input/clipboard/upload/laten
 node tools/webclient_test.mjs         # 17 checks: headless Chrome ↔ real host
 python3 tools/apt_test.py             # the release's APT index, as installed hosts use it
 python3 tools/capture_exit_test.py    # darpan-capture: exits when X goes away; Vulkan, no XShm, CUDA; VRAM
+python3 tools/quality_test.py        # picture quality (PSNR) of both encoder routes, scrolling and settled
 ```
 
 ## The login screen
