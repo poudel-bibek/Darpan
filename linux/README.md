@@ -17,7 +17,9 @@ tools/        end-to-end tests and dev helpers
 2. If the daemon has granted a credit: `XShmGetImage` into a shared-memory segment that is
    `cuMemHostRegister`-pinned, `cuMemcpy2D` (DMA) into a CUDA buffer, NVENC encodes BGRx directly
    (P3 preset, ultra-low-latency tuning, CBR with a 4-frame VBV, 1 reference frame, infinite GOP,
-   IDR on demand).
+   IDR on demand). With a compositor most damage is identical pixels, so a frame whose sampled
+   rows didn't change is first encoded as a non-reference P frame. If every macroblock of it is
+   P_Skip, it would decode to the picture the viewer already has, and nothing is sent.
 3. The access unit goes to the daemon over a pipe and out on the WebSocket with one
    scatter-gather write (TCP_NODELAY).
 4. The client decodes it (WebCodecs / VideoToolbox), draws it the moment it exists, and acks.

@@ -3,7 +3,8 @@
 //
 // Why this exists: the host must cost next to nothing on a machine busy with other GPU/CPU work.
 //   * Nothing runs unless the X server reports damage (the screen changed) — an idle
-//     screen costs 0 CPU and 0 bandwidth.
+//     screen costs 0 CPU and 0 bandwidth. Damage alone isn't enough to send a frame: one that
+//     would decode to the picture the viewer already has isn't sent (see "Unchanged frames").
 //   * Frames are only produced while the daemon has granted credits (one credit per frame,
 //     returned when the client acks it), so a slow network makes us encode fewer frames
 //     instead of queueing stale ones.
@@ -198,6 +199,210 @@ static const char *nv_status_name(NVENCSTATUS s) {
     }
 }
 
+// ---------------------------------------------------------------------------------------
+// Unchanged frames
+//
+// With a compositor, X reports the whole screen as damaged whenever anything animates, and most
+// of those frames are pixel-identical to the one before. Comparing whole frames on the CPU costs
+// more than the encode, and a CUDA kernel would share the SMs with the user's GPU jobs. So a frame
+// that looks unchanged (sparse row check in the main loop) is first encoded as a non-reference P
+// frame: a probe. If every macroblock of the probe is P_Skip, it decodes to exactly its reference
+// picture, so it's dropped. A non-reference picture can be dropped without a trace (frame_num only
+// counts reference pictures), so the viewer's stream stays valid. Otherwise the probe is sent as it
+// is, with no extra delay, and the next picture is a reference again.
+//
+// "Every macroblock is P_Skip" needs only the slice header and the CABAC-coded mb_skip_flag and
+// end_of_slice_flag of each macroblock (H.264 7.3.3, 7.3.4, 9.3). The decode must also end
+// exactly at the slice's stop bit. Anything unexpected counts as changed, so a mistake here can
+// only cost a frame, never hide one.
+
+typedef struct {
+    int ok;                              // probing is on: a stream this parser understands
+    uint32_t mbs;                        // macroblocks per picture
+    int log2_max_frame_num, poc_type, log2_max_poc_lsb;
+    int bottom_poc, redundant_pic_cnt, deblocking_ctl, pic_init_qp;
+} H264Info;
+
+typedef struct { const uint8_t *p, *end; uint32_t cur; int left, zeros, err; } Rbsp;
+
+static int rb_byte(Rbsp *r) {            // next RBSP byte: emulation prevention bytes removed
+    if (r->p >= r->end) { r->err = 1; return 0; }
+    int b = *r->p++;
+    if (r->zeros >= 2 && b == 3) {
+        if (r->p >= r->end) { r->err = 1; return 0; }
+        b = *r->p++;
+        r->zeros = 0;
+    }
+    r->zeros = b ? 0 : r->zeros + 1;
+    return b;
+}
+static int rb_bit(Rbsp *r) {
+    if (!r->left) { r->cur = (uint32_t)rb_byte(r); r->left = 8; }
+    return (int)(r->cur >> --r->left) & 1;
+}
+static uint32_t rb_bits(Rbsp *r, int n) {
+    uint32_t v = 0;
+    while (n-- > 0) v = v << 1 | (uint32_t)rb_bit(r);
+    return v;
+}
+static uint32_t rb_ue(Rbsp *r) {
+    int z = 0;
+    while (!rb_bit(r)) if (++z > 31) { r->err = 1; return 0; }
+    return ((1u << z) - 1) + rb_bits(r, z);
+}
+static int32_t rb_se(Rbsp *r) {
+    uint32_t k = rb_ue(r);
+    return k & 1 ? (int32_t)((k + 1) / 2) : -(int32_t)(k / 2);
+}
+
+// Next NAL unit of an Annex B buffer: returns its first byte (the header) and sets *nal_end.
+static const uint8_t *next_nal(const uint8_t **pos, const uint8_t *end, const uint8_t **nal_end) {
+    const uint8_t *p = *pos;
+    while (p + 3 <= end && !(p[0] == 0 && p[1] == 0 && p[2] == 1)) p++;
+    if (p + 3 >= end) return NULL;
+    const uint8_t *nal = p + 3, *q = nal;
+    while (q + 3 <= end && !(q[0] == 0 && q[1] == 0 && q[2] == 1)) q++;
+    if (q + 3 > end) q = end;
+    *pos = *nal_end = q;
+    return nal;
+}
+
+static int parse_sps(Rbsp *r, H264Info *h) {
+    int profile = (int)rb_bits(r, 8);
+    rb_bits(r, 16);                                     // constraint flags, level_idc
+    rb_ue(r);                                           // seq_parameter_set_id
+    if (profile == 100 || profile == 110 || profile == 122 || profile == 244 || profile == 44 ||
+        profile == 83 || profile == 86 || profile == 118 || profile == 128 || profile == 138 ||
+        profile == 139 || profile == 134 || profile == 135) {
+        if (rb_ue(r) == 3) return -1;                   // 4:4:4 (separate colour planes)
+        rb_ue(r); rb_ue(r); rb_bit(r);                  // bit depths, transform bypass
+        if (rb_bit(r)) return -1;                       // scaling matrices
+    }
+    h->log2_max_frame_num = (int)rb_ue(r) + 4;
+    h->poc_type = (int)rb_ue(r);
+    if (h->poc_type == 0) h->log2_max_poc_lsb = (int)rb_ue(r) + 4;
+    else if (h->poc_type != 2) return -1;
+    rb_ue(r); rb_bit(r);                                // max_num_ref_frames, gaps allowed
+    uint32_t w = rb_ue(r) + 1, hm = rb_ue(r) + 1;
+    if (!rb_bit(r)) return -1;                          // frame_mbs_only_flag: progressive only
+    h->mbs = w * hm;
+    return r->err ? -1 : 0;
+}
+
+static int parse_pps(Rbsp *r, H264Info *h) {
+    rb_ue(r); rb_ue(r);                                 // picture and sequence parameter set ids
+    if (!rb_bit(r)) return -1;                          // entropy_coding_mode_flag: CABAC only
+    h->bottom_poc = rb_bit(r);
+    if (rb_ue(r)) return -1;                            // slice groups
+    rb_ue(r); rb_ue(r);                                 // default active reference counts
+    if (rb_bit(r)) return -1;                           // weighted prediction
+    rb_bits(r, 2);                                      // weighted_bipred_idc
+    h->pic_init_qp = 26 + rb_se(r);
+    rb_se(r); rb_se(r);                                 // pic_init_qs, chroma_qp_index_offset
+    h->deblocking_ctl = rb_bit(r);
+    rb_bit(r);                                          // constrained_intra_pred_flag
+    h->redundant_pic_cnt = rb_bit(r);
+    return r->err ? -1 : 0;
+}
+
+static const uint8_t range_lps[64][4] = {
+    {128, 176, 208, 240}, {128, 167, 197, 227}, {128, 158, 187, 216}, {123, 150, 178, 205},
+    {116, 142, 169, 195}, {111, 135, 160, 185}, {105, 128, 152, 175}, {100, 122, 144, 166},
+    {95, 116, 137, 158}, {90, 110, 130, 150}, {85, 104, 123, 142}, {81, 99, 117, 135},
+    {77, 94, 111, 128}, {73, 89, 105, 122}, {69, 85, 100, 116}, {66, 80, 95, 110},
+    {62, 76, 90, 104}, {59, 72, 86, 99}, {56, 69, 81, 94}, {53, 65, 77, 89},
+    {51, 62, 73, 85}, {48, 59, 69, 80}, {46, 56, 66, 76}, {43, 53, 63, 72},
+    {41, 50, 59, 69}, {39, 48, 56, 65}, {37, 45, 54, 62}, {35, 43, 51, 59},
+    {33, 41, 48, 56}, {32, 39, 46, 53}, {30, 37, 43, 50}, {29, 35, 41, 48},
+    {27, 33, 39, 45}, {26, 31, 37, 43}, {24, 30, 35, 41}, {23, 28, 33, 39},
+    {22, 27, 32, 37}, {21, 26, 30, 35}, {20, 24, 29, 33}, {19, 23, 27, 31},
+    {18, 22, 26, 30}, {17, 21, 25, 28}, {16, 20, 23, 27}, {15, 19, 22, 25},
+    {14, 18, 21, 24}, {14, 17, 20, 23}, {13, 16, 19, 22}, {12, 15, 18, 21},
+    {12, 14, 17, 20}, {11, 14, 16, 19}, {11, 13, 15, 18}, {10, 12, 15, 17},
+    {10, 12, 14, 16}, {9, 11, 13, 15}, {9, 11, 12, 14}, {8, 10, 12, 14},
+    {8, 9, 11, 13}, {7, 9, 11, 12}, {7, 9, 10, 12}, {7, 8, 10, 11},
+    {6, 8, 9, 11}, {6, 7, 9, 10}, {6, 7, 8, 9}, {2, 2, 2, 2},
+};
+static const uint8_t trans_lps[64] = {
+    0, 0, 1, 2, 2, 4, 4, 5, 6, 7, 8, 9, 9, 11, 11, 12, 13, 13, 15, 15, 16, 16, 18, 18, 19, 19,
+    21, 21, 22, 22, 23, 24, 24, 25, 26, 26, 27, 27, 28, 29, 29, 30, 30, 30, 31, 32, 32, 33, 33,
+    33, 34, 34, 35, 35, 35, 36, 36, 36, 37, 37, 37, 38, 38, 63,
+};
+
+// 1 if the slice (RBSP after the NAL header) is a whole P picture whose macroblocks are all P_Skip.
+static int slice_all_skip(const H264Info *h, const uint8_t *p, const uint8_t *end) {
+    Rbsp r = {p, end, 0, 0, 0, 0};
+    if (rb_ue(&r) != 0) return 0;                       // first_mb_in_slice: the whole picture
+    uint32_t type = rb_ue(&r);
+    if (type != 0 && type != 5) return 0;               // P
+    rb_ue(&r);                                          // pic_parameter_set_id
+    rb_bits(&r, h->log2_max_frame_num);                 // frame_num
+    if (h->poc_type == 0) {
+        rb_bits(&r, h->log2_max_poc_lsb);
+        if (h->bottom_poc) rb_se(&r);
+    }
+    if (h->redundant_pic_cnt) rb_ue(&r);
+    if (rb_bit(&r)) rb_ue(&r);                          // num_ref_idx_active_override
+    if (rb_bit(&r)) return 0;                           // ref_pic_list_modification_flag_l0
+    uint32_t init_idc = rb_ue(&r);                      // (no dec_ref_pic_marking: not a reference)
+    int qp = h->pic_init_qp + rb_se(&r);
+    if (h->deblocking_ctl && rb_ue(&r) != 1) { rb_se(&r); rb_se(&r); }
+    if (r.err || init_idc > 2 || qp < 0 || qp > 51) return 0;
+    while (r.left) if (!rb_bit(&r)) return 0;           // cabac_alignment_one_bit
+
+    // mb_skip_flag of a macroblock whose neighbours are skipped or missing is ctxIdx 11 (9.3.3.1.1.1).
+    static const int m_n[3][2] = {{23, 33}, {22, 25}, {29, 16}};
+    int pre = ((m_n[init_idc][0] * qp) >> 4) + m_n[init_idc][1];
+    pre = pre < 1 ? 1 : pre > 126 ? 126 : pre;
+    int state = pre <= 63 ? 63 - pre : pre - 64, mps = pre > 63;
+    uint32_t range = 510, offset = rb_bits(&r, 9);
+    for (uint32_t mb = 0; mb < h->mbs && !r.err; mb++) {
+        uint32_t lps = range_lps[state][(range >> 6) & 3];
+        int bin;
+        range -= lps;
+        if (offset >= range) {
+            bin = !mps;
+            offset -= range;
+            range = lps;
+            if (!state) mps = !mps;
+            state = trans_lps[state];
+        } else {
+            bin = mps;
+            if (state < 62) state++;
+        }
+        while (range < 256) { range <<= 1; offset = offset << 1 | (uint32_t)rb_bit(&r); }
+        if (!bin) return 0;                             // a coded macroblock
+        range -= 2;                                     // end_of_slice_flag (terminate bin)
+        if (offset >= range) {
+            // The last bit read is the rbsp_stop_one_bit (9.3.3.2.2.3); only zeros may follow
+            // (alignment bits, cabac_zero_words and their emulation prevention bytes).
+            if (mb != h->mbs - 1 || !(offset & 1) || r.err) return 0;
+            if (r.cur & ((1u << r.left) - 1)) return 0;
+            for (int zeros = r.zeros; r.p < r.end; r.p++) {
+                if (*r.p == 0) zeros++;
+                else if (*r.p == 3 && zeros >= 2) zeros = 0;
+                else return 0;
+            }
+            return 1;
+        }
+        while (range < 256) { range <<= 1; offset = offset << 1 | (uint32_t)rb_bit(&r); }
+    }
+    return 0;
+}
+
+// 1 if an encoded probe is a single all-P_Skip slice (a non-reference picture).
+static int probe_all_skip(const H264Info *h, const uint8_t *buf, uint32_t len) {
+    const uint8_t *pos = buf, *end = buf + len, *nal, *nal_end;
+    int slices = 0, skip = 0;
+    while ((nal = next_nal(&pos, end, &nal_end))) {
+        int type = nal[0] & 0x1f;
+        if (type == 6 || type == 9 || type == 12) continue;         // SEI, delimiter, filler
+        if (type != 1 || (nal[0] & 0x60) || ++slices > 1) return 0;
+        skip = slice_all_skip(h, nal + 1, nal_end);
+    }
+    return slices == 1 && skip;
+}
+
 typedef struct {
     void *enc;
     CUcontext ctx;
@@ -209,6 +414,8 @@ typedef struct {
     NV_ENC_CONFIG cfg;
     uint32_t w, h, fps, kbps, vbv_frames;
     uint32_t frame_idx;
+    uint32_t poc;              // display POC of the last reference picture
+    H264Info h264;
     char gpu[128];
 } Encoder;
 
@@ -339,7 +546,7 @@ static int encoder_open(Encoder *e, int gpu, int preset, int matrix601) {
     ip->frameRateNum = e->fps;
     ip->frameRateDen = 1;
     ip->enableEncodeAsync = 0;
-    ip->enablePTD = 1;
+    ip->enablePTD = 0;          // we choose each picture's type: probes are non-reference P frames
     ip->encodeConfig = &e->cfg;
     ip->tuningInfo = NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY;
     ip->maxEncodeWidth = e->w;
@@ -363,6 +570,26 @@ static int encoder_open(Encoder *e, int gpu, int preset, int matrix601) {
     cb.version = NV_ENC_CREATE_BITSTREAM_BUFFER_VER;
     NVCHECK(nv.nvEncCreateBitstreamBuffer(e->enc, &cb));
     e->bs = cb.bitstreamBuffer;
+
+    // Probing needs the parameter sets; a stream this parser doesn't understand is sent in full.
+    uint8_t ps[1024];
+    uint32_t ps_len = 0;
+    NV_ENC_SEQUENCE_PARAM_PAYLOAD sp = {0};
+    sp.version = NV_ENC_SEQUENCE_PARAM_PAYLOAD_VER;
+    sp.inBufferSize = sizeof ps;
+    sp.spsppsBuffer = ps;
+    sp.outSPSPPSPayloadSize = &ps_len;
+    if (nv.nvEncGetSequenceParams(e->enc, &sp) == NV_ENC_SUCCESS && ps_len <= sizeof ps) {
+        const uint8_t *pos = ps, *nal, *nal_end;
+        int got = 0;
+        while ((nal = next_nal(&pos, ps + ps_len, &nal_end))) {
+            Rbsp r = {nal + 1, nal_end, 0, 0, 0, 0};
+            if ((nal[0] & 0x1f) == 7) got |= parse_sps(&r, &e->h264) ? 4 : 1;
+            else if ((nal[0] & 0x1f) == 8) got |= parse_pps(&r, &e->h264) ? 4 : 2;
+        }
+        e->h264.ok = got == 3;
+    }
+    if (!e->h264.ok) logf_("stream not understood; unchanged frames will be sent too");
     return 0;
 }
 
@@ -382,8 +609,9 @@ static int encoder_set_bitrate(Encoder *e, uint32_t kbps) {
     return 0;
 }
 
-// Encodes the frame currently in e->dptr and writes it to stdout.
-static int encoder_encode(Encoder *e, int force_idr, uint32_t extra_flags, uint64_t ts,
+// Encodes the frame currently in e->dptr and writes it to stdout. A probe (a non-reference P
+// frame) that is all P_Skip isn't written: then it returns 1.
+static int encoder_encode(Encoder *e, int force_idr, int probe, uint32_t extra_flags, uint64_t ts,
                           uint32_t cap_us, int *out_is_key, uint32_t *out_bytes) {
     uint64_t t0 = now_us();
     NV_ENC_MAP_INPUT_RESOURCE mr = {0};
@@ -396,7 +624,13 @@ static int encoder_encode(Encoder *e, int force_idr, uint32_t extra_flags, uint6
     pp.inputWidth = e->w;
     pp.inputHeight = e->h;
     pp.inputPitch = (uint32_t)e->pitch;
-    pp.encodePicFlags = force_idr ? (NV_ENC_PIC_FLAG_FORCEIDR | NV_ENC_PIC_FLAG_OUTPUT_SPSPPS) : 0;
+    pp.encodePicFlags = force_idr ? NV_ENC_PIC_FLAG_OUTPUT_SPSPPS : 0;
+    pp.pictureType = force_idr ? NV_ENC_PIC_TYPE_IDR : NV_ENC_PIC_TYPE_P;
+    // Reference pictures count up by 2 (a frame's two fields), so the viewer's stream has no gaps
+    // however many probes were dropped; a probe sits between them.
+    e->poc = force_idr ? 0 : probe ? e->poc : e->poc + 2;
+    pp.codecPicParams.h264PicParams.displayPOCSyntax = probe ? e->poc + 1 : e->poc;
+    pp.codecPicParams.h264PicParams.refPicFlag = !probe;
     pp.frameIdx = e->frame_idx++;
     pp.inputTimeStamp = ts;
     pp.inputBuffer = mr.mappedResource;
@@ -422,7 +656,8 @@ static int encoder_encode(Encoder *e, int force_idr, uint32_t extra_flags, uint6
     int is_key = lb.pictureType == NV_ENC_PIC_TYPE_IDR;
     uint32_t enc_us = (uint32_t)(now_us() - t0);
     uint32_t flags = (is_key ? FLAG_KEY : 0) | extra_flags;
-    int wr = emit_record(flags, ts, cap_us, enc_us, lb.bitstreamBufferPtr, lb.bitstreamSizeInBytes);
+    int skip = probe && probe_all_skip(&e->h264, lb.bitstreamBufferPtr, lb.bitstreamSizeInBytes);
+    int wr = skip ? 1 : emit_record(flags, ts, cap_us, enc_us, lb.bitstreamBufferPtr, lb.bitstreamSizeInBytes);
     *out_bytes = lb.bitstreamSizeInBytes;
     nv.nvEncUnlockBitstream(e->enc, e->bs);
     nv.nvEncUnmapInputResource(e->enc, mr.mappedResource);
@@ -514,6 +749,21 @@ static int capture_grab(Capture *c) {
     return 0;
 }
 
+// A first look for changes: every ROW_STEP-th row of the new grab against the same rows of the last
+// one, which it keeps. A change that crosses one of them (scrolling, video, a window) is encoded as
+// a reference frame straight away; smaller ones are caught by the probe, which then goes out itself.
+// Costs about 30 µs a grab at 2560×1440.
+#define ROW_STEP 32
+static int rows_changed(const Capture *c, uint8_t *rows) {
+    size_t bpl = (size_t)c->img->bytes_per_line, n = (size_t)c->w * 4;
+    int changed = 0;
+    for (int y = 0; y < c->h; y += ROW_STEP, rows += n) {
+        const uint8_t *src = (const uint8_t *)c->img->data + (size_t)y * bpl;
+        if (memcmp(src, rows, n)) { memcpy(rows, src, n); changed = 1; }
+    }
+    return changed;
+}
+
 static void capture_close(Capture *c) {
     if (!c->dpy) return;
     if (c->damage) XDamageDestroy(c->dpy, c->damage);
@@ -571,6 +821,7 @@ int main(int argc, char **argv) {
 
     Capture cap = {0};
     Encoder enc = {0};
+    uint8_t *rows = NULL;
     int rc = 2;
 
     if (probe) {
@@ -616,9 +867,12 @@ int main(int argc, char **argv) {
     cp.dstPitch = enc.pitch;
     cp.WidthInBytes = (size_t)cap.w * 4;
     cp.Height = (size_t)cap.h;
+    // The last grab's sampled rows, for the change check. Without them every frame is sent.
+    if (enc.h264.ok && !bench) rows = calloc((size_t)(cap.h + ROW_STEP - 1) / ROW_STEP, (size_t)cap.w * 4);
 
     const int xfd = ConnectionNumber(cap.dpy);
     int dirty = 1, force = 1, want_idr = 1;
+    int ref_next = 0;               // a probe was sent: the next picture must be a reference
     uint64_t min_interval = 1000000u / (unsigned)fps, next_allowed = 0;
     // Quality refresh: after the screen settles, re-encode the same pixels a couple of times so
     // the encoder can refine detail that the first (rate-limited) encode had to approximate.
@@ -719,9 +973,25 @@ int main(int argc, char **argv) {
             last_ts = ts;
             int is_key = 0;
             uint32_t bytes = 0;
-            if (encoder_encode(&enc, want_idr, 0, ts, (uint32_t)(t1 - t0), &is_key, &bytes)) {
-                if (errno != EPIPE) rc = 2;   // EPIPE = daemon closed our pipe: normal exit
-                goto out;
+            // Damage isn't news by itself: with a compositor, most damaged frames are identical.
+            if (rows && !rows_changed(&cap, rows) && !force && !want_idr && !ref_next) {
+                int same = encoder_encode(&enc, 0, 1, 0, ts, (uint32_t)(t1 - t0), &is_key, &bytes);
+                if (same < 0) {
+                    if (errno != EPIPE) rc = 2;
+                    goto out;
+                }
+                if (same) {                   // the viewer would see no difference: send nothing
+                    dirty = 0;
+                    next_allowed = t0 + min_interval;
+                    continue;
+                }
+                ref_next = 1;                 // the probe went out as it is; catch the reference up next
+            } else {
+                if (encoder_encode(&enc, want_idr, 0, 0, ts, (uint32_t)(t1 - t0), &is_key, &bytes)) {
+                    if (errno != EPIPE) rc = 2;   // EPIPE = daemon closed our pipe: normal exit
+                    goto out;
+                }
+                ref_next = 0;
             }
             if (!bench) credits--;
             dirty = force = want_idr = 0;
@@ -740,10 +1010,11 @@ int main(int argc, char **argv) {
             uint32_t bytes = 0;
             uint64_t ts = last_ts + 1;
             last_ts = ts;
-            if (encoder_encode(&enc, 0, FLAG_REFRESH, ts, 0, &is_key, &bytes)) {
+            if (encoder_encode(&enc, 0, 0, FLAG_REFRESH, ts, 0, &is_key, &bytes)) {
                 if (errno != EPIPE) rc = 2;
                 goto out;
             }
+            ref_next = 0;
             credits--;
             refresh_step++;
             if (refresh_step < (int)(sizeof refresh_delay_ms / sizeof refresh_delay_ms[0]))
@@ -759,6 +1030,7 @@ int main(int argc, char **argv) {
               bench_enc / 1000.0 / bench_done, bench_bytes / 1024.0 / bench_done);
     }
 out:
+    free(rows);
     if (cap.pinned) cu.MemHostUnregister(cap.shm.shmaddr);
     encoder_close(&enc);
     if (enc.ctx) cu.CtxDestroy(enc.ctx);
