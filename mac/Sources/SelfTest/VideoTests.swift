@@ -178,6 +178,17 @@ func videoTests() {
         check(Data([1, 0, 0]).withUnsafeBytes { VideoHeader($0) } == nil, "short")
     }
 
+    section("SPS chroma format") {
+        eq(SPSInfo.chromaFormat(Data([0x67, 0xf4, 0x00, 0x33, 0x91, 0x85, 0x95, 0x00, 0x50, 0x01, 0x6b, 0x4d, 0x40, 0x43, 0x40, 0x41, 0xe9, 0x54])),
+           3, "High 4:4:4 Predictive (the host's Vulkan encoder)")
+        let aus = accessUnits(TestData.small128x72)
+        if let sps = AnnexB.split(aus[0]).map({ aus[0][$0] }).first(where: { $0.first.map { $0 & 0x1F == 7 } ?? false }) {
+            eq(SPSInfo.chromaFormat(Data(sps)), 1, "a 4:2:0 High SPS")
+        } else { check(false, "SPS in the test stream") }
+        eq(SPSInfo.chromaFormat(Data([0x67, 0x42, 0x00, 0x1e, 0x95])), 1, "Baseline: always 4:2:0")
+        eq(SPSInfo.chromaFormat(Data([0x67])), 1, "truncated: 4:2:0")
+    }
+
     section("VideoToolbox decode of a real stream (AUD, 128×72, no VUI colour → BT.709)") {
         let aus = accessUnits(TestData.small128x72)
         eq(aus.count, 3, "access units")
@@ -256,7 +267,7 @@ func videoTests() {
     // `.json` next to each gives the picture and non-reference counts.
     let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("../../../linux/tools/fixtures").standardized
-    for name in ["nonref-thin-line-640x360", "vulkan-640x360"] {
+    for name in ["nonref-thin-line-640x360", "vulkan-640x360", "vulkan-444-2560x1440"] {
         section("VideoToolbox decode of the host fixture \(name)") {
             let stream = try Data(contentsOf: fixtures.appendingPathComponent("\(name).h264"))
             let info = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtures.appendingPathComponent("\(name).json"))) as? [String: Any]
@@ -272,6 +283,10 @@ func videoTests() {
             dec.invalidate()
             eq(c.frames.count, aus.count, "one output per picture")
             eq(c.frames.filter { $0.2 != noErr || $0.1 == nil }.count, 0, "no decode errors")
+            // Full colour comes out as full colour (444v), everything else as 420v.
+            let want = (info?["chroma"] as? Int) == 444 ? kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange
+                                                         : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+            check(c.frames.allSatisfy { $0.1.map(CVPixelBufferGetPixelFormatType) == want }, "decoded pixel format")
             guard let last = c.frames.last?.1 else { return }
             let psnr = lumaPSNR(last, png: fixtures.appendingPathComponent("\(name)-last.png"))
             check(psnr > 30, "last picture matches FFmpeg's decode (luma PSNR \(String(format: "%.1f", psnr)) dB)")
@@ -292,11 +307,12 @@ private func pictures(_ d: Data) -> [Data] {
     return out
 }
 
-/// Luma PSNR of a decoded 420v picture against an RGB PNG (converted with BT.709, video range).
+/// Luma PSNR of a decoded picture (420v or 444v) against an RGB PNG (converted with BT.709, video
+/// range). A PNG smaller than the picture is its top-left corner.
 private func lumaPSNR(_ img: CVImageBuffer, png: URL) -> Double {
     guard let src = CGImageSourceCreateWithURL(png as CFURL, nil), let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return 0 }
-    let w = CVPixelBufferGetWidth(img), h = CVPixelBufferGetHeight(img)
-    guard cg.width == w, cg.height == h else { return 0 }
+    let w = cg.width, h = cg.height
+    guard w <= CVPixelBufferGetWidth(img), h <= CVPixelBufferGetHeight(img) else { return 0 }
     var rgba = [UInt8](repeating: 0, count: w * h * 4)
     let ctx = CGContext(data: &rgba, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!

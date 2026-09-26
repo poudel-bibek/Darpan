@@ -276,7 +276,9 @@ final class Session: NSObject {
     private static func statsText(_ s: Client.Stats) -> String {
         func f(_ v: Double?, _ spec: String) -> String { v.map { String(format: spec, $0) } ?? "–" }
         var lines: [String] = []
-        if let st = s.stream { lines.append("\(st.width)×\(st.height)  \(st.encoder)  \(Int(s.fps.rounded())) fps") }
+        if let st = s.stream {
+            lines.append("\(st.width)×\(st.height)  \(st.encoder)\(st.chroma == 444 ? " 4:4:4" : "")  \(Int(s.fps.rounded())) fps")
+        }
         lines.append(String(format: "video %.2f Mbps", s.mbps) + (s.host.map { String(format: "  target %.1f Mbps", $0.targetKbps / 1000) } ?? ""))
         lines.append("rtt \(f(s.rtt, "%.1f")) ms  capture→display \(f(s.latency, "%.1f")) ms")
         lines.append(String(format: "decode %.2f ms", s.decodeMs) + (s.hardwareDecoder ? " (hardware)" : "")
