@@ -27,6 +27,8 @@ final class ConnectModel: ObservableObject {
     private var timer: Timer?
     /// Identifies the current connect attempt, so a late tailnet callback from a cancelled one is ignored.
     private var attempt = 0
+    /// The current attempt got as far as creating a session (only then does Cancel end one).
+    private var launched = false
 
     init() {
         address = settings.hosts.first ?? ""
@@ -118,6 +120,7 @@ final class ConnectModel: ObservableObject {
         showTailscaleHint = false
         failure = nil
         show("Connecting to \(a.shortName)…", error: false)
+        launched = true
         handler?.connect(to: a, proxy: proxy, password: pw, saved: saved, remember: remember)
     }
 
@@ -125,12 +128,16 @@ final class ConnectModel: ObservableObject {
         attempt += 1
         connecting = false
         show("", error: false)
-        handler?.cancelConnect()
+        // Still in the private-network preflight: nothing to cancel yet, and a session that
+        // is already open (New Connection… while connected) must keep running.
+        if launched { handler?.cancelConnect() }
+        launched = false
     }
 
     /// The session ended (or never started). `failure` nil: the user disconnected or cancelled.
     func ended(_ failure: Client.Failure?, wasConnected: Bool) {
         connecting = false
+        launched = false
         refreshSavedKey()
         guard let failure else {
             show(wasConnected ? "Disconnected." : "", error: false)
@@ -154,6 +161,7 @@ final class ConnectModel: ObservableObject {
 
     func connected() {
         connecting = false
+        launched = false
         show("", error: false)
     }
 
