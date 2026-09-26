@@ -95,8 +95,12 @@ def backdrop(s):
     s.add(f'<rect width="{W}" height="{H}" rx="12" fill="url(#bg)"/>')
 
 
-def tower(s, gpu_cls=""):
+def tower(s, gpu_cls="", at=None, label="Linux"):
+    """The Linux computer; `at` = (x, y, scale) draws it elsewhere, and its label then comes separately."""
     x, y, w, h = TX, TY, TW, TH
+    if at:
+        k = at[2]
+        s.add(f'<g transform="translate({at[0] - TX * k:.2f} {at[1] - TY * k:.2f}) scale({k})">')
     s.add(f'<rect x="{x + 4}" y="{y + h - 1}" width="7" height="3" rx="1" fill="#2a2b33"/>',
           f'<rect x="{x + w - 11}" y="{y + h - 1}" width="7" height="3" rx="1" fill="#2a2b33"/>',
           f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="4" fill="#1c1d24" stroke="#555966"/>',
@@ -104,8 +108,11 @@ def tower(s, gpu_cls=""):
           f'<circle cx="{x + w / 2}" cy="{y + 10.5}" r="2" fill="#5ad16a"/>')
     for i in range(4):
         s.add(f'<rect x="{x + 8}" y="{y + 23 + i * 5}" width="{w - 16}" height="1.6" rx=".8" fill="#393b45"/>')
-    s.add(f'<rect class="{gpu_cls}" x="{x + 6}" y="{y + h - 11}" width="{w - 12}" height="3" rx="1.5" fill="#76b900"/>',
-          text(x + w / 2, y + h + 16, "Linux", 9.5, "#fff", "middle", opacity=.8))
+    s.add(f'<rect class="{gpu_cls}" x="{x + 6}" y="{y + h - 11}" width="{w - 12}" height="3" rx="1.5" fill="#76b900"/>')
+    if at:
+        s.add('</g>')
+    elif label:
+        s.add(text(x + w / 2, y + h + 16, label, 9.5, "#fff", "middle", opacity=.8))
 
 
 def link(s, cls=""):
@@ -402,7 +409,117 @@ def files():
     return s.svg("A file dragged from the Mac desktop onto Darpan's window lands on the Linux desktop")
 
 
-FEATURES = {"local": feels_local, "private": private, "light": light, "sound": sound, "clipboard": clipboard, "files": files}
+def dictation():
+    s = Scene(6.0)
+    backdrop(s)
+    tower(s)
+    link(s)
+    size, adv = 8, 8 * ADV
+    col = lambda n: 14 + n * adv
+    said = "fix the flaky test"
+    inner = (mono(col(0), 23, "&gt;", size, "#e8a13a", weight=700)
+             + mono(col(2), 23, said, size, cls="said", length=len(said) * adv)
+             + f'<rect class="cur" x="{col(2):.1f}" y="16.4" width="{adv - .4:.1f}" height="8.2" fill="#e6e6e6" fill-opacity=".85"/>')
+    bars = "".join(f'<rect class="wv{i}" x="{190 + i * 2.8:.1f}" y="100" width="1.6" height="8" rx=".8" fill="#fff"/>' for i in range(8))
+    pill = ('<g class="pill"><rect x="173" y="98.5" width="44" height="11" rx="5.5" fill="#111" fill-opacity=".9" stroke="#fff" '
+            'stroke-opacity=".15" stroke-width=".5"/><rect x="179" y="100.6" width="3.2" height="5" rx="1.6" fill="#fff"/>'
+            '<path d="M178 104.2a2.6 2.6 0 0 0 5.2 0M180.6 106.8v1.6" fill="none" stroke="#fff" stroke-width=".7"/>' + bars + '</g>')
+    mac(s, viewer(s, 125, 26, 140, term(8, 8, 124, 30, inner)), pill + keycap(160, 104, "fn", "fn"))
+    s.show("fn", 0.4, 2.6, 0.1)
+    s.show("pill", 0.5, 3.0, 0.15)
+    for i in range(8):
+        lv = [(.3, 1), (.8, .35), (.5, .9), (1, .4), (.4, .85), (.9, .3), (.6, 1), (.35, .7)][i]
+        s.anim(f"wv{i}", [(0, "transform:scaleY(.2)"), (0.6, "transform:scaleY(.2)")]
+               + [(0.6 + k * .2, "transform:scaleY(%.2f)" % lv[k % 2]) for k in range(1, 10)]
+               + [(2.6, "transform:scaleY(.2)"), (6, "transform:scaleY(.2)")],
+               extra="transform-box:fill-box;transform-origin:50% 50%")
+    s.add(doc("d1"))
+    s.move("d1", [(2.85, LB, LINK_Y), (3.3, LA, LINK_Y)], fade=0.06)
+    s.show("said", 3.35, 5.6, 0.05)
+    s.anim("cur", [(0, "transform:translateX(0)"), (3.35, "transform:translateX(%.1fpx)" % (len(said) * adv)),
+                   (5.75, "transform:translateX(0)"), (6, "transform:translateX(0)")], "step-end")
+    return s.svg("Dictating on the Mac: the words land at the cursor on the Linux computer")
+
+
+def computers():
+    s = Scene(7.0)
+    backdrop(s)
+    a, b = (18, 16, .6), (18, 78, .6)
+    for at, name in ((a, "workstation"), (b, "lab-server")):
+        tower(s, at=at)
+        s.add(text(at[0] + 10.8, at[1] + 45, name, 6.5, "#fff", "middle", opacity=.8))
+    ends = {"a": ((42, 34), (LB, 64)), "b": ((42, 96), (LB, 76))}
+    for k, ((x1, y1), (x2, y2)) in ends.items():
+        if k == "b":                                     # the computer picked: its link lights up
+            s.add(f'<line class="onb" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="#7ee787" stroke-opacity=".8" stroke-width="3" stroke-linecap="round"/>')
+        s.add(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="#fff" stroke-opacity=".45" stroke-width="1.4" stroke-dasharray="3 3"/>')
+    s.add('<g transform="translate(84 70)"><rect x="-6.5" y="-4" width="13" height="10" rx="2.5" fill="#fff"/>'
+          '<path d="M-3.6-4v-2.2a3.6 3.6 0 0 1 7.2 0V-4" fill="none" stroke="#fff" stroke-width="1.6"/>'
+          '<circle cy=".6" r="1.4" fill="#3b2e87"/><rect x="-.6" y=".6" width="1.2" height="2.8" rx=".5" fill="#3b2e87"/></g>')
+    s.show("onb", 1.8, 6.4)
+    row = lambda y, name, cls: (f'<rect class="{cls}" x="152" y="{y}" width="96" height="15" rx="3" fill="#0a84ff" fill-opacity=".18"/>'
+                                f'<circle cx="159" cy="{y + 7.5}" r="2" fill="#34c759"/>'
+                                + text(165, y + 6.4, name, 6, "#1d1d1f", weight=600) + text(165, y + 12, "Ready to connect", 4.8, "#6e6e73"))
+    window = ('<g class="list"><rect x="148" y="30" width="104" height="72" rx="4" fill="#fbfbfd" filter="url(#sh)"/>'
+              '<path d="M148 38v-4a4 4 0 0 1 4-4h96a4 4 0 0 1 4 4v4z" fill="#ececf0"/>'
+              + "".join(f'<circle cx="{153 + i * 4.5}" cy="34" r="1.4" fill="{c}"/>' for i, c in enumerate(("#ff5f57", "#febc2e", "#28c840")))
+              + text(154, 48, "Your computers", 6.8, "#1d1d1f", weight=700)
+              + row(52, "workstation", "rowa") + row(69, "lab-server", "rowb")
+              + text(154, 96, "Other address…", 4.8, "#0a64d6") + '</g>')
+    size, adv = 8, 8 * ADV
+    inner = (mono(14, 23, "$", size, "#8ae234") + mono(14 + 2 * adv, 23, "hostname", size)
+             + mono(14, 34, "lab-server", size, "#7fd1ff") + mono(14, 45, "$", size, "#8ae234"))
+    mac(s, window + viewer(s, 125, 26, 140, term(8, 8, 124, 44, inner), "vw"),
+        '<path class="ptr" d="M0 0v10.5l2.5-2.3 1.7 4 1.8-.8-1.7-3.9h3.4z" fill="#000" stroke="#fff" stroke-width=".8"/>')
+    s.anim("rowa", [(0, "opacity:0"), (7, "opacity:0")])            # only lab-server gets picked
+    s.show("rowb", 1.25, 1.75, 0.05)
+    s.show("list", 0, 1.7, 0.2)
+    s.anim("list", [(0, "opacity:1"), (1.7, "opacity:1"), (1.9, "opacity:0"), (6.4, "opacity:0"), (6.7, "opacity:1"), (7, "opacity:1")])
+    s.anim("vw", [(0, "opacity:0"), (1.7, "opacity:0"), (1.9, "opacity:1"), (6.4, "opacity:1"), (6.7, "opacity:0"), (7, "opacity:0")])
+    s.move("ptr", [(0.3, 214, 108), (1.2, 200, 79), (1.75, 200, 79)])
+    for i in range(5):                                   # lab-server's screen, live
+        s.add(dot(f"pb{i}"))
+        s.move(f"pb{i}", [(2.1 + i * 0.8, 42, 96), (2.5 + i * 0.8, LB, 76)], fade=0.05)
+    return s.svg("The Mac lists your Linux computers; one click connects to the one you pick")
+
+
+def browser():
+    s = Scene(6.0)
+    backdrop(s)
+    tower(s)
+    link(s)
+    x, y, w = 118, 24, 154
+    url = "workstation.example.ts.net"
+    size, adv = 8, 8 * ADV
+    page = (f'<g class="page"><rect x="{x}" y="{y + 16}" width="{w}" height="72" fill="#111"/>'
+                             '<g transform="translate(133 40.5)"><rect width="124" height="69.75" fill="url(#lin)"/>'
+                             '<rect width="124" height="3.5" fill="#0b0b0d"/>'
+                             + term(8, 8, 108, 44, mono(14, 23, "$", size, "#8ae234") + mono(14 + 2 * adv, 23, "python train.py", size)
+                                    + mono(14, 34, "epoch 3/3", size, "#7fd1ff"))
+                             + '</g></g>')
+    chrome = (f'<rect x="{x}" y="{y}" width="{w}" height="88" rx="3.5" fill="#fff" filter="url(#sh)"/>'
+              f'<path d="M{x} {y + 8}v-4.5a3.5 3.5 0 0 1 3.5-3.5h{w - 7}a3.5 3.5 0 0 1 3.5 3.5v4.5z" fill="#dfe1e5"/>'
+              + "".join(f'<circle cx="{x + 5.5 + i * 4.5}" cy="{y + 4}" r="1.4" fill="{c}"/>' for i, c in enumerate(("#ff5f57", "#febc2e", "#28c840")))
+              + f'<path d="M{x + 20} {y + 8}v-4a2 2 0 0 1 2-2h36a2 2 0 0 1 2 2v4z" fill="#fff"/>'
+              + f'<circle cx="{x + 25}" cy="{y + 5.3}" r="1.6" fill="#e8b04a"/>' + text(x + 29, y + 6.8, "Darpan", 4.6, "#3c4043")
+              + f'<rect x="{x + 6}" y="{y + 9.5}" width="{w - 12}" height="6" rx="3" fill="#f1f3f4"/>'
+              + f'<rect x="{x + 10}" y="{y + 11.4}" width="2.6" height="2.2" rx=".4" fill="#5f6368"/>'
+              + text(x + 15, y + 14, url, 4.6, "#202124", length=len(url) * 2.25)
+              + f'<rect class="mask" x="{x + 14.5}" y="{y + 10}" width="{len(url) * 2.25 + 1.5:.1f}" height="5" fill="#f1f3f4"/>'
+              + f'<rect class="load" x="{x}" y="{y + 16}" width="{w}" height="1" fill="#1a73e8"/>'
+              + f'<rect x="{x}" y="{y + 16}" width="{w}" height="72" fill="#202124" fill-opacity=".04"/>')
+    mac(s, chrome + page)
+    s.anim("mask", [(0, "transform:scaleX(1)"), (0.4, "transform:scaleX(1)"), (1.6, "transform:scaleX(0)"), (5.7, "transform:scaleX(0)"),
+                    (5.8, "transform:scaleX(1)"), (6, "transform:scaleX(1)")], "steps(26, end)", "transform-box:fill-box;transform-origin:100% 50%")
+    grow(s, "load", [(0, 0), (1.8, 0), (2.3, 1), (2.4, 1), (6, 1)])
+    s.show("load", 1.8, 2.4, 0.05)
+    s.show("page", 2.35, 5.6, 0.15)
+    packets(s, [(2.6, False), (3.1, True), (3.6, False), (4.1, True), (4.6, False)])
+    return s.svg("Opening the Linux computer's address in a web browser shows its desktop, with no app installed")
+
+
+FEATURES = {"local": feels_local, "private": private, "light": light, "sound": sound, "clipboard": clipboard, "files": files,
+            "dictation": dictation, "computers": computers, "browser": browser}
 
 if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__file__))

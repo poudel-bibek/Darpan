@@ -68,6 +68,14 @@ Darpan shows on it. That's it.
 <td valign="top"><img src="docs/feature-files.svg" width="100%" alt="A file dropped on Darpan's window lands on the Linux desktop"><br>
 <b>Files</b><br>Drop a file on the window:<br>it lands on the desktop.</td>
 </tr>
+<tr>
+<td valign="top"><img src="docs/feature-dictation.svg" width="100%" alt="Dictating on the Mac: the words land at the Linux cursor"><br>
+<b>Dictation</b><br>Talk, and the words land<br>at the Linux cursor.</td>
+<td valign="top"><img src="docs/feature-computers.svg" width="100%" alt="Picking one of two Linux computers in the Mac app's list"><br>
+<b>Your computers</b><br>Switch between Linux<br>computers with one click.</td>
+<td valign="top"><img src="docs/feature-browser.svg" width="100%" alt="The Linux desktop in a web browser, with no app installed"><br>
+<b>Any browser</b><br>No app needed: open the<br>address in any browser.</td>
+</tr>
 </table>
 
 Plus full screen, screen resolutions to match your window, and a toolbar that tucks away.
