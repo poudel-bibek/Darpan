@@ -131,19 +131,33 @@ final class Updater: ObservableObject {
     /// menu keep offering it).
     private func offer(_ m: UpdateManifest, manual: Bool) {
         guard manual || !offered.contains(m.version) else { return }
+        // A background check never jumps in front of another app: it waits until Darpan is active.
+        if !manual && !NSApp.isActive {
+            var token: NSObjectProtocol?
+            token = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                if let token { NotificationCenter.default.removeObserver(token) }
+                if case .available(let now) = self?.state, now == m { self?.offer(m, manual: false) }
+            }
+            return
+        }
         offered.insert(m.version)
         let a = NSAlert()
         a.messageText = "Darpan \(m.version) is available"
         a.informativeText = "You have \(DarpanVersion.string). Darpan installs it and relaunches."
-        a.addButton(withTitle: "Install & Relaunch")
-        a.addButton(withTitle: "Later")
+        let install = a.addButton(withTitle: "Install & Relaunch")
+        let later = a.addButton(withTitle: "Later")
+        if !manual {
+            // Keystrokes meant for the remote computer must not install: no Return default.
+            install.keyEquivalent = ""
+            later.keyEquivalent = "\u{1b}"
+        }
         let answer: (NSApplication.ModalResponse) -> Void = { [weak self] r in
             if r == .alertFirstButtonReturn { self?.install(m) }
         }
         if let w = NSApp.keyWindow ?? NSApp.mainWindow, w.attachedSheet == nil {
             a.beginSheetModal(for: w, completionHandler: answer)
         } else {
-            NSApp.activate(ignoringOtherApps: true)
+            if manual { NSApp.activate(ignoringOtherApps: true) }
             answer(a.runModal())
         }
     }
