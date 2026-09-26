@@ -673,6 +673,8 @@ class Session:
         try:
             if not hub.audio_ok:
                 raise OSError("no PipeWire or libopus")
+            if time.monotonic() < hub.audio_retry_at:
+                raise OSError("capture kept failing; trying again later")
             if hub.audio_pre_skip is None:
                 hub.audio_pre_skip = audio.lookahead()
         except OSError as e:
@@ -810,6 +812,7 @@ class Hub:
         self.listeners = {}              # /audio socket -> [session, dropped since last packet]
         self.sound = None                # audio.Capture while anyone listens
         self.audio_fails = 0
+        self.audio_retry_at = 0.0
         self.loop = None
 
     async def start(self):
@@ -888,11 +891,13 @@ class Hub:
         session.sound.add(ws)
         try:
             if self.sound is None:
-                self._audio_start()
+                try:
+                    self._audio_start()
+                except OSError as e:                         # e.g. pw-record gone since startup
+                    log.warning("sound: %s", e)
+                    self._audio_exited(0)                    # the same back-off as a capture that died
             while await ws.recv() is not None:               # nothing to read; wait for the close
                 pass
-        except OSError as e:
-            log.warning("sound: %s", e)
         finally:
             self.listeners.pop(ws, None)
             session.sound.discard(ws)
@@ -917,6 +922,8 @@ class Hub:
         if self.listeners and self.audio_fails < 3:
             self.loop.call_later(2, self._audio_retry)
         else:
+            self.audio_retry_at = time.monotonic() + 60     # no restart loop while PipeWire is broken
+            self.audio_fails = 0
             for ws in list(self.listeners):
                 ws.close(1011, "sound unavailable")
 

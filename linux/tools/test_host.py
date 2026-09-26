@@ -29,6 +29,8 @@ FAKE_PW_RECORD = r'''#!/usr/bin/env python3
 import math, os, struct, sys, time
 with open(os.environ["DARPAN_FAKE_PW_LOG"], "a") as f:
     f.write("START " + " ".join(sys.argv[1:]) + "\n")
+if os.path.exists(os.environ["DARPAN_FAKE_PW_LOG"] + ".fail"):   # PipeWire broken
+    sys.exit(1)
 out = sys.stdout.buffer
 out.write(b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 2, 48000, 48000 * 4, 4, 16)
           + b"data" + struct.pack("<I", 0xFFFFFFFF))
@@ -608,6 +610,30 @@ async def run(args, tmp, probe_log):
     ok("⌃C in a terminal stays Ctrl+C", ctrl == [4], "state %s" % ctrl)
     ok("overlapping ⌘ letters keep Shift", overlap == [5, 5], "states %s" % overlap)
     ok("no Shift left behind", after == [0], "state %s" % after)
+
+    # PipeWire broken for good: after 3 quick failures the listener is closed (1011), and further
+    # requests are refused for a while instead of starting pw-record again and again
+    marker = os.path.join(tmp, "pw.log") + ".fail"
+    open(marker, "w").close()
+    ws.send({"t": "audio", "on": True})
+    _, grant = await pump(ws, 2, want="audio")
+    snd = await WS.connect("127.0.0.1", args.port, "/audio")
+    snd.send({"t": "auth", "token": grant["token"]})
+    code, end = None, time.monotonic() + 12
+    while code is None and time.monotonic() < end:
+        try:
+            kind, m = await asyncio.wait_for(snd.recv(), max(0.01, end - time.monotonic()))
+            if kind == "close":
+                code = m
+        except asyncio.TimeoutError:
+            break
+        except (asyncio.IncompleteReadError, ConnectionError):
+            break
+    ws.send({"t": "audio", "on": True})
+    _, again = await pump(ws, 2, want="audio")
+    os.unlink(marker)
+    ok("broken PipeWire: listener closed, then refused", code == 1011 and again and again.get("error") == "unavailable",
+       "close %s, then %s" % (code, again))
 
     # liveness: a peer that stops answering pings is dropped; one that answers is kept, even idle
     async def session(answer=True):
