@@ -6,7 +6,7 @@ set -euo pipefail
 deb=$(realpath "$1")
 mkdir -p "$2"
 cd "$2"
-rm -f InRelease
+rm -f InRelease Packages ./*.deb          # only this release's .deb gets indexed
 cp "$deb" darpan_amd64.deb
 apt-ftparchive packages . > Packages
 release=$(mktemp)                       # outside the directory, so the index doesn't list itself
