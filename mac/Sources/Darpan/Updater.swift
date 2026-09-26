@@ -3,8 +3,7 @@ import DarpanCore
 import Security
 
 /// Updates from the GitHub releases: at most once a day, and only while the app runs, fetch the
-/// signed manifest (`darpan-mac.json` and `.sig`, from the project's update page on GitHub Pages;
-/// releases carry only the DMG and the deb). A newer version is
+/// signed manifest (`releases/latest/download/darpan-mac.json` and `.sig`). A newer version is
 /// offered in the connect window; installing downloads the DMG, checks its SHA-256 against the
 /// manifest, checks the new app's code signature, replaces this bundle and relaunches. When the
 /// bundle can't be replaced (not writable, or run from a translocated copy), the verified DMG is
@@ -30,9 +29,6 @@ final class Updater: ObservableObject {
 
     /// "owner/name", written into Info.plist by build.sh; nil in development builds (no updates).
     private let repo = Bundle.main.object(forInfoDictionaryKey: "DarpanRepository") as? String
-    /// The update page (GitHub Pages), written into Info.plist by build.sh.
-    private let updatesURL = (Bundle.main.object(forInfoDictionaryKey: "DarpanUpdatesURL") as? String)
-        .flatMap(URL.init(string:)).flatMap { $0.scheme == "https" && ($0.host ?? "").hasSuffix(".github.io") ? $0 : nil }
     private let settings = Settings.shared
     private var timer: Timer?
     private let session: URLSession = {
@@ -69,7 +65,7 @@ final class Updater: ObservableObject {
             return
         }
         #endif
-        guard repo != nil, updatesURL != nil, settings.checkUpdates else { return }
+        guard repo != nil, settings.checkUpdates else { return }
         let last = UserDefaults.standard.double(forKey: Self.lastCheckKey)
         let due = max(0, last + Self.interval - Date().timeIntervalSince1970)
         let t = Timer(timeInterval: max(due, 5), repeats: false) { [weak self] _ in self?.check(manual: false) }
@@ -80,17 +76,14 @@ final class Updater: ObservableObject {
 
     /// `manual`: from the menu, so "you're up to date" and errors are shown too.
     func check(manual: Bool) {
-        guard let repo, let updates = updatesURL else {
+        guard let repo else {
             if manual { alert("Updates aren’t available in this build.") }
             return
         }
         if case .installing = state { return }
         state = .checking
-        let base = updates.appendingPathComponent("mac/")
+        let base = URL(string: "https://github.com/\(repo)/releases/latest/download/")!
         fetch(base.appendingPathComponent("darpan-mac.json")) { json in
-            guard json != nil else {                          // no manifest: don't wait for its signature too
-                return DispatchQueue.main.async { self.checked(json: nil, sig: nil, repo: repo, manual: manual) }
-            }
             self.fetch(base.appendingPathComponent("darpan-mac.json.sig")) { sig in
                 DispatchQueue.main.async { self.checked(json: json, sig: sig, repo: repo, manual: manual) }
             }
