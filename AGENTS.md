@@ -56,8 +56,10 @@ When your changes create orphans:
 * **Pull requests, with bounded reviews.** Every code or docs change goes through a PR. It gets
   **one** automated review (Codex, on opening) and **one** review by the other agent. Fix P0 and P1
   findings. Fix P2 findings only if they are cheap and in scope; answer the rest in one line
-  ("won't fix: …" or "follow-up"). **Don't request another review round:** verify fixes with tests,
-  then merge. Nits and new ideas go into a follow-up, not the PR under review.
+  ("won't fix: …" or "follow-up"). Normally **no further review round**: verify fixes with tests,
+  then merge. Critical changes (security, sign-in, data loss, the wire protocol) may take another
+  round when a fix is substantial, but reviews must converge and are never endless: stop once only
+  P2/P3 remain. Nits and new ideas go into a follow-up, not the PR under review.
 * **Merging.** Merge locally with a merge commit (`Merge #N: <title>`), made as the GitHub no-reply
   identity, then push. A merge on the GitHub website can record the account's real e-mail address.
   Delete the branch once it's merged.
