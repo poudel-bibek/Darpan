@@ -37,6 +37,8 @@ final class ViewerContentView: NSView {
     let overlay = BlockingOverlay()
     let drop = DropOverlay()
     let composition = CompositionView()
+    /// The small arrow at the toolbar's grip while the first-connection tip shows.
+    let gripHint = GripHint()
     /// Toolbar position: centre as a fraction of the width, top as a fraction of the height.
     var toolbarPosition = CGPoint(x: 0.84, y: 0.05) { didSet { needsLayout = true } }
 
@@ -44,7 +46,8 @@ final class ViewerContentView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
-        for v in [video, stats, composition, toasts, drop, toolbar, overlay] as [NSView] { addSubview(v) }
+        for v in [video, stats, composition, toasts, drop, toolbar, gripHint, overlay] as [NSView] { addSubview(v) }
+        gripHint.isHidden = true
         stats.isHidden = true
         overlay.isHidden = true
         drop.isHidden = true
@@ -69,6 +72,15 @@ final class ViewerContentView: NSView {
         let x = min(max(6, (b.width * toolbarPosition.x - t.width / 2).rounded()), max(6, b.width - t.width - 6))
         let y = min(max(6, (b.height * toolbarPosition.y).rounded()), max(6, b.height - t.height - 6))
         toolbar.frame = CGRect(x: x, y: y, width: t.width, height: t.height)
+        if !gripHint.isHidden {
+            // Just left of the grip, pointing at it; below it when there's no room on the left.
+            let g = toolbar.convert(toolbar.gripFrame, to: self), side: CGFloat = 20
+            gripHint.pointsUp = g.minX < side + 10
+            gripHint.frame = gripHint.pointsUp
+                ? CGRect(x: g.midX - side / 2, y: toolbar.frame.maxY + 4, width: side, height: side)
+                // (+8: the bar's contents sit below its frame's middle, measured on screen)
+                : CGRect(x: toolbar.frame.minX - side - 4, y: (g.midY - side / 2 + 8).rounded(), width: side, height: side)
+        }
         if !composition.isHidden {
             let c = composition.fittingSize, o = video.markedTextOrigin
             composition.frame = CGRect(x: min(max(4, o.x), max(4, b.width - c.width - 4)),
@@ -147,11 +159,20 @@ final class ToolbarView: NSView {
         }
     }
     private(set) var expanded = false
+    /// Held open (the first-connection tip is pointing at it).
+    var pinned = false {
+        didSet {
+            if pinned { expand() } else if openPanel == nil && !hovering { collapse(after: 0.6) }
+        }
+    }
+    /// The grip of the open bar, in this view's coordinates.
+    var gripFrame: CGRect { barGrip.convert(barGrip.bounds, to: self) }
 
     private let pill = NSView()
     private let pillDot = NSView()
     private let bar = NSVisualEffectView()
     private let barDot = NSView()
+    private let barGrip = GripView(frame: .zero)
     private var buttons: [Item: NSButton] = [:]
     private var hovering = false
     private var collapseTimer: Timer?
@@ -207,7 +228,6 @@ final class ToolbarView: NSView {
         stack.orientation = .horizontal
         stack.spacing = 2
         stack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 6)
-        let barGrip = GripView(frame: .zero)
         barGrip.toolTip = "Drag to move"
         barGrip.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([barGrip.widthAnchor.constraint(equalToConstant: 8),
@@ -276,7 +296,7 @@ final class ToolbarView: NSView {
     func collapse(after delay: TimeInterval) {
         collapseTimer?.invalidate()
         collapseTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            guard let self, self.openPanel == nil, !self.hovering, self.drag == nil else { return }
+            guard let self, self.openPanel == nil, !self.hovering, !self.pinned, self.drag == nil else { return }
             self.expanded = false
             self.pill.isHidden = false
             self.bar.isHidden = true
@@ -636,5 +656,47 @@ private extension CGRect {
     /// Like insetBy, but never the (infinite) null rectangle when the view is still tiny.
     func inset(_ dx: CGFloat, _ dy: CGFloat) -> CGRect {
         CGRect(x: minX + dx, y: minY + dy, width: max(0, width - 2 * dx), height: max(0, height - 2 * dy))
+    }
+}
+
+/// An arrow at the toolbar's grip, with a small nudge (none with Reduce Motion): it moves.
+final class GripHint: NSView {
+    private let arrow = NSImageView()
+    var pointsUp = false { didSet { if pointsUp != oldValue { update() } } }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        arrow.contentTintColor = Palette.accent
+        arrow.imageScaling = .scaleNone
+        arrow.imageAlignment = .alignCenter
+        addSubview(arrow)
+        update()
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        arrow.frame = bounds
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override var isHidden: Bool { didSet { update() } }
+
+    private func update() {
+        arrow.image = NSImage(systemSymbolName: pointsUp ? "arrow.up" : "arrow.right", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 15, weight: .bold))
+        arrow.wantsLayer = true
+        arrow.layer?.removeAllAnimations()
+        guard !isHidden, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        let nudge = CAKeyframeAnimation(keyPath: pointsUp ? "transform.translation.y" : "transform.translation.x")
+        let d: CGFloat = 4                           // towards the grip (right, or up: this view isn’t flipped), and back
+        nudge.values = [0, d, 0, d, 0, 0]
+        nudge.keyTimes = [0, 0.1, 0.2, 0.3, 0.4, 1]
+        nudge.duration = 2.4
+        nudge.repeatCount = .infinity
+        arrow.layer?.add(nudge, forKey: "nudge")
     }
 }
