@@ -22,6 +22,7 @@ log = logging.getLogger("darpan.session")
 
 VHDR = struct.Struct(">BBHIQ")
 FILE_HDR = struct.Struct(">BI")
+UPLOAD_QUEUE_MAX = 2 << 20      # received but not yet written, per upload (clients keep ≤ 512 KiB)
 SHIFT_KC = keymap.x_keycode("ShiftLeft")
 
 
@@ -102,7 +103,7 @@ class Upload:
         self.tmp = os.path.join(self.dir, ".darpan-upload-%s.part" % secrets.token_hex(6))
         self.f = open(self.tmp, "xb")
         self.received = 0                  # bytes accepted from the socket (≥ n, the bytes on disk)
-        self.q = asyncio.Queue()           # chunks waiting for the writer; bounded by the client's window
+        self.q = asyncio.Queue()           # chunks waiting for the writer (received - n bytes)
         self.task = None
 
     def write(self, data):
@@ -640,8 +641,14 @@ class Session:
 
     def on_fabort(self, m):
         up = self.uploads.pop(int(m.get("id", 0)), None)
-        if up and up.task:
-            up.task.cancel()              # the writer removes the partial file
+        if up:
+            self._cancel_upload(up)
+
+    def _cancel_upload(self, up):
+        # A task cancelled before it ever ran skips its own cleanup, so remove the partial file once
+        # the task is done either way; by then any in-flight write has finished (abort is idempotent).
+        up.task.add_done_callback(lambda _t: up.abort())
+        up.task.cancel()
 
     async def _upload_writer(self, up):
         """Disk writes happen on a worker thread, so a slow disk (checkpointing, writeback) never
@@ -679,8 +686,14 @@ class Session:
         chunk = data[FILE_HDR.size:]
         if up.received + len(chunk) > up.size:
             self.uploads.pop(fid)
-            up.task.cancel()
+            self._cancel_upload(up)
             self.ws.send_json({"t": "ferr", "id": fid, "e": "too much data"})
+            return
+        if up.received + len(chunk) - up.n > UPLOAD_QUEUE_MAX:
+            # PROTOCOL.md §7 allows 1 MiB un-acked: a client far past it would fill our memory
+            self.uploads.pop(fid)
+            self._cancel_upload(up)
+            self.ws.send_json({"t": "ferr", "id": fid, "e": "flow control: too much un-acked data"})
             return
         up.received += len(chunk)
         up.q.put_nowait(chunk)

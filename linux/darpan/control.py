@@ -62,3 +62,12 @@ def request(cmd, **kw):
         return json.loads(data or b"{}")
     finally:
         s.close()
+
+
+def host_port(default):
+    """The port the running host really listens on (installed: the one darpan.socket holds), so
+    Tailscale Serve is never pointed at a port nobody listens on. `default` if it isn't running."""
+    try:
+        return int(request("status")["port"])
+    except (OSError, KeyError, TypeError, ValueError):
+        return default

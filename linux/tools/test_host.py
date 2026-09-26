@@ -105,12 +105,20 @@ class WS:
         self.frame(op, data)
 
     def frame(self, op, data):
+        self.w.write(self.encode(op, data))
+
+    def send_together(self, *objs):
+        """Several text messages in one write: the host reads them all without pausing in between."""
+        self.w.write(b"".join(self.encode(1, json.dumps(o).encode()) for o in objs))
+
+    @staticmethod
+    def encode(op, data):
         mask = os.urandom(4)
         n = len(data)
         hdr = bytes([0x80 | op]) + (bytes([0x80 | n]) if n < 126 else (bytes([0xFE]) + struct.pack(">H", n) if n < 65536 else bytes([0xFF]) + struct.pack(">Q", n)))
         m = int.from_bytes((mask * (n // 4 + 1))[:n], "little")
         payload = (int.from_bytes(data, "little") ^ m).to_bytes(n, "little") if n else b""
-        self.w.write(hdr + mask + payload)
+        return hdr + mask + payload
 
     async def recv(self):
         while True:
@@ -402,6 +410,18 @@ async def run(args, tmp, probe_log):
     leftovers = [f for f in os.listdir(dl) if f.endswith(".part")]
     ok("long non-ASCII upload name", done and os.path.exists(done["path"]) and not leftovers
        and len(os.path.basename(done["path"]).encode()) <= 255, (done or {}).get("path", "")[-40:])
+
+    # uploads: far past the un-acked window is refused (memory stays bounded), and an upload
+    # aborted the moment it starts leaves no partial file (its writer never ran)
+    ws.send({"t": "fput", "id": 10, "name": "flood.bin", "size": 4 << 20})
+    ws.send(binary=struct.pack(">BI", 2, 10) + bytes(3 << 20))
+    _, err = await pump(ws, 3, want="ferr")
+    ok("upload past the window refused", err and err.get("id") == 10 and "flow control" in err.get("e", ""), str(err)[:70])
+    ws.send_together({"t": "fput", "id": 11, "name": "gone.bin", "size": 1000}, {"t": "fabort", "id": 11})
+    await pump(ws, 0.8)
+    leftovers = [f for f in os.listdir(dl) if f.endswith(".part")]
+    ok("fput + immediate fabort: no partial file", not leftovers and not os.path.exists(os.path.join(dl, "gone.bin")),
+       str(leftovers))
 
     def capture_pids():
         r = subprocess.run(["pgrep", "-f", "darpan-capture .*--display %s" % args.display], capture_output=True, text=True)

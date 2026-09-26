@@ -65,7 +65,7 @@ def _status(args):
     state = ts.get("state")
     if state == "Running":
         print("  Network      : Tailscale connected%s" % (" as " + ts["user"] if ts.get("user") else ""))
-        if tailscale.serving(config.load()["port"]):
+        if tailscale.serving(st["port"] if st else config.load()["port"]):
             print("  Address      : %s" % (ts.get("url") or "?"))
         else:
             print("  Address      : not published yet — run `darpan setup` (or click Publish in the app)")
@@ -157,7 +157,7 @@ def _setup(args):
     print("3. Publishing the remote desktop on your tailnet (HTTPS)")
     cfg = config.load()
     while True:
-        ok, msg = tailscale.serve(cfg["port"])
+        ok, msg = tailscale.serve(control.host_port(cfg["port"]))
         if ok:
             break
         if msg.startswith("https://"):
