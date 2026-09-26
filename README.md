@@ -1,134 +1,145 @@
-> [!IMPORTANT]
-> **Private pre-release.** Do not publish this repository, its history, or its releases as-is.
-> Publish only from a fresh repository created from a sanitized snapshot — see
-> [Publishing](#publishing).
-
-<p align="center"><img src="logo.svg" width="120" alt="Darpan"></p>
+<p align="center"><img src="logo.svg" width="104" alt=""></p>
 
 <h1 align="center">Darpan</h1>
 
-<p align="center"><b>Darpan</b> (Sanskrit: <i>mirror</i>) — a fast, private, self-hosted remote desktop.<br>
-The host runs on a Linux workstation; clients are a native macOS app and any modern browser.</p>
+<p align="center"><b>Stop paying for remote desktop.</b><br>
+Use your Linux computer from your Mac or any browser. It feels local, stays private, and costs nothing.</p>
 
----
+<p align="center"><img src="docs/demo.svg" width="880" alt="Connecting from the Darpan Mac app, then typing in a terminal on the Linux desktop"></p>
 
-## Highlights
+## Download
 
-* **Low latency.** The screen is captured the moment it changes (X11 damage events, no fixed
-  capture clock), encoded on the GPU's dedicated video engine (NVENC, ~3 ms) and sent at once.
-  The pointer is drawn locally on the client, so it never lags.
-* **Near-zero cost on a busy machine.** Nothing runs until a viewer connects, and a static screen
-  sends nothing. Measured on a 2560×1440 desktop with an RTX 4090:
+| Install on | Download | |
+|---|---|---|
+| **Linux**: the computer you connect **to** | [darpan_amd64.deb](../../releases/latest/download/darpan_amd64.deb) | Ubuntu 24.04 or similar |
+| **Mac**: the computer you connect **from** | [Darpan.dmg](../../releases/latest/download/Darpan.dmg) | macOS 14 or later, Apple silicon or Intel |
+| **Any browser** | no Darpan app; [Tailscale](https://tailscale.com/download) on that device | Chrome, Safari, Edge or Firefox |
 
-  | | cost |
-  |---|---|
-  | idle, no viewer | 0 % CPU, no wake-ups, ~27 MB RAM (+ ~33 MB for the network daemon) |
-  | streaming | ~0.3 % of one CPU core, ~250 MB of GPU memory |
-  | per changed frame | 2.1 ms capture + 3.2 ms encode, no CPU pixel copies |
-  | typical desktop work | ~0.4 Mbit/s (adapts up to 40 Mbit/s for video and scrolling) |
+All versions: [Releases](../../releases).
 
-  GPU memory is released ~15 s after the viewer closes or is hidden.
-* **Private by design.** No ports are opened and nothing is reachable from the internet. A
-  bundled, unprivileged [Tailscale](https://tailscale.com) node connects only your own devices,
-  end-to-end encrypted with WireGuard and peer-to-peer whenever possible. The host also requires a
-  password, verified by challenge–response (it never crosses the network) with brute-force
-  lockout. It runs as your user, with no root daemon; the clipboard is read only while a viewer
-  is connected.
-* **Complete, not bloated.** Two-way clipboard sync, file upload by drag and drop, remote screen
-  resolution changes (reverted on disconnect), quality and frame-rate presets, special keys,
-  full screen, a toolbar that collapses to a small tab, and live statistics.
+## Get started
 
-## Requirements
-
-* **Host:** Ubuntu 24.04 (or similar) on an X11 session; an NVIDIA GPU for hardware encoding
-  (other GPUs fall back to software encoding).
-* **Clients:** macOS 14 or later for the native app; Chrome, Safari, Edge or Firefox for the
-  browser client.
-
-## Install the host
+**1. On the Linux computer**, install the package:
 
 ```bash
-sudo apt install ./darpan_<version>_amd64.deb
+sudo apt install ~/Downloads/darpan_amd64.deb
 ```
 
-The package is self-contained (the Tailscale node is included); apt installs the few standard
-packages it depends on. Then open **Darpan** from the application grid, or run `darpan setup`:
+Open **Darpan** from your apps. Click **Sign in** (a free [Tailscale](https://tailscale.com) account
+with Google, GitHub, Microsoft or Apple), then **Publish**. Darpan shows you an **address** and a
+**password**.
 
-1. **Sign in** to Tailscale (any Google, Microsoft, GitHub or Apple account; free for personal use).
-2. **Publish** the host on your tailnet; enable HTTPS for the tailnet if prompted.
-3. Note the **address** and **password** shown.
+<a name="mac-app"></a>**2. On the Mac**, open `Darpan.dmg` and drag **Darpan** to Applications. Open it. If macOS won't open
+it the first time, go to System Settings → Privacy & Security and click **Open Anyway**. Then click
+**Sign in** with the same account.
 
-For unattended use, disable key expiry for the host in the Tailscale admin console
-(<https://login.tailscale.com/admin/machines>); otherwise the device must sign in again after
-180 days.
+**3. Connect.** Enter the address and password, and click **Connect**. That's it.
 
-## Connect
+> **From a browser instead:** install [Tailscale](https://tailscale.com/download) on that device,
+> sign in with the same account, and open the address. In Chrome, *Install Darpan* turns it into its own window.
 
-**macOS app.** Download `Darpan.dmg` from the latest release, open it and drag **Darpan** to
-**Applications**. The app is not notarized: on first launch, allow it in System Settings →
-Privacy & Security (**Open Anyway**). Enter the host address and password; with *Remember on this
-Mac* only a key derived from the password is kept, in the Keychain. See
-[mac/README.md](mac/README.md) for shortcut capture and other details.
+## Why Darpan
 
-**Browser.** On a device signed in to the same tailnet, open the host address
-(`https://<machine>.<tailnet>.ts.net`) and enter the password. In Chrome, *Install Darpan* gives
-an app window, and in full screen shortcuts such as ⌘W reach the remote computer.
+| | |
+|---|---|
+| **Feels local** | About 27 ms from a change on the Linux screen to your Mac, over the internet. Typing and scrolling keep up. |
+| **Private** | Only your own devices can reach it. The connection is encrypted end to end, no ports are opened, and on top of that there's a password that never crosses the network. |
+| **Light** | On the Linux computer, nothing runs until you connect: 0 % CPU while idle, and about 0.3 % of one CPU core while you're connected. Your long GPU jobs keep the machine. |
+| **Complete** | Clipboard in both directions, drag-and-drop file transfer, screen resolution changes, full screen, and a toolbar that tucks away. |
+| **Free** | Open source (MIT). No subscription, and no account with us. |
 
-**Keyboard.** ⌘ acts as Ctrl on the remote computer by default (so ⌘C/⌘V copy and paste as
-expected) and can be switched to Super. Keys are sent by position, so the host's keyboard layout
-determines the characters; *Type it* in the clipboard panel types arbitrary text.
+## Everyday use
 
-## Command line
+* **Copy and paste** with ⌘C and ⌘V. The clipboard syncs both ways. In a Linux terminal, use ⌘⇧C and ⌘⇧V.
+* **Send files** by dropping them on the window. They land in `~/Downloads/Darpan` on the Linux computer.
+* **The toolbar** is the small tab at the top of the window. Hover over it for full screen, display and
+  quality, keyboard, clipboard and files. Drag it sideways if it's in the way.
+* **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
+  screen, ⌃⌥⌘D disconnect, and ⌃⌥⌘⎋ to release the keyboard (press it again to capture). System shortcuts
+  (⌘Tab, ⌘Space, Mission Control) stay on the Mac unless you turn on *Send ⌘Tab, ⌘Space…* in the
+  toolbar's keyboard panel and allow Darpan under System Settings → Privacy & Security → Accessibility.
+
+<details>
+<summary><b>Requirements and limitations</b></summary>
+
+* **Linux:** Ubuntu 24.04 (or similar) in an **X11 session**; on the login screen, choose
+  *Ubuntu on Xorg*. Wayland isn't supported yet. With an NVIDIA GPU, video is encoded in hardware;
+  without one, Darpan falls back to software encoding, which uses several CPU cores while you're
+  connected.
+* **After a reboot**, someone has to log in on the Linux computer before Darpan can show its screen,
+  unless automatic login is enabled.
+* **Staying signed in:** Tailscale signs devices out after 180 days. To avoid that, open the
+  [Tailscale admin console](https://login.tailscale.com/admin/machines) and choose
+  **Disable key expiry** for the Linux computer and for Darpan on your Mac.
+* **After an update**, macOS may ask once whether Darpan can use its saved sign-in. Choose **Always Allow**.
+* **No sound yet.** Audio from the Linux computer is coming next.
+
+</details>
+
+<details>
+<summary><b>Command line (Linux)</b></summary>
 
 ```text
 darpan status       address, password and connected devices
 darpan password     show the password; --set to choose one, --generate for a new random one
 darpan disconnect   end all remote sessions
 darpan doctor       check the display, GPU encoder, network and service
-darpan net          network status and whether devices connect directly or via a relay
+darpan net          network status: direct connection or relayed
 ```
 
 Logs: `journalctl --user -u darpan -u darpan-net -f`
 
-## Known limitations
+</details>
 
-* The host runs in the desktop session, so after a reboot someone must log in before Darpan can
-  show the screen. Automatic login removes this requirement, at the cost of physical security.
-* X11 sessions only; Wayland is not supported yet.
-* Without an NVIDIA GPU, encoding falls back to software x264, which uses several CPU cores while
-  streaming.
-
-## Uninstall
+<details>
+<summary><b>Uninstall</b></summary>
 
 ```bash
 sudo apt remove darpan
 rm -rf ~/.config/darpan ~/.local/state/darpan ~/.local/share/darpan   # settings, password, network state
 ```
 
-Also remove the device from the Tailscale admin console.
+On the Mac, drag Darpan from Applications to the Trash, delete `~/Library/Application Support/Darpan`
+(its network sign-in), and in Keychain Access delete the `dev.darpan.Darpan` items (saved sign-ins). Then remove both devices in the
+[Tailscale admin console](https://login.tailscale.com/admin/machines).
 
-## Repository layout
+</details>
+
+<details>
+<summary><b>How it works</b></summary>
+
+* **Capture only what changes.** The host waits for X11 damage events; there's no capture timer. A
+  changed frame is copied straight to the GPU and encoded with NVENC (H.264, ultra-low-latency) in
+  about 5 ms.
+* **No queues.** Each frame needs a credit, and the viewer returns one after decoding. A slow
+  network means fewer frames, never a backlog. The pointer is drawn on your side, so it never lags.
+* **A private network built in.** Both ends include an unprivileged [Tailscale](https://tailscale.com)
+  node (WireGuard, peer-to-peer when possible). The host listens only on 127.0.0.1 and is published
+  over HTTPS inside your tailnet. The password is checked by challenge–response, with lockouts.
+* **Native decoding.** The Mac app decodes with VideoToolbox; browsers use WebCodecs.
+
+The wire protocol is documented in [PROTOCOL.md](PROTOCOL.md).
+
+</details>
+
+<details>
+<summary><b>For developers</b></summary>
 
 ```text
+linux/             host: Python daemon, C capture/NVENC encoder, browser client, packaging, tests
+mac/               native macOS client (Swift)
 PROTOCOL.md        wire protocol: the contract every client implements
 MAC_PROMPT.md      design brief for the macOS client
 dev-messageboard/  asynchronous coordination between contributors
-linux/             host: Python daemon, C capture/NVENC encoder, browser client, packaging, tests
-mac/               native macOS client (Swift)
-scripts/           repository maintenance (privacy check)
-dist/              build output (.deb, .dmg); not committed, attached to releases
+scripts/           repository maintenance
 ```
 
-Developer notes: [linux/README.md](linux/README.md), [mac/README.md](mac/README.md).
+Build and test notes: [linux/README.md](linux/README.md), [mac/README.md](mac/README.md). Every change
+goes through a pull request and a review. Before publishing a release, run
+`scripts/check-private-data.sh`.
 
-## Publishing
+</details>
 
-This repository's history, pull requests and releases contain development data (names, host and
-device identifiers, e-mail addresses in commit metadata). Rewriting history does not remove it:
-GitHub keeps pull-request copies of old commits. To publish:
+## License
 
-1. Run `scripts/check-private-data.sh` until it reports nothing. It scans the working tree against
-   generic patterns plus an untracked, local denylist (`.private-denylist`, one pattern per line).
-2. Create a **new** repository from a snapshot of the tree (no history), committed with a
-   GitHub no-reply address.
-3. Rebuild the packages from that snapshot and create fresh releases; don't copy the old ones.
+[MIT](LICENSE)
