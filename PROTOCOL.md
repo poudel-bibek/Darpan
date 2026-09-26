@@ -130,7 +130,8 @@ second but never drops a request: a second one within that second is served when
 
 For `h264` the payload is exactly one **access unit in Annex-B format** (start codes
 `00 00 00 01` / `00 00 01`). Key frames carry SPS and PPS in-band. Profile is High or
-Main, **no B-frames** (decode order == display order), 4:2:0, 8-bit. Colour: BT.709,
+Main, **no B-frames** (decode order == display order; some P frames are non-reference
+pictures), 4:2:0, 8-bit. Colour: BT.709,
 limited range unless the VUI says otherwise. Resolution == the `stream` message's w×h.
 
 ### 3.3 Flow control — clients MUST ack every frame
