@@ -37,7 +37,8 @@ if os.path.exists(".private-denylist"):
         deny = [l.strip() for l in f if l.strip() and not l.lstrip().startswith("#")]
 else:
     print("note: no .private-denylist — only generic patterns were checked", file=sys.stderr)
-denied = re.compile(b"|".join(re.escape(d.encode()) for d in deny), re.I) if deny else None
+# str, not bytes: re.I on bytes folds ASCII only, and names can have accents or other scripts
+denied = re.compile("|".join(re.escape(d) for d in deny), re.I) if deny else None
 
 found = False
 
@@ -62,8 +63,10 @@ for name in files:
             for m in rx.findall(line):
                 if not (ok and ok.search(m)):
                     report(label, "%s:%d:%s" % (shown, n, m.decode("utf-8", "replace")))
-        if denied and denied.search(line):
-            report("denylist", "%s:%d:%s" % (shown, n, line.decode("utf-8", "replace").strip()))
+        if denied:
+            text = line.decode("utf-8", "replace")
+            if denied.search(text):
+                report("denylist", "%s:%d:%s" % (shown, n, text.strip()))
 
 if "--history" in sys.argv[1:]:
     for line in git("log", "--all", "--format=%h %an <%ae> %s").decode("utf-8", "replace").splitlines():
@@ -71,9 +74,9 @@ if "--history" in sys.argv[1:]:
             report("commit", line)
     if denied:
         for rec in git("log", "--all", "--format=%h %B%x01").split(b"\x01"):
-            for line in rec.strip().split(b"\n"):
+            for line in rec.strip().decode("utf-8", "replace").split("\n"):
                 if denied.search(line):
-                    report("commit", line.decode("utf-8", "replace"))
+                    report("commit", line)
 
 if not found:
     print("clean: no personal data found")
