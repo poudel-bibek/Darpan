@@ -25,7 +25,7 @@ func protocolTests() {
 
     section("messages are valid JSON") {
         let texts: [String?] = [Msg.mm(1, 2), Msg.mb(0, true), Msg.mb(2, false, x: 3, y: 4), Msg.wh(dx: -1, dy: 240),
-                                Msg.key("KeyA", true), Msg.ack(stream: 65535, seq: 4_294_967_295), Msg.ping(12345.678),
+                                Msg.key("KeyA", true), Msg.key("KeyC", true, cmd: true), Msg.ack(stream: 65535, seq: 4_294_967_295), Msg.ping(12345.678),
                                 Msg.start(fps: 60, bitrate: 0), Msg.cfg(fps: 30), Msg.cfg(bitrate: 8000), Msg.cfg(fps: 60, bitrate: 0),
                                 Msg.res(w: 1920, h: 1080), Msg.resNative, Msg.modes, Msg.rel, Msg.kf, Msg.stop,
                                 Msg.auth(proof: Data([1, 2, 3]), client: "Darpan \"test\""), Msg.txt("héllo ✓\n\"x\""),

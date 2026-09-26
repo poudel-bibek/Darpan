@@ -98,7 +98,7 @@ final class KeyboardCapture {
     func combo(_ codes: [String]) { out(KeyboardTranslator.combo(codes)) }
 
     private func out(_ events: [KeyEvent]) {
-        for k in events { send?(Msg.key(k.code, k.down)) }
+        for k in events { send?(Msg.key(k.code, k.down, cmd: k.cmd)) }
     }
 
     /// ⌃⌥⌘D, ⌃⌥⌘F, ⌃⌥⌘⎋: handled by the menu even while keys are captured.

@@ -14,7 +14,9 @@ public enum Msg {
     public static func wh(dx: Int, dy: Int) -> String { #"{"t":"wh","dx":\#(dx),"dy":\#(dy)}"# }
 
     /// `code` must be a W3C code from the key table (ASCII letters and digits only).
-    public static func key(_ code: String, _ down: Bool) -> String { #"{"t":"key","c":"\#(code)","d":\#(down)}"# }
+    public static func key(_ code: String, _ down: Bool, cmd: Bool = false) -> String {
+        cmd ? #"{"t":"key","c":"\#(code)","d":\#(down),"cmd":true}"# : #"{"t":"key","c":"\#(code)","d":\#(down)}"#
+    }
 
     public static func ack(stream: UInt16, seq: UInt32) -> String { #"{"t":"ack","id":\#(stream),"n":\#(seq)}"# }
 

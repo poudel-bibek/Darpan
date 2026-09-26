@@ -40,11 +40,11 @@ func inputTests() {
         let kb = KeyboardTranslator()
         // ⌘C with ⌘ → Ctrl
         eq(kb.flagsChanged(keyCode: 0x37, flags: cmdL), [KeyEvent("ControlLeft", true)], "⌘ down → ControlLeft")
-        eq(kb.keyDown(keyCode: 0x08, isRepeat: false, flags: cmdL), [KeyEvent("KeyC", true), KeyEvent("KeyC", false)],
-           "C pressed while ⌘ held → down+up at once")
+        eq(kb.keyDown(keyCode: 0x08, isRepeat: false, flags: cmdL), [KeyEvent("KeyC", true, cmd: true), KeyEvent("KeyC", false)],
+           "C pressed while ⌘ held → down+up at once, the down flagged ⌘ (terminals: Ctrl+Shift+C)")
         eq(kb.keyUp(keyCode: 0x08, flags: cmdL), [], "its key-up adds nothing")
         eq(kb.keyDown(keyCode: 0x7B, isRepeat: true, flags: cmdL), [KeyEvent("ArrowLeft", true), KeyEvent("ArrowLeft", false)],
-           "auto-repeat under ⌘ → one pair per repeat")
+           "auto-repeat under ⌘ → one pair per repeat; not a letter, so no ⌘ flag")
         eq(kb.flagsChanged(keyCode: 0x37, flags: 0), [KeyEvent("ControlLeft", false)], "⌘ up")
         check(kb.isIdle, "idle after ⌘C")
 
@@ -83,8 +83,16 @@ func inputTests() {
         eq(kb.flagsChanged(keyCode: 0x37, flags: 0), [KeyEvent("ControlLeft", false), KeyEvent("KeyS", false)], "⌘ up releases S")
         eq(kb.keyUp(keyCode: 0x01, flags: 0), [], "late S up ignored")
 
-        // ⌘ → Super; the code used at press time is used for the release.
+        // ⌘ → Super: letters aren't flagged (the flag means "⌘ was sent as Ctrl").
         kb.command = .super
+        _ = kb.flagsChanged(keyCode: 0x37, flags: cmdL)
+        eq(kb.keyDown(keyCode: 0x08, isRepeat: false, flags: cmdL), [KeyEvent("KeyC", true), KeyEvent("KeyC", false)], "⌘ → Super: no flag")
+        _ = kb.flagsChanged(keyCode: 0x37, flags: 0)
+        eq(kb.keyDown(keyCode: 0x08, isRepeat: false, flags: F.control | F.leftControl).contains { $0.cmd }, false, "⌃C: never flagged")
+        _ = kb.keyUp(keyCode: 0x08, flags: F.control | F.leftControl)
+        _ = kb.flagsChanged(keyCode: 0x3B, flags: 0)
+
+        // ⌘ → Super; the code used at press time is used for the release.
         eq(kb.flagsChanged(keyCode: 0x36, flags: F.command | F.rightCommand), [KeyEvent("MetaRight", true)], "⌘ → Super")
         kb.command = .ctrl
         eq(kb.flagsChanged(keyCode: 0x36, flags: 0), [KeyEvent("MetaRight", false)], "released as MetaRight")

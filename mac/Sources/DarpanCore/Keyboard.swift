@@ -10,8 +10,10 @@ public enum CommandKey: String, CaseIterable {
 public struct KeyEvent: Equatable, CustomStringConvertible {
     public let code: String
     public let down: Bool
-    public init(_ code: String, _ down: Bool) { self.code = code; self.down = down }
-    public var description: String { code + (down ? "↓" : "↑") }
+    /// A letter pressed while ⌘ (sent as Ctrl) is held: in a terminal the host adds Shift (PROTOCOL.md §5).
+    public let cmd: Bool
+    public init(_ code: String, _ down: Bool, cmd: Bool = false) { self.code = code; self.down = down; self.cmd = cmd }
+    public var description: String { code + (down ? "↓" : "↑") + (cmd ? "⌘" : "") }
 }
 
 /// NSEvent.modifierFlags bits (device-independent ones from NSEvent, device-dependent ones
@@ -107,7 +109,8 @@ public final class KeyboardTranslator {
             // down for a key it holds into up+down.
             out.append(KeyEvent(sent, true))
         } else if commandDown {
-            out.append(KeyEvent(code, true))
+            let letter = code.count == 4 && code.hasPrefix("Key")
+            out.append(KeyEvent(code, true, cmd: letter && command == .ctrl))
             out.append(KeyEvent(code, false))
         } else {
             held[keyCode] = code
