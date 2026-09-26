@@ -15,5 +15,7 @@ let package = Package(
         .target(name: "DarpanCore", path: "Sources/DarpanCore"),
         .executableTarget(name: "Darpan", dependencies: ["DarpanCore"], path: "Sources/Darpan"),
         .executableTarget(name: "SelfTest", dependencies: ["DarpanCore"], path: "Sources/SelfTest"),
+        // A stand-in for the Linux host on this Mac, for testing the app end to end.
+        .executableTarget(name: "FakeHost", dependencies: ["DarpanCore"], path: "tools/FakeHost"),
     ]
 )
