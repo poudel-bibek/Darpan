@@ -256,7 +256,7 @@ func videoTests() {
     // `.json` next to each gives the picture and non-reference counts.
     let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("../../../linux/tools/fixtures").standardized
-    for name in ["nonref-thin-line-640x360"] {
+    for name in ["nonref-thin-line-640x360", "vulkan-640x360"] {
         section("VideoToolbox decode of the host fixture \(name)") {
             let stream = try Data(contentsOf: fixtures.appendingPathComponent("\(name).h264"))
             let info = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtures.appendingPathComponent("\(name).json"))) as? [String: Any]
