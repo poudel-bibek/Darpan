@@ -1,9 +1,13 @@
 [Unit]
-Description=Darpan host socket (held by systemd for the whole login)
+Description=Darpan host socket (held by systemd for the whole desktop session)
 Documentation=file:///usr/share/doc/darpan/README.md
+# Only while a desktop exists: a connection before login (or after logout) would otherwise start a
+# service whose ConditionEnvironment=DISPLAY skips it, until the trigger limit fails this socket
+# and, through BindsTo=, darpan-net with it.
+PartOf=graphical-session.target
 
 [Socket]
-# Bound once when you log in and kept while the host restarts, so no other local user can
+# Bound when the desktop session starts and kept while the host restarts, so no other local user can
 # take the port. darpan-net (Tailscale) is bound to this unit: if the port can't be held,
 # nothing is published.
 ListenStream=127.0.0.1:47470
@@ -12,4 +16,4 @@ Backlog=64
 Service=darpan.service
 
 [Install]
-WantedBy=sockets.target
+WantedBy=graphical-session.target

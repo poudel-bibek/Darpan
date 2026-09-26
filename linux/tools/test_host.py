@@ -540,6 +540,23 @@ async def run(args, tmp, probe_log):
     await asyncio.sleep(3.3)
     ok("close aborts a stuck peer", stuck.aborted, "after 3 s")
 
+    # at most 4 connections per source may wait unauthenticated; a 5th is told "busy"
+    waiting = []
+    for _ in range(4):
+        c = await WS.connect("127.0.0.1", args.port)
+        await c.recv()                         # hello
+        waiting.append(c)
+    extra = await WS.connect("127.0.0.1", args.port)
+    kind, m = await extra.recv()
+    ok("unauthenticated connections capped per source", kind == "text" and m.get("reason") == "busy", str(m)[:60])
+    for c in waiting + [extra]:
+        c.w.close()
+    await asyncio.sleep(0.3)
+    again = await WS.connect("127.0.0.1", args.port)
+    kind, m = await again.recv()
+    ok("cap frees up when they close", kind == "text" and m.get("t") == "hello", m.get("t"))
+    again.w.close()
+
     # changing the password ends existing sessions
     env = dict(os.environ, XDG_CONFIG_HOME=os.path.join(tmp, "config"), XDG_RUNTIME_DIR=os.path.join(tmp, "run"),
                XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"), HOME=tmp,
