@@ -1,0 +1,13 @@
+{
+ "frames": 6,
+ "idr": [
+  0
+ ],
+ "nonref": [],
+ "bytes": 405021,
+ "api": "vulkan",
+ "chroma": 444,
+ "decoded": 6,
+ "decoder_problems": [],
+ "last_picture_psnr_db": 34.3
+}

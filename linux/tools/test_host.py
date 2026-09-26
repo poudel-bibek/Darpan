@@ -1056,6 +1056,7 @@ async def run(args, tmp, probe_log):
         params={"gpu": True}, hub=types.SimpleNamespace(no_vulkan=False, cfg={"fps": 60}), sid=0, paused_at=1.0,
         cap=types.SimpleNamespace(fps_=60, cuda=False), errors=collections.deque(), x264_until=0.0, x264_backoff=60.0,
         ws=types.SimpleNamespace(closed=False, send_json=sent.append), _resume=lambda: tasks.append("resume"),
+        _full_colour=lambda: False,
         _task=lambda c: (c.close(), tasks.append("restart")), _start_capture=lambda restart=False: asyncio.sleep(0))
     fake._fall_back_to_x264 = lambda why: Session._fall_back_to_x264(fake, why)
     Session.on_start(fake, {"fps": 60, "gpu": "full"})
@@ -1248,6 +1249,45 @@ async def run(args, tmp, probe_log):
     second = routes()
     c.w.close()
     ok("Full GPU on: CUDA; off: Vulkan", (first, second) == ("full", "lean"), "%s, then %s" % (first, second))
+
+    # full colour: 4:4:4 for a viewer that decodes it, at Higher Quality; below that, 4:2:0 again. A viewer
+    # that doesn't say it decodes 4:4:4 never gets it.
+    plain = await WS.connect("127.0.0.1", args.port)
+    _, h = await plain.recv()
+    plain.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py 420"})
+    while (await asyncio.wait_for(plain.recv(), 10))[1].get("t") != "ok":
+        pass
+    plain.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 30000})
+    _, plain_stream = await pump(plain, 3.0, "stream")
+    plain.w.close()
+    c = await WS.connect("127.0.0.1", args.port)
+    _, h = await c.recv()
+    c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py 444", "caps": ["h264-444"]})
+    while (await asyncio.wait_for(c.recv(), 10))[1].get("t") != "ok":
+        pass
+    c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 30000})
+    full, pics = None, []
+    end = time.monotonic() + 5
+    while time.monotonic() < end and len(pics) < 3:
+        kind, m = await asyncio.wait_for(c.recv(), 5)
+        if kind == "text" and m["t"] == "stream":
+            full = m
+        elif kind == "binary":
+            _, _, sid, seq, _ = struct.unpack(">BBHIQ", m[:16])
+            c.send({"t": "ack", "id": sid, "n": seq})
+            pics.append(m[16:])
+    img = decode_frames(pics, os.path.join(tmp, "frame444.png"))
+    worst444 = max(max(abs(a - b) for a, b in zip(((c_ >> 16) & 255, (c_ >> 8) & 255, c_ & 255),
+                                                  img.getpixel((i * bw + bw // 2, img.size[1] // 2))))
+                   for i, c_ in enumerate(bars))
+    c.send({"t": "cfg", "bitrate": 15000})
+    _, lower = await pump(c, 3.0, "stream")
+    c.w.close()
+    ok("full colour: 4:4:4 at Higher Quality", full and full.get("chroma") == 444 and worst444 <= 6 and
+       lower and lower.get("chroma") == 420, "%s, colour error %d/255; then %s" % (
+           full and {k: full.get(k) for k in ("chroma", "api")}, worst444, lower and lower.get("chroma")))
+    ok("full colour only when asked for", plain_stream and plain_stream.get("chroma") == 420,
+       "a viewer without h264-444 at 30 Mbit/s: %s" % (plain_stream and plain_stream.get("chroma")))
 
     # each kind of client gets back the resolution it chose last time; Native forgets it. The test display
     # offers only 1920×1080, so count the host's switches to it.
