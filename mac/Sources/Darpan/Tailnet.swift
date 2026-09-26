@@ -56,7 +56,10 @@ final class Tailnet: ObservableObject {
     /// Starts the node (idempotent). Completion runs on main once the proxy exists or starting failed.
     func start(_ done: ((SOCKSProxy?) -> Void)? = nil) {
         if let proxy { done?(proxy); return }
-        if phase == .off { phase = .starting }
+        switch phase {
+        case .off, .failed: phase = .starting
+        default: break
+        }
         queue.async {
             let result = self.startOnQueue()
             DispatchQueue.main.async {
@@ -173,7 +176,11 @@ final class Tailnet: ObservableObject {
             tailscale_set_dir(h, dir.path)
             tailscale_set_hostname(h, Self.hostname)
             tailscale_set_logfd(h, -1)
-            guard tailscale_start(h) == 0 else { return .failure(error(h)) }
+            guard tailscale_start(h) == 0 else {
+                let e = error(h)
+                tailscale_close(h)
+                return .failure(e)
+            }
             handle = h
         }
         var addr = [CChar](repeating: 0, count: 64)

@@ -25,6 +25,8 @@ final class ConnectModel: ObservableObject {
     private let settings = Settings.shared
     private var failure: Client.Failure?
     private var timer: Timer?
+    /// Identifies the current connect attempt, so a late tailnet callback from a cancelled one is ignored.
+    private var attempt = 0
 
     init() {
         address = settings.hosts.first ?? ""
@@ -79,23 +81,32 @@ final class ConnectModel: ObservableObject {
         }
         // Built-in network: the node has to be up and signed in first.
         let net = Tailnet.shared
+        attempt += 1
+        let mine = attempt
         connecting = true
         show("Joining your private network…", error: false)
         net.start { [weak self] proxy in
-            guard let self, self.connecting else { return }
+            guard let self, self.connecting, self.attempt == mine else { return }
             guard let proxy else {
                 self.connecting = false
                 if case .failed(let m) = net.phase { self.show(m, error: true) }
                 return
             }
             net.settle { phase in
-                guard self.connecting else { return }
-                guard phase == .running else {
+                guard self.connecting, self.attempt == mine else { return }
+                switch phase {
+                case .running:
+                    self.begin(a, proxy: proxy, password: pw, saved: saved, remember: keep)
+                case .needsLogin:
                     self.connecting = false
                     self.show("Sign in to your private network first (above).", error: true)
-                    return
+                case .failed(let m):
+                    self.connecting = false
+                    self.show(m, error: true)
+                case .starting, .off:
+                    self.connecting = false
+                    self.show("Your private network isn’t ready yet. Check this Mac’s internet connection, then try again.", error: true)
                 }
-                self.begin(a, proxy: proxy, password: pw, saved: saved, remember: keep)
             }
         }
     }
@@ -111,6 +122,7 @@ final class ConnectModel: ObservableObject {
     }
 
     func cancel() {
+        attempt += 1
         connecting = false
         show("", error: false)
         handler?.cancelConnect()
