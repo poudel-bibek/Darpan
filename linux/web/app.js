@@ -12,11 +12,13 @@
   if (IS_MAC) document.documentElement.classList.add('mac');
 
   // ------------------------------------------------------------ settings (per viewer)
-  const DEFAULTS = { quality: '0', fps: '60', scale: 'fit', cmd: 'ctrl', scroll: 1, invert: false, stats: false, pillX: 0.5, audio: true };
+  const DEFAULTS = { quality: '15000', fps: '60', scale: 'fit', cmd: 'ctrl', scroll: 1, invert: false, stats: false, pillX: 0.5, audio: true };
   const readJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
   const writeJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
   const forget = (k) => { try { localStorage.removeItem(k); } catch { /* ignore */ } };
   const settings = Object.assign({}, DEFAULTS, readJSON('darpan.settings') || {});
+  // 1.4.0's Auto / Low / Balanced / High became Balanced / Faster / Balanced / Higher Quality (kbit/s caps)
+  settings.quality = { 0: '15000', 3000: '6000', 10000: '15000', 20000: '30000' }[settings.quality] || settings.quality;
   const saveSettings = () => writeJSON('darpan.settings', settings);
   const KEY_SLOT = 'darpan.key.' + location.host;
 
