@@ -119,6 +119,8 @@ enum DebugHooks {
             NSPasteboard.general.setString(rest, forType: .string)
         case "pbget": say("pasteboard: \(NSPasteboard.general.string(forType: .string)?.debugDescription ?? "nil")")
         case "upload": s?.client.upload(a.dropFirst().map { URL(fileURLWithPath: $0) })
+        case "drophl": s?.debugContent.drop.isHidden = !(a.count > 1 && a[1] == "on")   // drop highlight on/off
+        case "toast": s?.debugContent.toasts.show(rest, ttl: 20)
         case "close": w?.performClose(nil)
         case "quit": NSApp.terminate(nil)
         default: say("unknown command: \(line)")

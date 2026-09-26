@@ -332,7 +332,7 @@ final class ToolbarView: NSView {
     }
 
     /// A mask for NSVisualEffectView: rounded on every side.
-    private static func rounded(radius r: CGFloat) -> NSImage {
+    static func rounded(radius r: CGFloat) -> NSImage {
         let side = r * 2 + 2
         let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
             NSColor.black.setFill()
@@ -406,13 +406,21 @@ final class ToastStack: NSView {
         fileprivate let label = NSTextField(wrappingLabelWithString: "")
         fileprivate var timer: Timer?
 
+        private let glass = NSVisualEffectView()
+
         init(error: Bool) {
             super.init(frame: .zero)
             wantsLayer = true
-            layer?.backgroundColor = NSColor(srgbRed: 28 / 255, green: 30 / 255, blue: 35 / 255, alpha: 0.96).cgColor
-            layer?.cornerRadius = 11
-            layer?.borderWidth = 1
-            layer?.borderColor = (error ? Palette.poor.withAlphaComponent(0.6) : Palette.line).cgColor
+            // The toolbar's material and radius.
+            glass.material = .hudWindow
+            glass.blendingMode = .withinWindow
+            glass.state = .active
+            glass.appearance = NSAppearance(named: .darkAqua)
+            glass.maskImage = ToolbarView.rounded(radius: 12)
+            addSubview(glass)
+            layer?.cornerRadius = 12
+            layer?.borderWidth = error ? 1 : 0
+            layer?.borderColor = Palette.poor.withAlphaComponent(0.6).cgColor
             label.font = .systemFont(ofSize: 13)
             label.textColor = NSColor(white: 0.92, alpha: 1)
             label.isSelectable = false
@@ -431,6 +439,7 @@ final class ToastStack: NSView {
 
         override func layout() {
             super.layout()
+            glass.frame = bounds
             label.frame = bounds.inset(14, 10)
         }
     }
@@ -535,25 +544,35 @@ final class BlockingOverlay: NSView {
     override func scrollWheel(with event: NSEvent) {}
 }
 
-/// Dashed outline while files are dragged over the window.
+/// While files are dragged over the window: a soft outline, and a label in the toolbar's glass.
 final class DropOverlay: NSView {
     private let border = CAShapeLayer()
-    private let label = NSTextField(labelWithString: "Drop files to send them to the remote computer")
+    private let glass = NSVisualEffectView()
+    private let icon = NSImageView()
+    private let label = NSTextField(labelWithString: "Drop to send to the desktop")
 
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Palette.accent.withAlphaComponent(0.10).cgColor
-        layer?.cornerRadius = 18
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.18).cgColor
+        layer?.cornerRadius = 12
         border.fillColor = nil
-        border.strokeColor = Palette.accent.cgColor
-        border.lineWidth = 2
-        border.lineDashPattern = [8, 6]
+        border.strokeColor = Palette.accent.withAlphaComponent(0.8).cgColor
+        border.lineWidth = 1.5
         layer?.addSublayer(border)
-        label.font = .systemFont(ofSize: 16)
-        label.textColor = .white
-        label.alignment = .center
-        addSubview(label)
+        glass.material = .hudWindow
+        glass.blendingMode = .withinWindow
+        glass.state = .active
+        glass.appearance = NSAppearance(named: .darkAqua)
+        glass.maskImage = ToolbarView.rounded(radius: 12)
+        icon.image = NSImage(systemSymbolName: "arrow.down.doc", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 15, weight: .medium))
+        icon.contentTintColor = Palette.accent
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = NSColor(white: 0.92, alpha: 1)
+        glass.addSubview(icon)
+        glass.addSubview(label)
+        addSubview(glass)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -561,9 +580,12 @@ final class DropOverlay: NSView {
     override func layout() {
         super.layout()
         border.frame = bounds
-        border.path = CGPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), cornerWidth: 17, cornerHeight: 17, transform: nil)
-        let h = ceil(label.fittingSize.height)
-        label.frame = CGRect(x: 0, y: ((bounds.height - h) / 2).rounded(), width: bounds.width, height: h)
+        border.path = CGPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), cornerWidth: 11, cornerHeight: 11, transform: nil)
+        let t = label.fittingSize
+        let w = ceil(t.width) + 14 + 22 + 16, h: CGFloat = 36
+        glass.frame = CGRect(x: ((bounds.width - w) / 2).rounded(), y: ((bounds.height - h) / 2).rounded(), width: w, height: h)
+        icon.frame = CGRect(x: 14, y: (h - 20) / 2, width: 18, height: 20)
+        label.frame = CGRect(x: 14 + 22, y: ((h - ceil(t.height)) / 2).rounded(), width: ceil(t.width) + 2, height: ceil(t.height))
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
