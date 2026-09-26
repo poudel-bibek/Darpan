@@ -263,7 +263,8 @@ public final class FSClient {
                 return done(.failure(.host(code ?? "failed", status: status)), nil)
             }
             do {
-                _ = try FileManager.default.replaceItemAt(file, withItemAt: part)
+                let fm = FileManager.default
+                if fm.fileExists(atPath: file.path) { _ = try fm.replaceItemAt(file, withItemAt: part) } else { try fm.moveItem(at: part, to: file) }
                 done(.success(file), etag)
             } catch {
                 try? FileManager.default.removeItem(at: part)

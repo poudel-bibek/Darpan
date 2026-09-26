@@ -192,6 +192,30 @@ func filesTests() {
         t.send([mac.appendingPathComponent("c.txt")], to: "/srv")
         waitIdle(t, "gives up")
         eq(t.items.last?.state, .failed(FSError.network.message), "the third failure is reported")
+
+        // Cancelled while waiting to retry: the retry never goes out.
+        t.retryDelay = 0.3
+        remote.failNextPuts = 1
+        let before = remote.puts.count
+        try Data("d".utf8).write(to: mac.appendingPathComponent("d.txt"))
+        t.send([mac.appendingPathComponent("d.txt")], to: "/srv")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        if let id = t.items.last?.id { t.cancel(id) }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        eq(remote.puts.count - before, 1, "no retry after cancel")
+        eq(t.items.last?.state, .cancelled, "cancelled")
+        t.retryDelay = 0
+
+        // A folder with an unreadable part fails instead of arriving incomplete.
+        let locked = mac.appendingPathComponent("proj/locked")
+        try fm.createDirectory(at: locked, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: locked.appendingPathComponent("secret"))
+        try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        t.ask = { _, _, reply in reply(.keepBoth, false) }
+        t.send([mac.appendingPathComponent("proj")], to: "/srv")
+        waitIdle(t, "unreadable")
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+        eq(t.items.last?.state, .failed("couldn’t read “locked”"), "unreadable folder reported")
     }
 
     section("receive files and folders, resume") {

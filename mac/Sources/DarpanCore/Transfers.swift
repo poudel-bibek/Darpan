@@ -241,19 +241,42 @@ public final class Transfers {
         }
     }
 
-    private func sendFolder(_ id: Int, _ url: URL, _ dest: String, merge: Bool) {
-        // Everything below it, not following links: folders first (shallowest first), then files.
+    /// Everything below a local folder, not following links: folders (shallowest first) and
+    /// files, or the first thing that couldn't be read.
+    private static func scan(_ url: URL) -> Result<(dirs: [String], files: [(URL, String, Int64)]), FSError> {
         var dirs: [String] = [], files: [(URL, String, Int64)] = []
+        var unreadable: String?
         let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey, .fileSizeKey]
         let base = url.standardizedFileURL.path
-        if let en = fm.enumerator(at: url, includingPropertiesForKeys: keys) {
-            for case let u as URL in en {
-                guard let v = try? u.resourceValues(forKeys: Set(keys)), v.isSymbolicLink != true else { continue }
-                let rel = String(u.standardizedFileURL.path.dropFirst(base.count + 1))
-                if v.isDirectory == true { dirs.append(rel) } else if v.isRegularFile == true { files.append((u, rel, Int64(v.fileSize ?? 0))) }
+        let en = FileManager.default.enumerator(at: url, includingPropertiesForKeys: keys) { u, _ in
+            unreadable = unreadable ?? u.lastPathComponent
+            return false
+        }
+        while let u = en?.nextObject() as? URL {
+            guard let v = try? u.resourceValues(forKeys: Set(keys)) else { unreadable = u.lastPathComponent; break }
+            if v.isSymbolicLink == true { continue }
+            let rel = String(u.standardizedFileURL.path.dropFirst(base.count + 1))
+            if v.isDirectory == true { dirs.append(rel) } else if v.isRegularFile == true { files.append((u, rel, Int64(v.fileSize ?? 0))) }
+        }
+        if let unreadable { return .failure(.local("couldn’t read “\(unreadable)”")) }
+        dirs.sort { ($0.filter { $0 == "/" }.count, $0) < ($1.filter { $0 == "/" }.count, $1) }
+        return .success((dirs, files))
+    }
+
+    private func sendFolder(_ id: Int, _ url: URL, _ dest: String, merge: Bool) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = Self.scan(url)
+            DispatchQueue.main.async {
+                guard self.alive(id) else { return }
+                switch r {
+                case .success(let s): self.sendTree(id, s.dirs, s.files, dest, merge: merge)
+                case .failure(let e): self.end(id, .failed(e.message))
+                }
             }
         }
-        dirs.sort { ($0.filter { $0 == "/" }.count, $0) < ($1.filter { $0 == "/" }.count, $1) }
+    }
+
+    private func sendTree(_ id: Int, _ dirs: [String], _ files: [(URL, String, Int64)], _ dest: String, merge: Bool) {
         let total = files.reduce(0) { $0 + $1.2 }
         progress(id, sent: 0, total: total)
         let paths = [dest] + dirs.map { FileNames.join(dest, $0) }
@@ -301,7 +324,7 @@ public final class Transfers {
             DispatchQueue.main.async {
                 guard self.alive(id) else { return }
                 if case .failure(let e) = r, self.retryable(e), tries < 2 {
-                    return self.later { self.put(id, file, path, exists: exists, base: base, tries: tries + 1, done) }
+                    return self.later { if self.alive(id) { self.put(id, file, path, exists: exists, base: base, tries: tries + 1, done) } }
                 }
                 done(r)
             }
@@ -394,7 +417,7 @@ public final class Transfers {
                     return
                 }
                 if case .failure(let e) = r, self.retryable(e), tries < 2 {
-                    return self.later { self.get(id, path, dest, base: base, tries: tries + 1, etag: tag ?? etag, done) }
+                    return self.later { if self.alive(id) { self.get(id, path, dest, base: base, tries: tries + 1, etag: tag ?? etag, done) } }
                 }
                 if case .failure = r { try? self.fm.removeItem(at: FSClient.partialFile(for: dest)) }
                 done(r)
