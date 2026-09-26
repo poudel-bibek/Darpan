@@ -12,6 +12,10 @@ apt=$1 mac=$2
 for f in "$apt"/{darpan_amd64.deb,Packages,InRelease} "$mac"/darpan-mac.json{,.sig}; do
     [[ -s $f ]] || { echo "missing $f"; exit 1; }
 done
+# The commit is public: a neutral name and the GitHub no-reply address, never a personal identity.
+email=$(git config user.email || true)
+[[ $email == *@users.noreply.github.com ]] || { echo "set git's user.email to your GitHub no-reply address first"; exit 1; }
+export GIT_AUTHOR_NAME=Darpan GIT_COMMITTER_NAME=Darpan GIT_AUTHOR_EMAIL=$email GIT_COMMITTER_EMAIL=$email
 blob() { git hash-object -w "$1"; }
 apt_tree=$(printf '100644 blob %s\t%s\n' "$(blob "$apt/darpan_amd64.deb")" darpan_amd64.deb \
     "$(blob "$apt/Packages")" Packages "$(blob "$apt/InRelease")" InRelease | git mktree)
