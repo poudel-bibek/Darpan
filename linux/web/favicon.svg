@@ -3,21 +3,34 @@
     <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#FAD57A"/><stop offset="1" stop-color="#C98A1E"/>
     </linearGradient>
-    <linearGradient id="deep" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#E4A845"/><stop offset="1" stop-color="#9C6610"/>
-    </linearGradient>
     <radialGradient id="glass" cx="0.36" cy="0.3" r="0.85">
       <stop offset="0" stop-color="#3E66CC"/><stop offset="1" stop-color="#0C1533"/>
     </radialGradient>
-    <path id="petal" d="M0-30C17-38 12-54 0-62C-12-54-17-38 0-30Z"/>
-    <path id="bud" d="M0-30C13-37 10-49 0-55C-10-49-13-37 0-30Z"/>
+    <linearGradient id="outer" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#FCE3A0"/><stop offset=".55" stop-color="#F3C160"/><stop offset="1" stop-color="#EA9A6C"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#F2C868"/><stop offset=".6" stop-color="#E2A044"/><stop offset="1" stop-color="#CE7A4C"/>
+    </linearGradient>
+    <linearGradient id="cup" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7A4A0C" stop-opacity=".26"/><stop offset=".5" stop-color="#7A4A0C" stop-opacity="0"/><stop offset="1" stop-color="#7A4A0C" stop-opacity=".26"/>
+    </linearGradient>
+    <g id="petal">
+      <path d="M0-30C7.5-33 13.5-43 13.2-52C13-57 6-59.3 0-63.2C-6-59.3-13-57-13.2-52C-13.5-43-7.5-33 0-30Z"/>
+      <path d="M0-30C7.5-33 13.5-43 13.2-52C13-57 6-59.3 0-63.2C-6-59.3-13-57-13.2-52C-13.5-43-7.5-33 0-30Z" fill="url(#cup)" stroke="none"/>
+      <path d="M0-40V-58" fill="none" stroke="#FFF4D6" stroke-opacity=".3" stroke-width=".7" stroke-linecap="round"/>
+    </g>
+    <g id="bud">
+      <path d="M0-30C6-32 11-40 10.6-47C10.4-52 4.6-54.2 0-58C-4.6-54.2-10.4-52-10.6-47C-11-40-6-32 0-30Z"/>
+      <path d="M0-30C6-32 11-40 10.6-47C10.4-52 4.6-54.2 0-58C-4.6-54.2-10.4-52-10.6-47C-11-40-6-32 0-30Z" fill="url(#cup)" stroke="none"/>
+    </g>
   </defs>
   <g transform="translate(64 64)" stroke="#8E5B0E" stroke-linejoin="round">
-    <g fill="url(#gold)" stroke-width="1.2">
+    <g fill="url(#outer)" stroke-width="1.2">
       <use href="#petal"/><use href="#petal" transform="rotate(45)"/><use href="#petal" transform="rotate(90)"/><use href="#petal" transform="rotate(135)"/>
       <use href="#petal" transform="rotate(180)"/><use href="#petal" transform="rotate(225)"/><use href="#petal" transform="rotate(270)"/><use href="#petal" transform="rotate(315)"/>
     </g>
-    <g fill="url(#deep)" stroke-width="1">
+    <g fill="url(#inner)" stroke-width="1">
       <use href="#bud" transform="rotate(22.5)"/><use href="#bud" transform="rotate(67.5)"/><use href="#bud" transform="rotate(112.5)"/><use href="#bud" transform="rotate(157.5)"/>
       <use href="#bud" transform="rotate(202.5)"/><use href="#bud" transform="rotate(247.5)"/><use href="#bud" transform="rotate(292.5)"/><use href="#bud" transform="rotate(337.5)"/>
     </g>

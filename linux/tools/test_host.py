@@ -430,10 +430,21 @@ async def run(args, tmp, probe_log):
     ws.send({"t": "fput", "id": 9, "name": long_name, "size": 5})
     ws.send(binary=struct.pack(">BI", 2, 9) + b"hello")
     _, done = await pump(ws, 3, want="fdone")
-    dl = os.path.join(tmp, "Downloads", "Darpan")
+    dl = os.path.join(tmp, "Desktop")
     leftovers = [f for f in os.listdir(dl) if f.endswith(".part")]
     ok("long non-ASCII upload name", done and os.path.exists(done["path"]) and not leftovers
        and len(os.path.basename(done["path"]).encode()) <= 255, (done or {}).get("path", "")[-40:])
+
+    # dropped files land on the desktop itself, wherever user-dirs.dirs puts it
+    dirs = os.path.join(tmp, "config", "user-dirs.dirs")
+    with open(dirs, "w") as f:
+        f.write('XDG_DESKTOP_DIR="$HOME/Bureau"\n')
+    ws.send({"t": "fput", "id": 12, "name": "note.txt", "size": 2})
+    ws.send(binary=struct.pack(">BI", 2, 12) + b"hi")
+    _, done = await pump(ws, 3, want="fdone")
+    os.remove(dirs)
+    ok("upload lands on the XDG desktop", done and done.get("path") == os.path.join(tmp, "Bureau", "note.txt"),
+       (done or {}).get("path", "")[-40:])
 
     # uploads: far past the un-acked window is refused (memory stays bounded), and an upload
     # aborted the moment it starts leaves no partial file (its writer never ran)

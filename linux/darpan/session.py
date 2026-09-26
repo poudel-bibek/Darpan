@@ -40,16 +40,17 @@ def _b64(b):
     return base64.b64encode(b).decode()
 
 
-def _downloads_dir():
+def _desktop_dir():
+    """Where dropped files land: on the desktop itself (XDG_DESKTOP_DIR, normally ~/Desktop)."""
     d = None
     try:
-        with open(os.path.expanduser("~/.config/user-dirs.dirs")) as f:
+        with open(os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "user-dirs.dirs")) as f:
             for line in f:
-                if line.startswith("XDG_DOWNLOAD_DIR="):
+                if line.startswith("XDG_DESKTOP_DIR="):
                     d = os.path.expandvars(line.split("=", 1)[1].strip().strip('"'))
     except OSError:
         pass
-    return os.path.join(d or os.path.expanduser("~/Downloads"), "Darpan")
+    return d or os.path.expanduser("~/Desktop")
 
 
 class RateControl:
@@ -108,7 +109,7 @@ class Upload:
         if name in ("", ".", ".."):
             name = "file"
         self.name = name
-        self.dir = _downloads_dir()
+        self.dir = _desktop_dir()
         os.makedirs(self.dir, exist_ok=True)
         self.tmp = os.path.join(self.dir, ".darpan-upload-%s.part" % secrets.token_hex(6))
         self.f = open(self.tmp, "xb")
