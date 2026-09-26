@@ -94,8 +94,11 @@ final class Updater: ObservableObject {
         defer {
             // An offered update isn't stamped: the next launch offers it again, in case it went
             // unseen (a saved computer connects at launch and hides the connect window).
-            if case .available = state {} else { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckKey) }
-            start()
+            // Found one: no more checks this launch (it stays offered). Otherwise the next in a day.
+            if case .available = state {} else {
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckKey)
+                start()
+            }
         }
         guard let json, let sig else {
             state = .idle
@@ -135,7 +138,7 @@ final class Updater: ObservableObject {
         a.addButton(withTitle: "Install & Relaunch")
         a.addButton(withTitle: "Later")
         let answer: (NSApplication.ModalResponse) -> Void = { [weak self] r in
-            if r == .alertFirstButtonReturn { self?.install() }
+            if r == .alertFirstButtonReturn { self?.install(m) }
         }
         if let w = NSApp.keyWindow ?? NSApp.mainWindow, w.attachedSheet == nil {
             a.beginSheetModal(for: w, completionHandler: answer)
@@ -149,6 +152,11 @@ final class Updater: ObservableObject {
 
     func install() {
         guard case .available(let m) = state else { return }
+        install(m)
+    }
+
+    private func install(_ m: UpdateManifest) {
+        if case .installing = state { return }
         state = .installing
         session.downloadTask(with: m.url) { file, response, _ in
             let ok = (response as? HTTPURLResponse)?.statusCode == 200
