@@ -69,6 +69,15 @@ final class KeyboardCapture {
     // MARK: - events
 
     func handle(_ e: NSEvent) {
+        #if DEBUG
+        if Self.logKeys {
+            let chars = e.type == .flagsChanged ? "" : (e.characters ?? "").unicodeScalars.map { String(format: "U+%04X", $0.value) }.joined(separator: " ")
+            let src = e.cgEvent.map { "pid=\($0.getIntegerValueField(.eventSourceUnixProcessID)) state=\($0.getIntegerValueField(.eventSourceStateID))" } ?? "-"
+            FileHandle.standardError.write(Data(String(format: "[keys] %@ code=0x%02X flags=0x%08lX rep=%d chars=%@ %@\n",
+                "\(e.type == .keyDown ? "down" : e.type == .keyUp ? "up" : "flags")", e.keyCode, e.modifierFlags.rawValue,
+                e.type == .keyDown && e.isARepeat ? 1 : 0, chars, src).utf8))
+        }
+        #endif
         switch e.type {
         case .keyDown:
             let f = e.modifierFlags
@@ -131,6 +140,11 @@ final class KeyboardCapture {
 
     static var accessibilityTrusted: Bool { AXIsProcessTrusted() }
 
+    #if DEBUG
+    /// DARPAN_LOG_KEYS=1: every key event on stderr (type, key code, raw flags, characters, source).
+    static let logKeys = ProcessInfo.processInfo.environment["DARPAN_LOG_KEYS"] != nil
+    #endif
+
     /// Shows the system prompt that leads to Privacy & Security → Accessibility.
     static func requestAccessibility() {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
@@ -188,6 +202,7 @@ final class ClipboardSync {
     private let pasteboard = NSPasteboard.general
     private var seen: Int
     private var lastSent: String?
+    private var holdUntil = 0.0                     // Clock.nowMs: no automatic sync until then
     private(set) var remote = ""
     private let send: (String) -> Void
 
@@ -204,6 +219,9 @@ final class ClipboardSync {
 
     /// The Mac's clipboard changed since the last look: send it.
     func poll() {
+        // Right after a paste sync, apps that paste for you (dictation, text expanders) put the
+        // old clipboard back; sending that at once could overtake the paste on the host.
+        guard Clock.nowMs() >= holdUntil else { return }
         let n = pasteboard.changeCount
         guard n != seen else { return }
         seen = n
@@ -218,7 +236,7 @@ final class ClipboardSync {
         seen = pasteboard.changeCount
         guard let s = pasteboard.string(forType: .string) else { return true }
         guard s.utf8.count <= Msg.maxClipboardBytes else { return false }
-        offer(s)
+        if offer(s) { holdUntil = Clock.nowMs() + 1000 }
         return true
     }
 
@@ -240,9 +258,11 @@ final class ClipboardSync {
         send(text)
     }
 
-    private func offer(_ s: String?) {
-        guard let s, !s.isEmpty, s != lastSent, s != remote, s.utf8.count <= Msg.maxClipboardBytes else { return }
+    @discardableResult
+    private func offer(_ s: String?) -> Bool {
+        guard let s, !s.isEmpty, s != lastSent, s != remote, s.utf8.count <= Msg.maxClipboardBytes else { return false }
         lastSent = s
         send(s)
+        return true
     }
 }

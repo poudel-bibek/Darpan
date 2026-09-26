@@ -83,6 +83,21 @@ func inputTests() {
         eq(kb.flagsChanged(keyCode: 0x37, flags: 0), [KeyEvent("ControlLeft", false), KeyEvent("KeyS", false)], "⌘ up releases S")
         eq(kb.keyUp(keyCode: 0x01, flags: 0), [], "late S up ignored")
 
+        // Dictation apps (Wispr Flow, observed): a posted ⌘V is two V events whose flags carry
+        // only the ⌘ bit (no device bits), and no ⌘ key events at all. It must come out as a
+        // complete Ctrl+V with nothing left held, or the next click would be a Ctrl+click.
+        let synthCmd: UInt = 0x0010_0000
+        eq(kb.keyDown(keyCode: 0x09, isRepeat: false, flags: synthCmd).map(\.description),
+           ["ControlLeft↓", "KeyV↓⌘", "KeyV↑", "ControlLeft↑"], "synthetic ⌘V → one full Ctrl+V")
+        eq(kb.keyUp(keyCode: 0x09, flags: synthCmd), [], "its key-up presses nothing again")
+        check(kb.isIdle, "nothing held after a synthetic ⌘V")
+        // A real ⌘ held (device bits) during a synthetic V stays held.
+        _ = kb.flagsChanged(keyCode: 0x37, flags: cmdL)
+        eq(kb.keyDown(keyCode: 0x09, isRepeat: false, flags: synthCmd), [KeyEvent("KeyV", true, cmd: true), KeyEvent("KeyV", false)],
+           "real ⌘ already held: only the V tap")
+        check(kb.commandDown, "and the real ⌘ stays down")
+        _ = kb.flagsChanged(keyCode: 0x37, flags: 0)
+
         // ⌘ → Super: letters aren't flagged (the flag means "⌘ was sent as Ctrl").
         kb.command = .super
         _ = kb.flagsChanged(keyCode: 0x37, flags: cmdL)
