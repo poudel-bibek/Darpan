@@ -80,13 +80,22 @@ Plus full screen, screen resolutions to match your window, and a toolbar that tu
 * **Dictation** apps work in the Darpan window. With Wispr Flow, for example, you talk and the text
   lands at the Linux cursor, as if you had typed it.
 * **Sound** from the Linux computer plays on your Mac, or in the browser. The speaker button in the toolbar mutes it.
-* **Send files** by dropping them on the window. They land on the Linux computer's desktop.
+* **Send files** by dropping them on the window. They land on the Linux computer's desktop. In the
+  browser, **Files** in the toolbar browses the Linux computer: send files and folders into any folder,
+  or select some and **Receive** them.
 * **The toolbar** is the small capsule at the upper right of the window. Point at it for full screen,
   display and quality, keyboard, files, stats and sound. Drag it by its grip to put it anywhere.
 * **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
   screen, ⌃⌥⌘D disconnect, and ⌃⌥⌘⎋ to release the keyboard (press it again to capture). System shortcuts
   (⌘Tab, ⌘Space, Mission Control) stay on the Mac unless you turn on *Send ⌘Tab, ⌘Space…* in the
   toolbar's keyboard panel and allow Darpan under System Settings → Privacy & Security → Accessibility.
+
+## Updates
+
+* **Linux:** new versions arrive through Software Updater, like any other package.
+* **Mac:** Darpan checks for a new version once a day while it's open, and asks before installing. It's
+  the only request Darpan makes outside your private network; turn it off with ⚙︎ → *Check for Updates
+  Automatically*.
 
 <details>
 <summary><b>Requirements and limitations</b></summary>
