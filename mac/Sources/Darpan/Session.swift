@@ -318,7 +318,9 @@ final class Session: NSObject {
     private func showToolbarTipOnce() {
         guard !settings.toolbarTipSeen, tip == nil else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self, !self.ended, self.isConnected, self.window.isVisible, self.tip == nil, !self.settings.toolbarTipSeen else { return }
+            guard let self, !self.ended, self.tip == nil, !self.settings.toolbarTipSeen else { return }
+            // Minimised, or the connection blinked: try again a little later.
+            guard self.isConnected, self.window.isVisible, !self.window.isMiniaturized else { return self.showToolbarTipOnce() }
             let bar = self.content.toolbar
             bar.pinned = true
             self.content.gripHint.isHidden = false
