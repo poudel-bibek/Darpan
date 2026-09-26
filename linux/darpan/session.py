@@ -212,6 +212,8 @@ class Session:
 
         hub.sessions.add(self)
         hub._active.set()
+        if len(hub.sessions) == 1:
+            self._task(hub.restore_resolution(self))
         try:
             self._welcome()
             while True:
@@ -800,6 +802,7 @@ class Hub:
         self.cursor_cache = collections.OrderedDict()
         self.screen = Screen(self.display)
         self.repeat_marker = os.path.join(config.state_dir(), "autorepeat-off")
+        self.res_file = os.path.join(config.state_dir(), "resolutions.json")   # each device's last choice
         self._repeat_off = False
         self._cursor_pending = False
         self.cursor_dirty = True       # shapes/clipboard are only read while someone is connected
@@ -1140,8 +1143,37 @@ class Hub:
                     await self.screen.restore()
                 else:
                     await self.screen.set_mode(int(m["w"]), int(m["h"]))
+            saved = self._saved_resolutions()
+            if m.get("native"):
+                saved.pop(session.source, None)
+            else:
+                saved[session.source] = [int(m["w"]), int(m["h"])]
+            config.write_private(self.res_file, json.dumps(saved))
         except (ValueError, KeyError, RuntimeError) as e:
             session.ws.send_json({"t": "notice", "level": "error", "text": "resolution change failed: %s" % e})
+        await self.refresh_modes(broadcast=True)
+
+    def _saved_resolutions(self):
+        try:
+            with open(self.res_file) as f:
+                saved = json.load(f)
+            return saved if isinstance(saved, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    async def restore_resolution(self, session):
+        """A device gets back the resolution it chose last time, unless someone else is watching."""
+        mode = self._saved_resolutions().get(session.source)
+        if not mode:
+            return
+        try:
+            async with self._screen:
+                if self.sessions != {session}:
+                    return
+                await self.screen.set_mode(int(mode[0]), int(mode[1]))
+        except (ValueError, TypeError, IndexError, RuntimeError) as e:    # e.g. another monitor now
+            log.info("last resolution of %s not restored: %s", session.source, e)
+            return
         await self.refresh_modes(broadcast=True)
 
     # ---------------------------------------------------------------- control API

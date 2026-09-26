@@ -963,6 +963,31 @@ async def run(args, tmp, probe_log):
             break
     ok("password change ends sessions", code == 4003, "close code %s" % code)
     ws.w.close()
+
+    # each device gets back the resolution it chose last time; Native forgets it. The test display
+    # offers only 1920×1080, so count the host's switches to it.
+    pw = open(os.path.join(tmp, "config", "darpan", "password.txt")).read().strip()
+    res_file = os.path.join(tmp, "state", "darpan", "resolutions.json")
+
+    def switches():
+        return open(os.path.join(tmp, "host.log")).read().count("switching screen to 1920x1080")
+
+    async def visit(msg=None):
+        c = await WS.connect("127.0.0.1", args.port)
+        _, h = await c.recv()
+        c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py"})
+        await pump(c, 1.0)
+        if msg:
+            c.send(msg)
+            await pump(c, 1.0)
+        c.w.close()
+        await asyncio.sleep(1.0)          # nobody connected: the host goes back to native
+        return switches() - base, json.load(open(res_file)) if os.path.exists(res_file) else None
+    base = switches()
+    seen = [await visit({"t": "res", "w": 1920, "h": 1080}), await visit(), await visit({"t": "res", "native": True}),
+            await visit()]
+    ok("each device gets its last resolution back", seen == [(1, {"127.0.0.1": [1920, 1080]}),
+       (2, {"127.0.0.1": [1920, 1080]}), (3, {}), (3, {})], seen)
     return all(r for _, r in results), results
 
 
