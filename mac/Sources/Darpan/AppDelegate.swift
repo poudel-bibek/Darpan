@@ -30,6 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         Updater.shared.start()
         #if DEBUG
         DebugHooks.install(self)
+        if ProcessInfo.processInfo.environment["DARPAN_DEBUG_FILES_WINDOW"] != nil {   // the Files window alone, for screenshots
+            debugFiles = FilesWindowController(title: "Files")
+            debugFiles?.showWindow(nil)
+        }
         #endif
     }
 
@@ -57,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     #if DEBUG
+    private var debugFiles: FilesWindowController?
     var debugSession: Session? { session }
     var debugConnectModel: ConnectModel { connectWindow.model }
     #endif
