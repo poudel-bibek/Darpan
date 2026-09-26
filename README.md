@@ -20,8 +20,8 @@ Mac app. It feels local and stays private.</p>
 
 <table>
 <tr>
-<td width="50%" align="center" valign="top"><img src="docs/onboarding-linux.gif" width="420" alt="The Darpan window on Linux: Welcome to Darpan, finishing the sign-in in the browser, one click to allow secure addresses, and the password to connect with"><br><sub>On the Linux computer</sub></td>
-<td width="50%" align="center" valign="top"><img src="docs/onboarding-mac.gif" width="420" alt="Darpan on the Mac: the disk image, Welcome to Darpan, your computers, the password, and the tip that shows the toolbar"><br><sub>On the Mac</sub></td>
+<td width="50%" align="center" valign="top"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/onboarding-linux.png"><img src="docs/onboarding-linux.gif" width="420" alt="The Darpan window on Linux: Welcome to Darpan, finishing the sign-in in the browser, one click to allow secure addresses, and the password to connect with"></picture><br><sub>On the Linux computer</sub></td>
+<td width="50%" align="center" valign="top"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/onboarding-mac.png"><img src="docs/onboarding-mac.gif" width="420" alt="Darpan on the Mac: the disk image, Welcome to Darpan, your computers, the password, and the tip that shows the toolbar"></picture><br><sub>On the Mac</sub></td>
 </tr>
 </table>
 
