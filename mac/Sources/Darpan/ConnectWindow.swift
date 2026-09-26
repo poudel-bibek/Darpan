@@ -22,6 +22,9 @@ final class ConnectModel: ObservableObject {
     @Published private(set) var focusPassword = 0
     /// The computer picked in the list that still needs its password.
     @Published private(set) var selected: String?
+    /// Decided once, before the window starts the tailnet (which creates its state file even before
+    /// anyone signs in): nothing signed in and nothing used yet.
+    let firstRun: Bool
 
     weak var handler: ConnectHandler?
     private let settings = Settings.shared
@@ -33,6 +36,7 @@ final class ConnectModel: ObservableObject {
     private var launched = false
 
     init() {
+        firstRun = Settings.shared.hosts.isEmpty && !Tailnet.hasState
         address = settings.hosts.first ?? ""
         refreshSavedKey()
     }
@@ -243,10 +247,74 @@ struct ConnectView: View {
     @ObservedObject var updater = Updater.shared
     @FocusState private var focus: Field?
     @State private var manual = false
+    /// "Get started" was clicked: open the Tailscale sign-in as soon as its link exists.
+    @State private var signInPending = false
 
     private enum Field { case address, password }
 
+    /// First launch: nothing signed in, nothing used yet.
+    private var showWelcome: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["DARPAN_DEBUG_WELCOME"] != nil { return true }   // for screenshots
+        #endif
+        return model.firstRun && !settings.welcomed && settings.network == .builtIn
+    }
+
     var body: some View {
+        Group {
+            if showWelcome { welcome } else { main }
+        }
+        .onChange(of: net.phase) {
+            if signInPending, case .needsLogin(let url?, _) = net.phase {
+                signInPending = false
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    // MARK: - first launch
+
+    private var welcome: some View {
+        VStack(spacing: 0) {
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 96, height: 96)
+            Text("Welcome to Darpan").font(.system(size: 22, weight: .semibold)).padding(.top, 6)
+            Text("Your Linux computer, on this Mac.")
+                .font(.system(size: 13)).foregroundStyle(.secondary).padding(.top, 2)
+            VStack(alignment: .leading, spacing: 12) {
+                step(1, "On the Linux computer, open Darpan and click **Get started**.")
+                step(2, "Here, sign in with the same account: Google, Apple, GitHub or Microsoft.")
+                step(3, "Click your computer. The first time, type the password shown in the Darpan window there.")
+            }
+            .padding(.top, 20)
+            Button {
+                settings.welcomed = true
+                signInPending = true
+                net.start()
+                if case .needsLogin(let url?, _) = net.phase { signInPending = false; NSWorkspace.shared.open(url) }
+            } label: {
+                Text("Get started").frame(maxWidth: .infinity)
+            }
+            .controlSize(.large).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+            .padding(.top, 22)
+            Text("The only setup is a free Tailscale account. There’s no account with us.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 10)
+        }
+        .padding(28)
+        .frame(width: 380)
+    }
+
+    private func step(_ n: Int, _ text: LocalizedStringKey) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "\(n).circle.fill").font(.system(size: 16)).foregroundStyle(Color.accentColor)
+            Text(text).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - after that
+
+    private var main: some View {
         VStack(spacing: 0) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
             Text("Darpan").font(.system(size: 20, weight: .semibold)).padding(.top, 4)
@@ -322,7 +390,7 @@ struct ConnectView: View {
                 VStack(spacing: 8) {
                     if discovery.scanned {
                         Text("No computers with Darpan found yet.").font(.system(size: 13))
-                        Text("Install Darpan on your Linux computer and sign it in to the same Tailscale account. It shows up here by itself.")
+                        Text("Open Darpan on your Linux computer and click Get started, with the same account. It shows up here by itself.")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                             .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     } else {
@@ -376,7 +444,7 @@ struct ConnectView: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($focus, equals: .password)
                 .onSubmit { model.connect() }
-            Text("It's shown in Darpan on that computer, or run `darpan password` there.")
+            Text("The password shown in the Darpan window on the Linux computer.")
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Toggle("Remember on this Mac", isOn: $settings.remember).toggleStyle(.checkbox).font(.system(size: 12))
@@ -404,7 +472,7 @@ struct ConnectView: View {
                 Text("Password").font(.system(size: 12)).foregroundStyle(.secondary)
                 SecureField(model.hasSavedKey ? "Saved on this Mac" : "", text: $model.password)
                     .textFieldStyle(.roundedBorder).focused($focus, equals: .password).disabled(model.connecting)
-                Text("Also shown there, or run `darpan password`.")
+                Text("Shown in the Darpan window on the Linux computer.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Toggle("Remember on this Mac", isOn: $settings.remember).toggleStyle(.checkbox).font(.system(size: 12))
