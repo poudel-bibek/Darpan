@@ -58,7 +58,7 @@ Darpan shows on it. That's it.
 <td width="33%" valign="top"><img src="docs/feature-private.svg" width="100%" alt="Another device trying to reach the Linux computer is refused"><br>
 <b>Private</b><br>Only your devices get in,<br>encrypted, no open ports.</td>
 <td width="33%" valign="top"><img src="docs/feature-light.svg" width="100%" alt="Darpan's CPU use drops to zero when the Mac disconnects, while the GPU keeps training"><br>
-<b>Light</b><br>Linux: 0 % CPU when idle,<br>about 5 % during a video.</td>
+<b>Lightweight</b><br>Linux: 0 % CPU when idle,<br>about 5 % during a video.</td>
 </tr>
 <tr>
 <td valign="top"><img src="docs/feature-sound.svg" width="100%" alt="A video plays on the Linux computer and its sound comes out of the Mac"><br>
