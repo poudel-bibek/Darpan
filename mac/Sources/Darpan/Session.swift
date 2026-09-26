@@ -107,12 +107,13 @@ final class Session: NSObject {
 
         let bar = content.toolbar
         bar.onAction = { [weak self] item, button in self?.toolbarAction(item, button) }
-        bar.onMove = { [weak self] x in self?.content.toolbarX = x }
+        bar.onMove = { [weak self] p in self?.content.toolbarPosition = p }
         bar.onMoveEnded = { [weak self] in
             guard let self else { return }
-            self.settings.pillX = Double(self.content.toolbarX)
+            self.settings.toolbarX = Double(self.content.toolbarPosition.x)
+            self.settings.toolbarY = Double(self.content.toolbarPosition.y)
         }
-        content.toolbarX = CGFloat(settings.pillX)
+        content.toolbarPosition = CGPoint(x: settings.toolbarX, y: settings.toolbarY)
 
         model.setResolution = { [weak self] mode in
             guard let self else { return }

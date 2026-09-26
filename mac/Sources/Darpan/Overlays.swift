@@ -37,8 +37,8 @@ final class ViewerContentView: NSView {
     let overlay = BlockingOverlay()
     let drop = DropOverlay()
     let composition = CompositionView()
-    /// Toolbar centre as a fraction of the width.
-    var toolbarX: CGFloat = 0.5 { didSet { needsLayout = true } }
+    /// Toolbar position: centre as a fraction of the width, top as a fraction of the height.
+    var toolbarPosition = CGPoint(x: 0.84, y: 0.05) { didSet { needsLayout = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -66,8 +66,9 @@ final class ViewerContentView: NSView {
         let s = stats.fittingSize
         stats.frame = CGRect(x: 8, y: 8, width: s.width, height: s.height)
         let t = toolbar.fittingSize
-        let x = min(max(0, (b.width * toolbarX - t.width / 2).rounded()), max(0, b.width - t.width))
-        toolbar.frame = CGRect(x: x, y: 0, width: t.width, height: t.height)
+        let x = min(max(6, (b.width * toolbarPosition.x - t.width / 2).rounded()), max(6, b.width - t.width - 6))
+        let y = min(max(6, (b.height * toolbarPosition.y).rounded()), max(6, b.height - t.height - 6))
+        toolbar.frame = CGRect(x: x, y: y, width: t.width, height: t.height)
         if !composition.isHidden {
             let c = composition.fittingSize, o = video.markedTextOrigin
             composition.frame = CGRect(x: min(max(4, o.x), max(4, b.width - c.width - 4)),
@@ -78,8 +79,9 @@ final class ViewerContentView: NSView {
 
 // MARK: - toolbar
 
-/// A 46×14 pill at the top edge; hovering (or clicking) expands it into a row of buttons.
-/// Panels open as popovers below it. Drag it sideways to move it out of the way.
+/// A small floating capsule, top right by default (clear of the notch and of window buttons on
+/// the remote screen); pointing at it (or clicking) expands it into a row of buttons, and
+/// panels open as popovers below it. Drag it by its grip to put it anywhere.
 final class ToolbarView: NSView {
     enum Item: Int, CaseIterable {
         case fullScreen, display, keys, clipboard, upload, sound, stats, disconnect
@@ -112,8 +114,8 @@ final class ToolbarView: NSView {
     }
 
     var onAction: ((Item, NSButton) -> Void)?
-    /// The user dragged the toolbar; the argument is the new centre as a fraction of the width.
-    var onMove: ((CGFloat) -> Void)?
+    /// The user dragged the toolbar: new centre x and top y, as fractions of the window.
+    var onMove: ((CGPoint) -> Void)?
     var onMoveEnded: (() -> Void)?
     var onResize: (() -> Void)?
 
@@ -155,7 +157,7 @@ final class ToolbarView: NSView {
     private var buttons: [Item: NSButton] = [:]
     private var hovering = false
     private var collapseTimer: Timer?
-    private var drag: (start: CGFloat, moved: Bool)?
+    private var drag: (start: CGPoint, grab: CGPoint, moved: Bool)?     // window point, offset of the grab in self
 
     init() {
         super.init(frame: .zero)
@@ -168,12 +170,12 @@ final class ToolbarView: NSView {
 
     override var isFlipped: Bool { true }
 
-    override var fittingSize: NSSize { expanded ? bar.fittingSize : NSSize(width: 46, height: hovering ? 18 : 14) }
+    override var fittingSize: NSSize { expanded ? bar.fittingSize : NSSize(width: 44, height: 22) }
 
     override func layout() {
         super.layout()
-        pill.frame = CGRect(x: 0, y: 0, width: 46, height: bounds.height)
-        pillDot.frame = CGRect(x: 10, y: (bounds.height - 6) / 2, width: 6, height: 6)
+        pill.frame = CGRect(x: 0, y: 0, width: 44, height: 22)
+        pillDot.frame = CGRect(x: 26, y: 8, width: 6, height: 6)
         bar.frame = bounds
     }
 
@@ -181,16 +183,12 @@ final class ToolbarView: NSView {
         pill.wantsLayer = true
         let l = pill.layer!
         l.backgroundColor = NSColor(srgbRed: 18 / 255, green: 20 / 255, blue: 24 / 255, alpha: 0.62).cgColor
-        l.cornerRadius = 10
-        l.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]    // bottom corners (pill isn't flipped)
+        l.cornerRadius = 11
         l.borderWidth = 1
         l.borderColor = Palette.line.cgColor
-        pill.alphaValue = 0.55
-        let grip = NSView(frame: CGRect(x: 22, y: 6, width: 14, height: 2))
-        grip.autoresizingMask = [.minYMargin, .maxYMargin]
-        grip.wantsLayer = true
-        grip.layer?.backgroundColor = NSColor(white: 1, alpha: 0.45).cgColor
-        grip.layer?.cornerRadius = 1
+        pill.alphaValue = 0.6
+        pill.toolTip = "Drag to move · point at it for the toolbar"
+        let grip = GripView(frame: CGRect(x: 10, y: 6, width: 8, height: 10))
         for dot in [pillDot, barDot] {
             dot.wantsLayer = true
             dot.layer?.cornerRadius = 3
@@ -206,11 +204,18 @@ final class ToolbarView: NSView {
         bar.blendingMode = .withinWindow
         bar.state = .active
         bar.appearance = NSAppearance(named: .darkAqua)
-        bar.maskImage = Self.bottomRounded(radius: 14)
+        bar.maskImage = Self.rounded(radius: 12)
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.spacing = 2
         stack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 6)
+        let barGrip = GripView(frame: .zero)
+        barGrip.toolTip = "Drag to move"
+        barGrip.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([barGrip.widthAnchor.constraint(equalToConstant: 8),
+                                     barGrip.heightAnchor.constraint(equalToConstant: 10)])
+        stack.addArrangedSubview(barGrip)
+        stack.setCustomSpacing(8, after: barGrip)
         stack.translatesAutoresizingMaskIntoConstraints = false
         barDot.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([barDot.widthAnchor.constraint(equalToConstant: 6),
@@ -296,28 +301,30 @@ final class ToolbarView: NSView {
     override func mouseEntered(with e: NSEvent) {
         hovering = true
         pill.alphaValue = 1
-        expand()
+        if drag == nil { expand() }
     }
 
     override func mouseExited(with e: NSEvent) {
         hovering = false
-        pill.alphaValue = 0.55
+        pill.alphaValue = 0.6
         if openPanel == nil { collapse(after: 0.6) }
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with e: NSEvent) {
-        drag = (e.locationInWindow.x, false)
+        drag = (e.locationInWindow, convert(e.locationInWindow, from: nil), false)
     }
 
     override func mouseDragged(with e: NSEvent) {
-        guard var d = drag, let sv = superview, sv.bounds.width > 0 else { return }
-        if abs(e.locationInWindow.x - d.start) > 4 { d.moved = true }
+        guard var d = drag, let sv = superview, sv.bounds.width > 0, sv.bounds.height > 0 else { return }
+        if hypot(e.locationInWindow.x - d.start.x, e.locationInWindow.y - d.start.y) > 4 { d.moved = true }
         drag = d
         guard d.moved else { return }
-        let x = sv.convert(e.locationInWindow, from: nil).x
-        onMove?(min(0.95, max(0.05, x / sv.bounds.width)))
+        let p = sv.convert(e.locationInWindow, from: nil)               // superview is flipped: y from the top
+        let centreX = p.x - d.grab.x + bounds.width / 2
+        let top = p.y - d.grab.y
+        onMove?(CGPoint(x: min(1, max(0, centreX / sv.bounds.width)), y: min(1, max(0, top / sv.bounds.height))))
     }
 
     override func mouseUp(with e: NSEvent) {
@@ -326,18 +333,27 @@ final class ToolbarView: NSView {
         if moved { onMoveEnded?() } else { expand() }
     }
 
-    /// A mask for NSVisualEffectView: square top corners, rounded bottom ones.
-    private static func bottomRounded(radius r: CGFloat) -> NSImage {
+    /// A mask for NSVisualEffectView: rounded on every side.
+    private static func rounded(radius r: CGFloat) -> NSImage {
         let side = r * 2 + 2
         let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
             NSColor.black.setFill()
             NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
-            NSBezierPath(rect: NSRect(x: 0, y: rect.midY, width: rect.width, height: rect.height / 2)).fill()
             return true
         }
         image.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
         image.resizingMode = .stretch
         return image
+    }
+}
+
+/// Six dots: the handle to drag the toolbar by (the drag itself is handled by ToolbarView).
+private final class GripView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(white: 1, alpha: 0.5).setFill()
+        for col in 0..<2 { for row in 0..<3 {
+            NSBezierPath(ovalIn: NSRect(x: CGFloat(col) * 4 + 1, y: CGFloat(row) * 4 + 1, width: 2, height: 2)).fill()
+        } }
     }
 }
 
