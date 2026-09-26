@@ -17,7 +17,7 @@ from . import audio
 from . import auth, capture, config, files, keymap, tailscale
 from .clipboard import Clipboard
 from .screen import Screen
-from .x11 import BUTTONS, X11, png_rgba
+from .x11 import BUTTONS, X11, find_display, png_rgba
 
 log = logging.getLogger("darpan.session")
 
@@ -210,6 +210,9 @@ class Session:
             ws.close(4000, "bad message")
             return
 
+        if not await hub.attach():
+            ws.close(4004, "no screen yet")
+            return
         hub.sessions.add(self)
         hub._active.set()
         try:
@@ -789,16 +792,17 @@ class Hub:
         self.limiter = auth.RateLimiter()
         self.sessions = set()
         self.unauthed = 0
-        self.display = os.environ.get("DISPLAY")
+        self.display = None
+        self.login_screen = False        # nobody is logged in: we show the login screen
         self.x = None
         self.encoder = None
         self.url = None
         self.modes = None
-        self.clip = Clipboard(self.display)
+        self.clip = None
         self.clip_text = None
         self.cursor_id = None
         self.cursor_cache = collections.OrderedDict()
-        self.screen = Screen(self.display)
+        self.screen = None
         self.repeat_marker = os.path.join(config.state_dir(), "autorepeat-off")
         self._repeat_off = False
         self._cursor_pending = False
@@ -823,6 +827,24 @@ class Hub:
 
     async def start(self):
         self.loop = asyncio.get_running_loop()
+        await self.attach()
+        if self.cfg["encoder"] in ("auto", "nvenc"):
+            self.encoder = await capture.probe_nvenc(self.cfg["gpu"])
+        log.info("encoder: %s", ("NVENC on " + self.encoder) if self.encoder else "x264 (software)")
+        self.loop.create_task(self._housekeeping())
+        self._refresh_url()
+
+    async def attach(self):
+        """Take the screen: the desktop, or before anyone logs in, the login screen. False while
+        there is none yet (the computer is starting up); every sign-in looks again. When the X
+        server goes away (log in, log out), so do we, and systemd starts us afresh."""
+        if self.x:
+            return True
+        found = find_display()
+        if not found:
+            return False
+        self.display, self.login_screen = found
+        self.clip, self.screen = Clipboard(self.display), Screen(self.display)
         self.x = X11(self.display)
         self.x.on_cursor = self._on_cursor
         self.x.on_clipboard = self._on_clipboard
@@ -831,13 +853,11 @@ class Hub:
         if os.path.exists(self.repeat_marker):     # we crashed while a session had control
             self.x.set_autorepeat(True)
             os.unlink(self.repeat_marker)
-        await self.screen.restore()
-        if self.cfg["encoder"] in ("auto", "nvenc"):
-            self.encoder = await capture.probe_nvenc(self.cfg["gpu"])
-        log.info("encoder: %s", ("NVENC on " + self.encoder) if self.encoder else "x264 (software)")
-        self.loop.create_task(self._housekeeping())
-        self.loop.create_task(self.refresh_modes())
-        self._refresh_url()
+        log.info("screen: %s%s", self.display, " (login screen)" if self.login_screen else "")
+        if not self.login_screen:                  # the login screen keeps its own resolution
+            await self.screen.restore()
+            self.loop.create_task(self.refresh_modes())
+        return True
 
     def info(self):
         self._refresh_url()
@@ -1003,7 +1023,7 @@ class Hub:
         async with self._screen:
             if self.sessions:             # someone connected while we waited
                 return
-            if os.path.exists(self.screen.state_file):
+            if not self.login_screen and os.path.exists(self.screen.state_file):
                 try:
                     await self.screen.restore()
                 except Exception:
@@ -1124,6 +1144,8 @@ class Hub:
         self.loop.create_task(self.refresh_modes(broadcast=True))
 
     async def refresh_modes(self, send_to=None, broadcast=False):
+        if self.login_screen:
+            return
         try:
             self.modes = await self.screen.query()
         except Exception as e:
@@ -1134,6 +1156,8 @@ class Hub:
             s.ws.send_json(dict(self.modes, t="modes"))
 
     async def change_resolution(self, session, m):
+        if self.login_screen:
+            return
         try:
             async with self._screen:
                 if m.get("native"):

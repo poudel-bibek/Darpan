@@ -9,8 +9,10 @@ each_user() {
 }
 case "$1" in
 remove|deconfigure)
-    each_user stop darpan.service darpan-net.service darpan.socket
-    systemctl --global disable darpan.service darpan-net.service darpan.socket >/dev/null 2>&1 || true
+    each_user stop darpan-login-screen.target darpan.service darpan-net.service darpan.socket
+    systemctl --global disable darpan.service darpan-net.service darpan.socket darpan-login-screen.target \
+        darpan-desktop.service >/dev/null 2>&1 || true
+    [ "$1" = remove ] && /opt/darpan/login-screen-setup remove || true    # linger, GDM's Xorg setting
     ;;
 esac
 find /opt/darpan -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true

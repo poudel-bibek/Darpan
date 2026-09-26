@@ -6,7 +6,7 @@ Architecture: amd64
 Maintainer: Darpan maintainers <maintainers@darpan.invalid>
 Installed-Size: @SIZE@
 Depends: python3 (>= 3.10), python3-gi, gir1.2-gstreamer-1.0, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-ugly, libx11-6, libxext6, libxdamage1, libxfixes3, libxtst6, xclip, x11-xserver-utils, systemd
-Recommends: gir1.2-gtk-4.0, gir1.2-adw-1, libopus0, pipewire-bin
+Recommends: gir1.2-gtk-4.0, gir1.2-adw-1, libopus0, pipewire-bin, pkexec
 Conflicts: porthole
 Replaces: porthole
 Description: fast, private remote desktop host

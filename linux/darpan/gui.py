@@ -11,7 +11,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
-from . import auth, config, control, tailscale  # noqa: E402
+from . import auth, config, control, login_screen, tailscale  # noqa: E402
 
 APP_ID = "dev.darpan.Darpan"
 
@@ -92,6 +92,14 @@ class Window(Adw.ApplicationWindow):
                                              "Nothing is exposed to the internet.")
         self.net = Adw.ActionRow(title="Tailscale", subtitle="…")
         g.add(self.net)
+        page.add(g)
+
+        g = Adw.PreferencesGroup(title="After a restart")
+        self.login = Adw.SwitchRow(title="Show the login screen",
+                                   subtitle="Log in from your other device, with nobody at this computer",
+                                   active=login_screen.on())
+        self.login.connect("notify::active", self.on_login_screen)
+        g.add(self.login)
         page.add(g)
 
         # --- sessions
@@ -246,6 +254,19 @@ class Window(Adw.ApplicationWindow):
                 self.refresh()
                 return False
             _bg(publish, done)
+
+    def on_login_screen(self, row, _pspec):
+        want = row.get_active()
+        if want == login_screen.on():
+            return
+        row.set_sensitive(False)
+
+        def done(ok):
+            row.set_sensitive(True)
+            row.set_active(login_screen.on())       # cancelled: back as it was
+            if ok is True and want:
+                self._toast("From the next restart, Darpan shows the login screen")
+        _bg(lambda: login_screen.turn(want), done)
 
     def on_reveal(self, *_):
         self.reveal = not self.reveal

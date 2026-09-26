@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Darpan
+Comment=Lets the users who turned it on show the login screen in Darpan
+Exec=/opt/darpan/login-screen-access
+NoDisplay=true
+X-GNOME-AutoRestart=false

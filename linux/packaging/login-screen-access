@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runs in GDM's login screen, as its user (from /usr/share/gdm/greeter/autostart): lets each user who
+# turned on "darpan login-screen" show and control this screen through Darpan. Xorg login screens only.
+[ -n "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ] || exit 0
+for f in /etc/darpan/login-screen.d/*; do
+    [ -f "$f" ] && xhost "+SI:localuser:${f##*/}" >/dev/null
+done
+exit 0

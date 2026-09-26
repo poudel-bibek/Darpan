@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import json
 import os
+import pwd
 import shutil
 import signal
 import struct
@@ -927,6 +928,102 @@ async def run(args, tmp, probe_log):
     await asyncio.sleep(3.3)
     ok("close aborts a stuck peer", stuck.aborted, "after 3 s")
 
+    # the screen to serve: the desktop's, else, once turned on, the login screen's (GDM's user runs it)
+    from darpan import login_screen as darpan_login, x11 as darpan_x11
+    me = pwd.getpwuid(os.getuid()).pw_name
+    free = [n for n in range(400, 500) if not os.path.exists("/tmp/.X11-unix/X%d" % n)
+            and not os.path.exists("/tmp/.X%d-lock" % n)]
+    socks, marks = os.path.join(tmp, "x11-unix"), os.path.join(tmp, "login-screen.d")
+    os.makedirs(socks)
+    os.makedirs(marks)
+    os.symlink("/tmp/.X11-unix/X" + args.display[1:], os.path.join(socks, "X" + args.display[1:]))
+    saved = darpan_x11.X11_SOCKETS, darpan_x11.LOGIN_USER, darpan_login.DIR, os.environ.get("DISPLAY")
+    darpan_x11.X11_SOCKETS, darpan_login.DIR = socks, marks
+    try:
+        os.environ["DISPLAY"] = args.display
+        seen = [darpan_x11.find_display()]                   # the desktop
+        os.environ["DISPLAY"] = ":%d" % free[0]              # gone (logged out)
+        darpan_x11.LOGIN_USER = me                            # as if GDM ran the test display
+        seen.append(darpan_x11.find_display())               # not turned on: nothing
+        open(os.path.join(marks, me), "w").close()
+        seen.append(darpan_x11.find_display())               # turned on: the login screen
+        os.environ["DISPLAY"] = args.display                 # a stale DISPLAY now the login screen's
+        seen.append(darpan_x11.find_display())
+    finally:
+        darpan_x11.X11_SOCKETS, darpan_x11.LOGIN_USER, darpan_login.DIR = saved[:3]
+        os.environ.pop("DISPLAY", None) if saved[3] is None else os.environ.update(DISPLAY=saved[3])
+    ok("screen: the desktop, else the login screen if on", seen == [(args.display, False), None, (args.display, True),
+                                                                    (args.display, True)], seen)
+
+    # no screen yet (the computer is starting up): a signed-in viewer hears 4004 and retries, then gets it
+    port2 = args.port + 7
+    env2 = dict(args.host_env, DISPLAY=":%d" % free[1], XDG_RUNTIME_DIR=os.path.join(tmp, "run2"),
+                XDG_STATE_HOME=os.path.join(tmp, "state2"))
+    os.makedirs(env2["XDG_RUNTIME_DIR"], mode=0o700)
+    host2 = subprocess.Popen([sys.executable, "-m", "darpan", "serve", "--port", str(port2), "-v"], env=env2,
+                             cwd=args.root, stdout=open(os.path.join(tmp, "host2.log"), "w"), stderr=subprocess.STDOUT)
+    xvfb2 = None
+
+    async def sign_in(port):
+        c = await WS.connect("127.0.0.1", port)
+        _, h = await c.recv()
+        c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py"})
+        while True:
+            kind, m = await asyncio.wait_for(c.recv(), 10)
+            if kind == "close" or m.get("t") == "ok":
+                c.w.close()
+                return m if kind == "close" else "ok"
+    try:
+        for _ in range(100):
+            try:
+                (await asyncio.open_connection("127.0.0.1", port2))[1].close()
+                break
+            except OSError:
+                await asyncio.sleep(0.1)
+        before = await sign_in(port2)
+        xvfb2 = subprocess.Popen(["Xvfb", ":%d" % free[1], "-screen", "0", "800x600x24", "-nolisten", "tcp"],
+                                 stderr=subprocess.DEVNULL)
+        for _ in range(50):
+            if os.path.exists("/tmp/.X11-unix/X%d" % free[1]):
+                break
+            await asyncio.sleep(0.1)
+        after = await sign_in(port2)
+        ok("no screen yet: 4004, then the screen once there", (before, after, host2.poll()) == (4004, "ok", None),
+           "%s, then %s" % (before, after))
+    finally:
+        host2.terminate()
+        host2.wait(5)
+        if xvfb2:
+            xvfb2.terminate()
+            xvfb2.wait(5)
+
+    # login-screen-setup (root, through pkexec): GDM on Xorg while anyone has it on, then undone exactly
+    import importlib.machinery
+    import importlib.util
+    import types
+    loader = importlib.machinery.SourceFileLoader("lss", os.path.join(ROOT, "packaging", "login-screen-setup"))
+    lss = importlib.util.module_from_spec(importlib.util.spec_from_loader("lss", loader))
+    loader.exec_module(lss)
+    calls = []
+    lss.subprocess = types.SimpleNamespace(run=lambda a, **k: calls.append(a[1:]))   # no real loginctl
+    lss.GDM_CONF, lss.DIR = os.path.join(tmp, "custom.conf"), os.path.join(tmp, "ls.d")
+    ubuntu = "[daemon]\n# Uncomment the line below to force the login screen to use Xorg\n#WaylandEnable=false\n\n[security]\n"
+    with open(lss.GDM_CONF, "w") as f:
+        f.write(ubuntu)
+    conf = []
+    for step in (lambda: lss.on("darpan-test-a"), lambda: lss.on("darpan-test-b"), lambda: lss.off("darpan-test-a"),
+                 lambda: lss.off("darpan-test-b")):
+        step()
+        conf.append(open(lss.GDM_CONF).read())
+    edits = (lss.xorg_on("[daemon]\nWaylandEnable=true\n") == "[daemon]\n%s\nWaylandEnable=false\n" % lss.MARK,
+             lss.xorg_on("[daemon]\nWaylandEnable=false\n") == "[daemon]\nWaylandEnable=false\n",
+             lss.xorg_off(lss.xorg_on("[chooser]\n")) == "[chooser]\n\n[daemon]\n")
+    ok("login-screen-setup: Xorg while anyone has it on, undone",
+       lss.MARK + "\nWaylandEnable=false\n" in conf[0] and conf[0] == conf[1] == conf[2] and conf[3] == ubuntu
+       and not os.path.exists(lss.DIR) and all(edits) and calls == [["enable-linger", "darpan-test-a"],
+       ["enable-linger", "darpan-test-b"], ["disable-linger", "darpan-test-a"], ["disable-linger", "darpan-test-b"]],
+       "%s %s" % (edits, calls))
+
     # at most 4 connections per source may wait unauthenticated; a 5th is told "busy"
     waiting = []
     for _ in range(4):
@@ -1011,7 +1108,7 @@ def main():
         cmd = [sys.executable, "-m", "darpan", "serve", "--port", str(args.port), "-v"]
         if args.socket_activate:   # exercise the sd_listen_fds path (darpan.socket in production)
             keep = ["DISPLAY", "HOME", "PATH", "PYTHONPATH", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME",
-                    "XDG_RUNTIME_DIR"]            # it starts children with a clean environment
+                    "XDG_RUNTIME_DIR", "DARPAN_FAKE_PW_LOG"]   # it starts children with a clean environment
             cmd = ["systemd-socket-activate", "-l", "127.0.0.1:%d" % args.port] + [a for k in keep for a in ("-E", k)] + cmd
         host = subprocess.Popen(cmd, env=env,
                                 stdout=host_log, stderr=subprocess.STDOUT, cwd=args.root)
@@ -1051,6 +1148,7 @@ def main():
                     return 1
                 time.sleep(0.2)
         print("Darpan host test on %s (tmp %s)" % (args.display, tmp))
+        args.host_env = env
         good, _ = asyncio.run(run(args, tmp, probe_log))
         print("\nRESULT:", "ALL PASS" if good else "FAILURES")
         return 0 if good else 1

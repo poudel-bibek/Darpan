@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-from . import auth, config, control, tailscale
+from . import auth, config, control, login_screen, tailscale
 
 log = logging.getLogger("darpan")
 
@@ -236,6 +236,13 @@ def _net(args):
                                        ("direct" if p["direct"] else "relay " + str(p.get("relay"))) if p["online"] else ""))
 
 
+def _login_screen(args):
+    if args.state and not login_screen.turn(args.state == "on"):
+        return 1
+    print("Login screen: " + ("on. After a restart, connect and log in from your other device." if login_screen.on()
+                              else "off. After a restart, someone logs in at this computer first."))
+
+
 def _gui(args):
     from . import gui
     return gui.main()
@@ -256,11 +263,13 @@ def main(argv=None):
     p = sub.add_parser("disconnect", help="disconnect remote sessions")
     p.add_argument("sid", nargs="?", help="session id (default: all)")
     sub.add_parser("net", help="show private network (Tailscale) status and peers")
+    p = sub.add_parser("login-screen", help="after a restart, show the login screen to your devices")
+    p.add_argument("state", nargs="?", choices=("on", "off"))
     sub.add_parser("gui", help="open the status window")
     sub.add_parser("version")
     args = ap.parse_args(argv)
     fn = {"serve": _serve, "status": _status, "password": _password, "setup": _setup, "doctor": _doctor,
-          "disconnect": _disconnect, "net": _net, "gui": _gui,
+          "disconnect": _disconnect, "net": _net, "login-screen": _login_screen, "gui": _gui,
           "version": lambda a: print(config.VERSION)}.get(args.cmd)
     if not fn:
         if os.environ.get("DISPLAY") and sys.stdin.isatty() is False:

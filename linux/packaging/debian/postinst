@@ -11,7 +11,8 @@ case "$1" in
 configure)
     python3 -m compileall -q -f /opt/darpan/darpan >/dev/null 2>&1 || true
     # reenable: drop links from an older [Install] section, create the current ones
-    systemctl --global reenable darpan.socket darpan-net.service darpan.service >/dev/null 2>&1 || true
+    systemctl --global reenable darpan.socket darpan-net.service darpan.service darpan-login-screen.target \
+        darpan-desktop.service >/dev/null 2>&1 || true
     each_user daemon-reload
     each_user stop darpan.service          # an older host may hold the port itself
     each_user restart darpan.socket        # systemd takes the port for the whole login

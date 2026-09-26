@@ -1,0 +1,10 @@
+[Unit]
+Description=Darpan from boot, to show the login screen (darpan login-screen on)
+Documentation=file:///usr/share/doc/darpan/README.md
+# Turned on per user by /opt/darpan/login-screen-setup, which also enables lingering so this user's
+# services start at boot. The host itself starts on the first connection.
+ConditionPathExists=/etc/darpan/login-screen.d/%u
+Wants=darpan.socket darpan-net.service
+
+[Install]
+WantedBy=default.target

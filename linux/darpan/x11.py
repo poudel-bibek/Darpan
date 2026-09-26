@@ -8,8 +8,12 @@ no polling.
 import ctypes
 import logging
 import os
+import pwd
+import re
 import zlib
 import struct
+
+from . import login_screen
 
 log = logging.getLogger("darpan.x11")
 
@@ -151,6 +155,40 @@ def png_rgba(w, h, rgba):
 
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) +
             chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+
+
+LOGIN_USER = "gdm"                             # GDM runs the login screen's X server as this user
+X11_SOCKETS = "/tmp/.X11-unix"
+
+
+def _owner(name):
+    m = re.fullmatch(r":(\d+)(?:\.\d+)?", name)
+    try:
+        return pwd.getpwuid(os.stat(os.path.join(X11_SOCKETS, "X" + m.group(1))).st_uid).pw_name if m else None
+    except (OSError, KeyError):
+        return None
+
+
+def _can_open(name):
+    d = XOpenDisplay(name.encode())
+    if d:
+        XCloseDisplay(d)
+    return bool(d)
+
+
+def find_display():
+    """(display, login_screen): the desktop session's display, else, for a user who turned it on,
+    the login screen's. None while there is neither, e.g. during boot."""
+    name = os.environ.get("DISPLAY")
+    if name and _owner(name) != LOGIN_USER and _can_open(name):
+        return name, False
+    if not login_screen.on():
+        return None
+    for sock in sorted(os.listdir(X11_SOCKETS)) if os.path.isdir(X11_SOCKETS) else ():
+        name = ":" + sock[1:]
+        if sock[:1] == "X" and _owner(name) == LOGIN_USER and _can_open(name):
+            return name, True
+    return None
 
 
 class X11:

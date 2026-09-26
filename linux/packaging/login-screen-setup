@@ -1,0 +1,107 @@
+#!/usr/bin/python3 -I
+"""Turns "Darpan at the login screen" on or off, as root, for the user who asked through pkexec.
+
+on:  /etc/darpan/login-screen.d/<user> marks the user; lingering starts their services at boot
+     (darpan-login-screen.target then brings up Darpan's network); GDM's login screen runs on Xorg,
+     where GDM's autostart (login-screen-access) lets that user show it.
+off: undoes exactly what "on" did. "remove" does it for everyone (the package's prerm).
+"""
+import os
+import pwd
+import re
+import subprocess
+import sys
+
+DIR = "/etc/darpan/login-screen.d"
+GDM_CONF = "/etc/gdm3/custom.conf"
+MARK = "# Darpan: an Xorg login screen, so Darpan can show it (darpan login-screen off undoes this)"
+
+
+def xorg_on(text):
+    lines = text.splitlines()
+    if any(re.fullmatch(r"\s*WaylandEnable\s*=\s*false\s*", l) for l in lines):
+        return text
+    out, done = [], False
+    for l in lines:
+        if re.match(r"\s*WaylandEnable\s*=", l):     # an explicit "true": ours replaces it
+            continue
+        out.append(l)
+        if not done and l.strip() == "[daemon]":
+            out += [MARK, "WaylandEnable=false"]
+            done = True
+    if not done:
+        out += ["", "[daemon]", MARK, "WaylandEnable=false"]
+    return "\n".join(out) + "\n"
+
+
+def xorg_off(text):
+    out, mark = [], False
+    for l in text.splitlines():
+        if l == MARK:
+            mark = True
+            continue
+        if not (mark and l == "WaylandEnable=false"):
+            out.append(l)
+        mark = False
+    return "\n".join(out) + "\n" if out else ""
+
+
+def edit_gdm(fn):
+    try:
+        with open(GDM_CONF) as f:
+            old = f.read()
+    except FileNotFoundError:
+        return
+    new = fn(old)
+    if new != old:
+        tmp = GDM_CONF + ".darpan-new"
+        with open(tmp, "w") as f:
+            f.write(new)
+        os.chmod(tmp, os.stat(GDM_CONF).st_mode & 0o7777)
+        os.replace(tmp, GDM_CONF)
+
+
+def on(user):
+    path = os.path.join(DIR, user)
+    if not os.path.exists(path):
+        lingering = os.path.exists("/var/lib/systemd/linger/" + user)
+        os.makedirs(DIR, mode=0o755, exist_ok=True)
+        with open(path, "w") as f:           # remember what to undo
+            f.write("" if lingering else "linger\n")
+    subprocess.run(["loginctl", "enable-linger", user], check=True)
+    edit_gdm(xorg_on)
+
+
+def off(user):
+    path = os.path.join(DIR, user)
+    try:
+        with open(path) as f:
+            ours = f.read().split()
+    except FileNotFoundError:
+        return
+    os.unlink(path)
+    if "linger" in ours:
+        subprocess.run(["loginctl", "disable-linger", user], check=False)
+    if not os.listdir(DIR):
+        edit_gdm(xorg_off)
+        os.rmdir(DIR)
+
+
+def main(argv):
+    if argv == ["remove"]:
+        for user in os.listdir(DIR) if os.path.isdir(DIR) else ():
+            off(user)
+        return 0
+    if len(argv) != 1 or argv[0] not in ("on", "off") or "PKEXEC_UID" not in os.environ:
+        print("usage: pkexec %s on|off" % sys.argv[0], file=sys.stderr)
+        return 2
+    if not os.path.exists(GDM_CONF):
+        print("The login screen needs GDM, Ubuntu's standard login screen.", file=sys.stderr)
+        return 3
+    user = pwd.getpwuid(int(os.environ["PKEXEC_UID"])).pw_name
+    (on if argv[0] == "on" else off)(user)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

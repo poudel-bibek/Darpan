@@ -42,7 +42,7 @@ the host encodes fewer frames instead of buffering stale ones.
 | 4001 | authentication failed / locked out |
 | 4002 | authentication timeout (no valid `auth` within 10 s) |
 | 4003 | disconnected by the host user |
-| 4004 | host shutting down / restarting |
+| 4004 | host shutting down / restarting, or no screen yet (the computer is starting up): reconnect |
 | 4005 | too many sessions |
 
 ---
