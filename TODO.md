@@ -15,3 +15,16 @@ can also use your Mac from Linux.
 * **The work:** a Mac host (ScreenCaptureKit capture, VideoToolbox H.264, input, sound) that speaks
   [PROTOCOL.md](PROTOCOL.md), so a browser can connect to it right away; then a native Linux viewer.
 * **Same rules:** zero work while nobody is connected, and only your devices get in.
+
+## The Linux desktop in your Mac's shape
+
+A 16:9 Linux screen on a 16:10 Mac screen leaves bars above and below, like every remote desktop
+does. Picking a 16:10 resolution removes them but costs sharpness, and monitors often offer none
+that's big enough.
+
+* **The idea:** while you're connected, make the Linux desktop exactly the Mac window's shape at
+  full sharpness (e.g. 2304×1440 on a 2560×1440 monitor), and let the NVIDIA GPU scale that
+  custom-size desktop onto the monitor. Put it back when you disconnect, as resolutions are today.
+* **The work:** NVIDIA's MetaModes (`ViewPortIn`/`ViewPortOut`) or xrandr `--fb` with a transform,
+  tested across monitors and drivers. The physical monitor shows pillarboxes meanwhile.
+* **Same rules:** nothing changes unless you choose it, and nothing runs while nobody is connected.
