@@ -26,7 +26,7 @@ _ROUTES = {("GET", "/fs/list"), ("GET", "/fs/file"), ("HEAD", "/fs/file"), ("PUT
            ("POST", "/fs/mkdir"), ("POST", "/fs/ticket")}
 _STATUS = {200: "OK", 201: "Created", 206: "Partial Content", 400: "Bad Request", 401: "Unauthorized",
            403: "Forbidden", 404: "Not Found", 409: "Conflict", 416: "Range Not Satisfiable",
-           429: "Too Many Requests", 500: "Internal Server Error", 507: "Insufficient Storage"}
+           411: "Length Required", 429: "Too Many Requests", 500: "Internal Server Error", 507: "Insufficient Storage"}
 
 
 class Error(Exception):
@@ -244,6 +244,21 @@ def _disposition(p):
     return "Content-Disposition: attachment; filename=\"%s\"; filename*=UTF-8''%s" % (plain, quote(name, safe=""))
 
 
+async def _linger(reader, writer, left):
+    """Refused before its body was read: take in what the client is still sending for a moment
+    (at most 2 s, 16 MiB), so it reads the answer instead of a connection reset."""
+    end, left = time.monotonic() + 2, min(left, 16 << 20)
+    try:
+        await asyncio.wait_for(writer.drain(), 2)
+        while left > 0 and time.monotonic() < end:
+            chunk = await asyncio.wait_for(reader.read(min(CHUNK, left)), max(0.01, end - time.monotonic()))
+            if not chunk:
+                break
+            left -= len(chunk)
+    except (asyncio.TimeoutError, ConnectionError):
+        pass
+
+
 # ---------------------------------------------------------------- the service
 
 class Files:
@@ -296,8 +311,8 @@ class Files:
     async def handle(self, reader, writer, method, path, query, headers, origin_ok):
         """One request under /fs/. Returns whether the connection can take another one."""
         keep = headers.get("connection", "").lower() != "close"
-        length = headers.get("content-length", "0")
-        body = int(length) if length.isdigit() else -1
+        length = headers.get("content-length")
+        body = 0 if length is None else int(length) if length.isdigit() else -1
         consumed = method != "PUT" and body == 0
         try:
             try:
@@ -307,6 +322,8 @@ class Files:
                     raise Error(403, "denied")
                 if body < 0 or "transfer-encoding" in headers:
                     raise Error(400, "invalid")
+                if method == "PUT" and length is None:  # never guess: an empty file would replace the target
+                    raise Error(411, "length")
                 q = _query(query)
                 attach = method == "GET" and path == "/fs/file" and "ticket" in q
                 if attach:
@@ -352,6 +369,8 @@ class Files:
         except Error as e:
             keep = keep and consumed            # an unread body can't be skipped: close instead
             _json(writer, e.status, {"e": e.code}, keep, ["WWW-Authenticate: Bearer"] if e.status == 401 else [])
+            if not consumed and body > 0:
+                await _linger(reader, writer, body)
             return keep
         except _Gone:
             return False

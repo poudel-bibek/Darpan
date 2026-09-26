@@ -224,7 +224,7 @@ For clients when `ok.caps` contains `"fs"`. File data never travels over `/ws`: 
 its own HTTPS request to the same origin, so video, sound and input never wait behind a file.
 
 1. **Token.** On `/ws` send `{"t":"fs"}`. The host answers
-   `{"t":"fs","token":"<base64url, 32 bytes>","home":"/home/…","inbox":"/home/…/Downloads/Darpan"}`.
+   `{"t":"fs","token":"<base64url, 32 bytes>","home":"/home/…","inbox":"/home/…/Desktop"}`.
    The token is valid until that session ends, and asking again returns the same one. Send it with
    every request as `Authorization: Bearer <token>`.
 2. **Requests.** `path=` is an absolute path, UTF-8, percent-encoded.
@@ -240,12 +240,14 @@ its own HTTPS request to the same origin, so video, sound and input never wait b
 
 3. **Errors** are JSON `{"e":"<code>"}` with the status: `400 invalid` (not an absolute path, bad
    query), `401 token`, `403 denied` (no permission), `404 notfound`, `409 exists`, `409 notdir`,
-   `409 isdir`, `409 notfile` (a socket, device or pipe), `416 range`, `429 busy` (more than 4 requests at once per session), `507 nospace`,
-   `500 failed`.
+   `409 isdir`, `409 notfile` (a socket, device or pipe), `411 length` (a PUT without `Content-Length`),
+   `416 range`, `429 busy` (more than 4 requests at once per session), `507 nospace`, `500 failed`. A refused
+   PUT is answered before its body is read (the host reads on for up to 2 s, so the answer isn't lost to a
+   reset); list the folder first, so a big upload isn't sent just to be refused.
 4. Everything runs as the logged-in user, like the desktop the client already controls. To send or
    receive a folder, a client lists it with `deep=1`, then uses `mkdir` and `PUT`, or `GET`.
 
-### 7.2 Upload into ~/Downloads/Darpan over /ws
+### 7.2 Upload to the desktop over /ws
 
 The original upload, for clients without `"fs"`. New clients send dropped files with
 `PUT /fs/file?path=<inbox>/<name>&exists=rename` instead.
