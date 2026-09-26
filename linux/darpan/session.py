@@ -53,6 +53,9 @@ def _desktop_dir():
     return d or os.path.expanduser("~/Desktop")
 
 
+FULL_COLOUR_KBPS = 25000                    # Higher Quality (30 Mbit/s) and Max get 4:4:4
+
+
 class RateControl:
     """Delay-based AIMD. The moment frames start queueing somewhere on the path (ack RTT
     rises above the recent minimum by more than the frame's own serialisation time) the
@@ -164,6 +167,7 @@ class Session:
         self.ua = headers.get("user-agent", "")[:160]
         self.ts_user = headers.get("tailscale-user-login")
         self.client = self.ua
+        self.caps = set()               # what the viewer can do beyond the basics (auth's "caps")
         self.since = time.time()
         self.authed = False
         # video
@@ -292,6 +296,8 @@ class Session:
         hub.unauthed -= 1
         hub._unauthed_done(self.source)
         self.client = str(m.get("client") or self.ua)[:120]
+        caps = m.get("caps")
+        self.caps = {c for c in caps if isinstance(c, str)} if isinstance(caps, list) else set()
         log.info("session %s: %s from %s%s", self.sid, self.client, self.source,
                  " (%s)" % self.ts_user if self.ts_user else "")
         return True
@@ -349,7 +355,8 @@ class Session:
         self.params = {"fps": max(1, min(120, fps)), "bitrate": max(0, int(m.get("bitrate") or 0)),
                        "gpu": m.get("gpu") == "full"}
         if (self.cap and self.paused_at is not None and self.cap.fps_ == self.params["fps"] and
-                getattr(self.cap, "cuda", None) in (None, self.hub.no_vulkan or self.params["gpu"])):
+                getattr(self.cap, "cuda", None) in (None, self.hub.no_vulkan or self.params["gpu"]) and
+                getattr(self.cap, "c444", None) in (None, self._full_colour())):
             self._resume()
         else:
             self._task(self._start_capture())
@@ -382,6 +389,9 @@ class Session:
                 self.rc.kbps = target
                 if self.cap:
                     self.cap.bitrate(target)
+            if (self.cap and self.paused_at is None and self.cap.encoder == "nvenc" and
+                    self.cap.c444 != self._full_colour()):
+                self._task(self._start_capture(restart=True))   # full colour on or off: a key frame follows
 
     def on_kf(self, m):
         # At most one forced key frame per second, but never drop a request: with an infinite
@@ -441,7 +451,8 @@ class Session:
         self.withhold = 0
         use_nvenc = hub.encoder and time.monotonic() >= self.x264_until and cfg["encoder"] != "x264"
         cls = capture.NvencCapture if use_nvenc else capture.X264Capture
-        kw = {"preset": cfg["preset"], "gpu": cfg["gpu"], "cuda": hub.no_vulkan or p["gpu"]} if use_nvenc else {}
+        kw = {"preset": cfg["preset"], "gpu": cfg["gpu"], "cuda": hub.no_vulkan or p["gpu"],
+              "chroma444": self._full_colour()} if use_nvenc else {}
         fps = p["fps"] if use_nvenc else min(p["fps"], 30)   # software encoding: spare the CPU
         self.stream_id = (self.stream_id % 0xFFFF) + 1
         self.seq = 0
@@ -479,16 +490,23 @@ class Session:
         self.seq = 0
         self.inflight.clear()
         self.wd_after = 3.0
-        self.ws.send_json({"t": "stream", "id": self.stream_id, "codec": "h264", "w": self.w, "h": self.h,
-                           "fps": self.params["fps"], "enc": self.cap.encoder})
+        self.ws.send_json(self._stream_msg(self.w, self.h))
         self.cap.keyframe()
         self.cap.refresh()
         self.cap.credit(self.window)
 
+    def _full_colour(self):
+        """4:4:4 for a viewer that decodes it, at Higher Quality and Max: past 4:2:0's ceiling
+        (about 34.7 dB on coloured text at any bitrate) for about 2 ms more encoding a frame."""
+        return "h264-444" in self.caps and (self.params["bitrate"] or self.hub.cfg["max_kbps"]) >= FULL_COLOUR_KBPS
+
+    def _stream_msg(self, w, h):
+        return {"t": "stream", "id": self.stream_id, "codec": "h264", "w": w, "h": h, "fps": self.params["fps"],
+                "enc": self.cap.encoder, "api": self.cap.api, "chroma": self.cap.chroma}
+
     def _cap_started(self, w, h, enc):
         self.w, self.h = w, h
-        self.ws.send_json({"t": "stream", "id": self.stream_id, "codec": "h264", "w": w, "h": h,
-                           "fps": self.params["fps"], "enc": enc})
+        self.ws.send_json(self._stream_msg(w, h))
 
     def _cap_frame(self, flags, ts, cap_us, enc_us, data):
         if self.paused_at is not None or self.ws.closed:

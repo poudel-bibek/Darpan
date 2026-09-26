@@ -4,8 +4,9 @@
 // (rgb2nv12.comp) converts the X server's BGRx frame into NV12. It reads the frame straight from
 // the shared-memory segment, which the GPU imports (VK_EXT_external_memory_host): no CPU copy.
 //
-// The stream matches the CUDA path's: High profile, CABAC, one reference frame, IDR only on
-// request with SPS/PPS in front, CBR with a few frames of VBV. The conversion also tells whether
+// The stream matches the CUDA path's: High profile, CABAC (or High 4:4:4 Predictive with CAVLC,
+// NVENC's only choice there), one reference frame, IDR only on request with SPS/PPS in front, CBR
+// with a few frames of VBV. The conversion also tells whether
 // the picture changed, so an identical one is never encoded.
 #define _GNU_SOURCE
 #define VK_NO_PROTOTYPES
@@ -79,7 +80,8 @@ struct VkEnc {
     uint32_t cfam, efam;                 // compute (conversion) and encode queue families
     VkQueue cq, eq;
     uint32_t w, h, cw, ch;               // visible and coded (16-aligned) size
-    uint32_t src_pitch_px, matrix601;
+    uint32_t src_pitch_px, matrix601, c444;
+    VkFormat fmt;                        // the pictures: NV12, or NV24 for 4:4:4
 
     VkVideoEncodeH264ProfileInfoKHR h264_profile;
     VkVideoEncodeUsageInfoKHR usage;
@@ -219,7 +221,7 @@ static int make_image(VkEnc *e, uint32_t layers, VkImageUsageFlags usage, int sh
     uint32_t fams[2] = {e->cfam, e->efam};
     int concurrent = shared && e->cfam != e->efam;
     VkImageCreateInfo ii = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, &e->profiles, 0, VK_IMAGE_TYPE_2D,
-                            VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, {e->cw, e->ch, 1}, 1, layers, VK_SAMPLE_COUNT_1_BIT,
+                            e->fmt, {e->cw, e->ch, 1}, 1, layers, VK_SAMPLE_COUNT_1_BIT,
                             VK_IMAGE_TILING_OPTIMAL, usage,
                             concurrent ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
                             concurrent ? 2 : 1, concurrent ? fams : &e->efam, VK_IMAGE_LAYOUT_UNDEFINED};
@@ -230,7 +232,7 @@ static int make_image(VkEnc *e, uint32_t layers, VkImageUsageFlags usage, int sh
 
 static int make_view(VkEnc *e, VkImage img, uint32_t layer, VkImageView *out) {
     VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, NULL, 0, img, VK_IMAGE_VIEW_TYPE_2D,
-                                VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, {0},
+                                e->fmt, {0},
                                 {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, layer, 1}};
     VkResult r = vkCreateImageView(e->dev, &vi, NULL, out);
     if (r != VK_SUCCESS) { vlog("vkCreateImageView failed (%d)", r); return -1; }
@@ -255,6 +257,8 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     e->ch = (p->h + 15) & ~15u;
     e->src_pitch_px = p->src_pitch / 4;
     e->matrix601 = p->matrix601 ? 1 : 0;
+    e->c444 = p->chroma444 ? 1 : 0;
+    e->fmt = e->c444 ? VK_FORMAT_G8_B8R8_2PLANE_444_UNORM : VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
     e->ref_slot = -1;
 
     use_only_nvidia();
@@ -309,7 +313,8 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
 
     // the video profile and what the encoder can do with it
     e->h264_profile = (VkVideoEncodeH264ProfileInfoKHR){VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR, NULL,
-                                                         STD_VIDEO_H264_PROFILE_IDC_HIGH};
+                                                         e->c444 ? STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE :
+                                                                   STD_VIDEO_H264_PROFILE_IDC_HIGH};
     // ULTRA_LOW_LATENCY: NVENC's two-pass rate control, like the CUDA path. The other tunings are
     // single-pass on NVIDIA's driver, about 1.6 dB softer on text (quality_test.py); two-pass costs
     // about 1.6 ms more per 2560×1440 frame. Higher quality levels add only a tenth of a dB for 1.3 ms.
@@ -319,7 +324,8 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
                                            VK_VIDEO_ENCODE_TUNING_MODE_ULTRA_LOW_LATENCY_KHR};
     e->profile = (VkVideoProfileInfoKHR){VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR, &e->usage,
                                          VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
-                                         VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR,
+                                         e->c444 ? VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR :
+                                                   VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR,
                                          VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR, VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR};
     e->profiles = (VkVideoProfileListInfoKHR){VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR, NULL, 1, &e->profile};
     VkVideoEncodeH264CapabilitiesKHR hcap = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR};
@@ -366,7 +372,8 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     VK(vkBindBufferMemory(e->dev, e->src, e->src_mem, 0));
 
     // NV12 staging (written by the shader), the picture to encode, the reference pictures
-    VkDeviceSize nv12_size = (VkDeviceSize)e->cw * e->ch * 3 / 2;
+    VkDeviceSize luma = (VkDeviceSize)e->cw * e->ch;     // then U and V: interleaved, half or full size
+    VkDeviceSize nv12_size = luma + (e->c444 ? 2 * luma : luma / 2);
     if (make_buffer(e, nv12_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, NULL, &e->nv12))
         goto fail;
     vkGetBufferMemoryRequirements(e->dev, e->nv12, &mr);
@@ -405,8 +412,7 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     VkExtensionProperties std_hdr = {VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_EXTENSION_NAME,
                                      VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_SPEC_VERSION};
     VkVideoSessionCreateInfoKHR sci = {VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR, NULL, e->efam, 0, &e->profile,
-                                       VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, {e->cw, e->ch},
-                                       VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, 2, 1, &std_hdr};
+                                       e->fmt, {e->cw, e->ch}, e->fmt, 2, 1, &std_hdr};
     VK(vkCreateVideoSessionKHR(e->dev, &sci, NULL, &e->session));
     VkVideoSessionMemoryRequirementsKHR smr[16];
     uint32_t nm = 0;
@@ -443,22 +449,22 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     sps.flags.frame_mbs_only_flag = 1;
     sps.flags.vui_parameters_present_flag = 1;
     sps.flags.frame_cropping_flag = e->cw != e->w || e->ch != e->h;
-    sps.profile_idc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
+    sps.profile_idc = e->c444 ? STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE : STD_VIDEO_H264_PROFILE_IDC_HIGH;
     sps.level_idc = pick_level((e->cw / 16) * (e->ch / 16), p->fps, p->max_kbps, (StdVideoH264LevelIdc)level_max);
-    sps.chroma_format_idc = STD_VIDEO_H264_CHROMA_FORMAT_IDC_420;
+    sps.chroma_format_idc = e->c444 ? STD_VIDEO_H264_CHROMA_FORMAT_IDC_444 : STD_VIDEO_H264_CHROMA_FORMAT_IDC_420;
     sps.log2_max_frame_num_minus4 = 4;                 // frame_num 0..255
     sps.pic_order_cnt_type = STD_VIDEO_H264_POC_TYPE_0;
     sps.log2_max_pic_order_cnt_lsb_minus4 = 4;
     sps.max_num_ref_frames = 1;
     sps.pic_width_in_mbs_minus1 = e->cw / 16 - 1;
     sps.pic_height_in_map_units_minus1 = e->ch / 16 - 1;
-    sps.frame_crop_right_offset = (e->cw - e->w) / 2;  // in chroma samples (4:2:0)
-    sps.frame_crop_bottom_offset = (e->ch - e->h) / 2;
+    sps.frame_crop_right_offset = (e->cw - e->w) / (e->c444 ? 1 : 2);   // in chroma samples
+    sps.frame_crop_bottom_offset = (e->ch - e->h) / (e->c444 ? 1 : 2);
     sps.pSequenceParameterSetVui = &vui;
     StdVideoH264PictureParameterSet pps = {0};
     pps.flags.transform_8x8_mode_flag = 1;
     pps.flags.deblocking_filter_control_present_flag = 1;
-    pps.flags.entropy_coding_mode_flag = 1;            // CABAC: the probe check reads it
+    pps.flags.entropy_coding_mode_flag = !e->c444;     // CABAC; NVENC has only CAVLC for 4:4:4
     pps.weighted_bipred_idc = STD_VIDEO_H264_WEIGHTED_BIPRED_IDC_DEFAULT;
     VkVideoEncodeH264SessionParametersAddInfoKHR add = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR,
                                                         NULL, 1, &sps, 1, &pps};
@@ -499,7 +505,7 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     };
     VkDescriptorSetLayoutCreateInfo dslci = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, NULL, 0, 3, b};
     VK(vkCreateDescriptorSetLayout(e->dev, &dslci, NULL, &e->dsl));
-    VkPushConstantRange pcr = {VK_SHADER_STAGE_COMPUTE_BIT, 0, 6 * sizeof(uint32_t)};
+    VkPushConstantRange pcr = {VK_SHADER_STAGE_COMPUTE_BIT, 0, 7 * sizeof(uint32_t)};
     VkPipelineLayoutCreateInfo plci = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0, 1, &e->dsl, 1, &pcr};
     VK(vkCreatePipelineLayout(e->dev, &plci, NULL, &e->layout));
     VkComputePipelineCreateInfo cpci = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, NULL, 0,
@@ -563,7 +569,7 @@ int vkenc_convert(VkEnc *e) {
     vkCmdPipelineBarrier2(e->ccb, &dep);
     vkCmdBindPipeline(e->ccb, VK_PIPELINE_BIND_POINT_COMPUTE, e->pipe);
     vkCmdBindDescriptorSets(e->ccb, VK_PIPELINE_BIND_POINT_COMPUTE, e->layout, 0, 1, &e->ds, 0, NULL);
-    uint32_t pc[6] = {e->w, e->h, e->src_pitch_px, e->cw, e->ch, e->matrix601};
+    uint32_t pc[7] = {e->w, e->h, e->src_pitch_px, e->cw, e->ch, e->matrix601, e->c444};
     vkCmdPushConstants(e->ccb, e->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof pc, pc);
     vkCmdDispatch(e->ccb, (e->cw / 4 + 15) / 16, (e->ch / 2 + 7) / 8, 1);
     VkBufferMemoryBarrier2 written[2] = {
@@ -578,7 +584,8 @@ int vkenc_convert(VkEnc *e) {
     vkCmdPipelineBarrier2(e->ccb, &dep);
     VkBufferImageCopy planes[2] = {
         {0, 0, 0, {VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1}, {0, 0, 0}, {e->cw, e->ch, 1}},
-        {(VkDeviceSize)e->cw * e->ch, 0, 0, {VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1}, {0, 0, 0}, {e->cw / 2, e->ch / 2, 1}},
+        {(VkDeviceSize)e->cw * e->ch, 0, 0, {VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1}, {0, 0, 0},
+         {e->c444 ? e->cw : e->cw / 2, e->c444 ? e->ch : e->ch / 2, 1}},
     };
     vkCmdCopyBufferToImage(e->ccb, e->nv12, e->pic, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 2, planes);
     // Hand the picture to the encode queue: the semaphore it waits on carries the dependency.

@@ -1,5 +1,6 @@
-// BGRx (the X server's 32-bit pixels) → NV12, limited range, for the Vulkan encoder (vkenc.c).
-// One invocation converts a 4×2 block: two words of luma and one of interleaved chroma. Pixels
+// BGRx (the X server's 32-bit pixels) → NV12 (4:2:0) or NV24 (4:4:4), limited range, for the Vulkan
+// encoder (vkenc.c). One invocation converts a 4×2 block: two words of luma, and one word of
+// interleaved chroma (4:2:0, each 2×2 averaged) or four (4:4:4, every pixel's own). Pixels
 // past the visible size (the coded size is a multiple of 16) repeat the edge. The buffer still
 // holds the last frame, so only words that differ are written, and any such word sets `changed`.
 // Rebuild rgb2nv12.h after changing this: make shader (needs glslangValidator).
@@ -8,7 +9,7 @@ layout(local_size_x = 16, local_size_y = 8) in;
 layout(std430, binding = 0) readonly buffer Src { uint px[]; };
 layout(std430, binding = 1) buffer Dst { uint nv12[]; };
 layout(std430, binding = 2) buffer Changed { uint changed; };           // set to 0 before each frame
-layout(push_constant) uniform P { uint w, h, pitch, cw, ch, m601; };    // pitch in pixels
+layout(push_constant) uniform P { uint w, h, pitch, cw, ch, m601, c444; };    // pitch in pixels
 
 vec3 rgb(uint x, uint y) {
     uint v = px[min(y, h - 1u) * pitch + min(x, w - 1u)];
@@ -16,6 +17,8 @@ vec3 rgb(uint x, uint y) {
 }
 
 uint byte(float v) { return uint(clamp(v + 0.5, 0.0, 255.0)); }
+
+uint chroma(vec3 ku, vec3 kv, vec3 p) { return byte(dot(ku, p) + 128.0) | byte(dot(kv, p) + 128.0) << 8u; }
 
 uint put(uint i, uint v) {                     // 1 if the word differed
     if (nv12[i] == v) return 0u;
@@ -38,13 +41,21 @@ void main() {
         y0 |= byte(dot(ky, a[i]) + 16.0) << (8u * i);
         y1 |= byte(dot(ky, b[i]) + 16.0) << (8u * i);
     }
-    for (uint j = 0u; j < 2u; j++) {
-        vec3 s = (a[2u * j] + a[2u * j + 1u] + b[2u * j] + b[2u * j + 1u]) * 0.25;
-        uv |= byte(dot(ku, s) + 128.0) << (16u * j);
-        uv |= byte(dot(kv, s) + 128.0) << (16u * j + 8u);
+    uint row = cw / 4u;                        // words per luma row (and per 4:2:0 chroma row)
+    uint d = put(by * 2u * row + bx, y0) | put((by * 2u + 1u) * row + bx, y1);
+    if (c444 != 0u) {                          // U, V for every pixel: two words per row of the block
+        uint r0 = ch * row + by * 2u * (cw / 2u) + bx * 2u, r1 = r0 + cw / 2u;   // after the luma plane
+        d |= put(r0, chroma(ku, kv, a[0]) | chroma(ku, kv, a[1]) << 16u) |
+             put(r0 + 1u, chroma(ku, kv, a[2]) | chroma(ku, kv, a[3]) << 16u) |
+             put(r1, chroma(ku, kv, b[0]) | chroma(ku, kv, b[1]) << 16u) |
+             put(r1 + 1u, chroma(ku, kv, b[2]) | chroma(ku, kv, b[3]) << 16u);
+    } else {
+        for (uint j = 0u; j < 2u; j++) {
+            vec3 s = (a[2u * j] + a[2u * j + 1u] + b[2u * j] + b[2u * j + 1u]) * 0.25;
+            uv |= byte(dot(ku, s) + 128.0) << (16u * j);
+            uv |= byte(dot(kv, s) + 128.0) << (16u * j + 8u);
+        }
+        d |= put(ch * row + by * row + bx, uv);  // the chroma plane follows the luma plane
     }
-    uint row = cw / 4u;                        // words per luma row, and per chroma row
-    uint d = put(by * 2u * row + bx, y0) | put((by * 2u + 1u) * row + bx, y1) |
-             put(ch * row + by * row + bx, uv);  // the chroma plane follows the luma plane
     if (d != 0u) changed = 1u;
 }
