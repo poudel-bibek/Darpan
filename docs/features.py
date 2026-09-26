@@ -160,6 +160,22 @@ def mac(s, content="", over=""):
           over, '</g>')
 
 
+def laptop(s, content=""):
+    """Any other computer (the browser tile): a plain laptop with a taskbar, drawn where the Mac goes."""
+    icons = ("#3b82f6", "#f59e0b", "#10b981", "#ef4444")
+    bar = (f'<rect x="{SX}" y="{SY + SH - 9}" width="{SW}" height="9" fill="#0f172a" fill-opacity=".85"/>'
+           f'<rect x="{SX + 4}" y="{SY + SH - 7}" width="5" height="5" rx="1" fill="#e2e8f0"/>'
+           + "".join(f'<rect x="{SX + 14 + i * 8}" y="{SY + SH - 7}" width="5" height="5" rx="1" fill="{c}"/>'
+                     for i, c in enumerate(icons))
+           + text(SX + SW - 5, SY + SH - 3, "9:41", 3.9, "#e2e8f0", "end"))
+    s.add(f'<g transform="translate({MAC_T[0]} {MAC_T[1]}) scale({MAC_S})">',
+          f'<rect x="{MX}" y="{MY}" width="{MW}" height="{MH}" rx="5" fill="#1b1d22" stroke="#3a3d45"/>',
+          f'<g clip-path="url(#scr)"><rect x="{SX}" y="{SY}" width="{SW}" height="{SH}" fill="#1e3a5f"/>'
+          f'<ellipse cx="{SX + SW - 30}" cy="{SY + 30}" rx="90" ry="55" fill="url(#glow2)"/>{content}{bar}</g>',
+          f'<path d="M{MX - 7} {MY + MH}h{MW + 14}l-3.5 6h{-(MW + 7)}z" fill="#2a2d34"/>',
+          '</g>')
+
+
 def viewer(s, x, y, w, inner="", cls=""):
     """Darpan's window on the Mac, showing the Linux desktop; `inner` is in the desktop's coordinates."""
     h, tb = round(w * 9 / 16, 2), 7
@@ -491,31 +507,32 @@ def browser():
     x, y, w = 118, 24, 154
     url = "workstation.example.ts.net"
     size, adv = 8, 8 * ADV
-    page = (f'<g class="page"><rect x="{x}" y="{y + 16}" width="{w}" height="72" fill="#111"/>'
-                             '<g transform="translate(133 40.5)"><rect width="124" height="69.75" fill="url(#lin)"/>'
-                             '<rect width="124" height="3.5" fill="#0b0b0d"/>'
-                             + term(8, 8, 108, 44, mono(14, 23, "$", size, "#8ae234") + mono(14 + 2 * adv, 23, "python train.py", size)
+    page = (f'<g class="page"><rect x="{x}" y="{y + 16}" width="{w}" height="70" fill="#111"/>'
+                             '<g transform="translate(135 41)"><rect width="120" height="67.5" fill="url(#lin)"/>'
+                             '<rect width="120" height="3.5" fill="#0b0b0d"/>'
+                             + term(8, 8, 104, 44, mono(14, 23, "$", size, "#8ae234") + mono(14 + 2 * adv, 23, "python train.py", size)
                                     + mono(14, 34, "epoch 3/3", size, "#7fd1ff"))
                              + '</g></g>')
-    chrome = (f'<rect x="{x}" y="{y}" width="{w}" height="88" rx="3.5" fill="#fff" filter="url(#sh)"/>'
-              f'<path d="M{x} {y + 8}v-4.5a3.5 3.5 0 0 1 3.5-3.5h{w - 7}a3.5 3.5 0 0 1 3.5 3.5v4.5z" fill="#dfe1e5"/>'
-              + "".join(f'<circle cx="{x + 5.5 + i * 4.5}" cy="{y + 4}" r="1.4" fill="{c}"/>' for i, c in enumerate(("#ff5f57", "#febc2e", "#28c840")))
-              + f'<path d="M{x + 20} {y + 8}v-4a2 2 0 0 1 2-2h36a2 2 0 0 1 2 2v4z" fill="#fff"/>'
-              + f'<circle cx="{x + 25}" cy="{y + 5.3}" r="1.6" fill="#e8b04a"/>' + text(x + 29, y + 6.8, "Darpan", 4.6, "#3c4043")
+    chrome = (f'<rect x="{x}" y="{y}" width="{w}" height="86" rx="2" fill="#fff" filter="url(#sh)"/>'
+              f'<path d="M{x} {y + 8}v-6a2 2 0 0 1 2-2h{w - 4}a2 2 0 0 1 2 2v6z" fill="#dfe1e5"/>'
+              + f'<path d="M{x + w - 23} {y + 4}h3M{x + w - 15.5} {y + 2.5}h3v3h-3zM{x + w - 7} {y + 2.5}l3 3M{x + w - 4} {y + 2.5}l-3 3" '
+                'stroke="#3c4043" stroke-width=".6" fill="none"/>'
+              + f'<path d="M{x + 4} {y + 8}v-4a2 2 0 0 1 2-2h36a2 2 0 0 1 2 2v4z" fill="#fff"/>'
+              + f'<circle cx="{x + 9}" cy="{y + 5.3}" r="1.6" fill="#e8b04a"/>' + text(x + 13, y + 6.8, "Darpan", 4.6, "#3c4043")
               + f'<rect x="{x + 6}" y="{y + 9.5}" width="{w - 12}" height="6" rx="3" fill="#f1f3f4"/>'
               + f'<rect x="{x + 10}" y="{y + 11.4}" width="2.6" height="2.2" rx=".4" fill="#5f6368"/>'
               + text(x + 15, y + 14, url, 4.6, "#202124", length=len(url) * 2.25)
               + f'<rect class="mask" x="{x + 14.5}" y="{y + 10}" width="{len(url) * 2.25 + 1.5:.1f}" height="5" fill="#f1f3f4"/>'
               + f'<rect class="load" x="{x}" y="{y + 16}" width="{w}" height="1" fill="#1a73e8"/>'
-              + f'<rect x="{x}" y="{y + 16}" width="{w}" height="72" fill="#202124" fill-opacity=".04"/>')
-    mac(s, chrome + page)
+              + f'<rect x="{x}" y="{y + 16}" width="{w}" height="70" fill="#202124" fill-opacity=".04"/>')
+    laptop(s, chrome + page)
     s.anim("mask", [(0, "transform:scaleX(1)"), (0.4, "transform:scaleX(1)"), (1.6, "transform:scaleX(0)"), (5.7, "transform:scaleX(0)"),
                     (5.8, "transform:scaleX(1)"), (6, "transform:scaleX(1)")], "steps(26, end)", "transform-box:fill-box;transform-origin:100% 50%")
     grow(s, "load", [(0, 0), (1.8, 0), (2.3, 1), (2.4, 1), (6, 1)])
     s.show("load", 1.8, 2.4, 0.05)
     s.show("page", 2.35, 5.6, 0.15)
     packets(s, [(2.6, False), (3.1, True), (3.6, False), (4.1, True), (4.6, False)])
-    return s.svg("Opening the Linux computer's address in a web browser shows its desktop, with no app installed")
+    return s.svg("On another computer, the Linux computer's address in a web browser shows its desktop")
 
 
 FEATURES = {"local": feels_local, "private": private, "light": light, "sound": sound, "clipboard": clipboard, "files": files,

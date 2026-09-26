@@ -3,13 +3,13 @@
 <h1 align="center">Darpan</h1>
 
 <p align="center"><b>Stop paying for remote desktop.</b><br>
-Darpan is a free, open-source remote desktop for your Linux computer. Use it from your Mac or any
-browser: it feels local and stays private.</p>
+Darpan is a free, open-source remote desktop: a native Mac app for your Linux computer. It feels
+local and stays private.</p>
 
 <p align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/host-Linux-555" alt="Host: Linux">
-<img src="https://img.shields.io/badge/clients-macOS%20%C2%B7%20browser-555" alt="Clients: macOS and browser">
+<img src="https://img.shields.io/badge/client-macOS%20app-555" alt="Client: macOS app">
 </p>
 
 <p align="center"><img src="docs/demo.svg" width="880" alt="Connecting from the Darpan Mac app, starting a training run on the Linux desktop, and switching to full screen"></p>
@@ -23,7 +23,7 @@ there's no port forwarding and nothing to change on your router.
 |---|---|---|
 | **Linux**: the computer you connect **to** | [darpan_amd64.deb](../../releases/latest/download/darpan_amd64.deb) | Ubuntu 24.04 or similar |
 | **Mac**: the computer you connect **from** | [Darpan.dmg](../../releases/latest/download/Darpan.dmg) | macOS 14 or later, Apple silicon or Intel |
-| **Any browser** | no Darpan app; [Tailscale](https://tailscale.com/download) on that device | Chrome, Safari, Edge or Firefox |
+| **Or a browser**, optional: on any other computer | no Darpan app; [Tailscale](https://tailscale.com/download) on that device | Chrome, Safari, Edge or Firefox |
 
 All versions: [Releases](../../releases).
 
@@ -90,8 +90,8 @@ Darpan shows on it. That's it.
 <p><b>Your computers</b><br>Switch between Linux<br>computers with one click.<br><sub>&nbsp;</sub></p>
 </td>
 <td valign="top">
-<p><img src="docs/feature-browser.svg" width="100%" alt="The Linux desktop in a web browser, with no app installed"></p>
-<p><b>Any browser</b><br>No app needed: open the<br>address in any browser.<br><sub>&nbsp;</sub></p>
+<p><img src="docs/feature-browser.svg" width="100%" alt="On another computer, the Linux desktop in a web browser"></p>
+<p><b>Also in a browser</b><br>Away from your Mac? Open<br>it in any web browser.<br><sub>&nbsp;</sub></p>
 </td>
 </tr>
 </table>
