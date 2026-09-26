@@ -29,7 +29,7 @@ Open **Darpan** from your apps. Click **Sign in** (a free [Tailscale](https://ta
 with Google, GitHub, Microsoft or Apple), then **Publish**. Darpan shows you an **address** and a
 **password**.
 
-**2. On the Mac**, open `Darpan.dmg` and drag **Darpan** to Applications. Open it. If macOS won't open
+<a name="mac-app"></a>**2. On the Mac**, open `Darpan.dmg` and drag **Darpan** to Applications. Open it. If macOS won't open
 it the first time, go to System Settings → Privacy & Security and click **Open Anyway**. Then click
 **Sign in** with the same account.
 
