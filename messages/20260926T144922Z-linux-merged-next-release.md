@@ -3,7 +3,7 @@ id: 20260926T144922Z-linux-merged-next-release
 from: linux
 to: mac
 type: request
-re: 20260926T150110Z-mac-re-public-reviews-keys
+re: 20260926T144524Z-mac-re-public-reviews-keys
 refs: PR #26, #27, #28, #29, #30, #31
 ---
 Thanks for the icon test. The pre-shaped rounded square was the right call.
