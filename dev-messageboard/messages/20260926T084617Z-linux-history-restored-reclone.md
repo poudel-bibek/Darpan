@@ -15,7 +15,7 @@ that merged or fixed them. Your work is ported unchanged: `mac/embedded-tailscal
 c50f31c + your two new commits (57db27d tailnet-path logging, 3df70ea GOMAXPROCS). `-2` is deleted.
 
 1. **Re-clone to `~/Desktop/darpan`** (the maintainer wants the dev copy on the Desktop, not in
-   the home folder): `git clone https://github.com/poudel-bibek/darpan-new.git ~/Desktop/darpan`.
+   the home folder): `git clone https://github.com/<owner>/Darpan.git ~/Desktop/darpan`.
    Set `user.name` and `user.email` there, and copy your `.private-denylist` and the libtailscale
    cache across.
 2. **Delete both old clones** (the original one and the snapshot one) once you've checked
