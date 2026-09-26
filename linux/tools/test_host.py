@@ -286,6 +286,34 @@ async def fs_checks(port, tmp, pw, ok, caps):
     await asyncio.sleep(0.5)
     parts = [f for f in os.listdir(base) if f.startswith(".darpan-upload-")]
     ok("fs put: aborted upload leaves nothing", not parts and not os.path.exists(base + "/cut.bin"), str(parts))
+    # a PUT without Content-Length is refused: an empty file must never replace the target
+    r, w = await asyncio.open_connection("127.0.0.1", port)
+    w.write(("PUT /fs/file?exists=replace&path=%s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nAuthorization: Bearer %s\r\n"
+             "Connection: close\r\n\r\n" % (Q(up), port, tok)).encode())
+    answer = await asyncio.wait_for(r.read(), 10)
+    w.close()
+    ok("fs put: no Content-Length refused", answer.startswith(b"HTTP/1.1 411") and open(up, "rb").read() == b"xyz",
+       answer[:30].decode("latin-1"))
+    # refused before its body is read: a big upload still gets its answer, not a reset
+    r, w = await asyncio.open_connection("127.0.0.1", port)
+    w.write(("PUT /fs/file?exists=fail&path=%s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nAuthorization: Bearer %s\r\n"
+             "Content-Length: %d\r\nConnection: close\r\n\r\n" % (Q(up), port, tok, 4 << 20)).encode())
+
+    async def pour():
+        try:
+            for _ in range(64):
+                w.write(bytes(64 << 10))
+                await w.drain()
+        except ConnectionError:
+            pass
+    pouring = asyncio.ensure_future(pour())
+    try:
+        answer = await asyncio.wait_for(r.read(), 10)
+    except ConnectionError as e:
+        answer = repr(e).encode()
+    pouring.cancel()
+    w.close()
+    ok("fs put: refused big upload still answered", answer.startswith(b"HTTP/1.1 409"), answer[:30].decode("latin-1", "replace"))
 
     res = []
     for p in (base + "/newdir", base + "/newdir", base + "/nodir/newdir"):

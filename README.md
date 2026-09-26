@@ -3,7 +3,14 @@
 <h1 align="center">Darpan</h1>
 
 <p align="center"><b>Stop paying for remote desktop.</b><br>
-Use your Linux computer from your Mac or any browser. It feels local, stays private, and costs nothing.</p>
+Darpan is a free, open-source remote desktop for your Linux computer. Use it from your Mac or any
+browser: it feels local and stays private.</p>
+
+<p align="center">
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT license"></a>
+<img src="https://img.shields.io/badge/host-Linux-555" alt="Host: Linux">
+<img src="https://img.shields.io/badge/clients-macOS%20%C2%B7%20browser-555" alt="Clients: macOS and browser">
+</p>
 
 <p align="center"><img src="docs/demo.svg" width="880" alt="Connecting from the Darpan Mac app, starting a training run on the Linux desktop, and switching to full screen"></p>
 
@@ -46,31 +53,33 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 <table>
 <tr>
 <td width="33%" valign="top"><img src="docs/feature-local.svg" width="100%" alt="Typing on the Mac shows up on the Linux computer at once"><br>
-<b>Feels local</b><br>About 27 ms from a change on the Linux screen to your Mac, even over the internet.</td>
+<b>Feels local</b><br>Screen to screen in 27 ms,<br>even over the internet.</td>
 <td width="33%" valign="top"><img src="docs/feature-private.svg" width="100%" alt="Another device trying to reach the Linux computer is refused"><br>
-<b>Private</b><br>Only your own devices can reach it: encrypted end to end, no open ports, and a password that never crosses the network.</td>
+<b>Private</b><br>Only your devices get in,<br>encrypted, no open ports.</td>
 <td width="33%" valign="top"><img src="docs/feature-light.svg" width="100%" alt="Darpan's CPU use drops to zero when the Mac disconnects, while the GPU keeps training"><br>
-<b>Light</b><br>On the Linux computer: 0 % CPU while nobody's connected, about 0.3 % of one core on a quiet screen, and 5 % during video with sound.</td>
+<b>Lightweight</b><br>Linux: 0 % CPU when idle,<br>about 5 % during a video.</td>
 </tr>
 <tr>
 <td valign="top"><img src="docs/feature-sound.svg" width="100%" alt="A video plays on the Linux computer and its sound comes out of the Mac"><br>
-<b>Sound</b><br>Whatever plays on the Linux computer plays on your Mac.</td>
+<b>Sound</b><br>Whatever plays on the Linux<br>computer plays on your Mac.</td>
 <td valign="top"><img src="docs/feature-clipboard.svg" width="100%" alt="Copying in a Linux terminal and pasting on the Mac, then back"><br>
-<b>Copy and paste</b><br>⌘C and ⌘V work both ways, in Linux terminals too. ⌃C still interrupts.</td>
-<td valign="top"><img src="docs/feature-files.svg" width="100%" alt="A file dropped on Darpan's window lands on the Linux computer"><br>
-<b>Files</b><br>Drop files on the window. They land in <code>~/Downloads/Darpan</code>.</td>
+<b>Copy and paste</b><br>⌘C and ⌘V work both ways,<br>in Linux terminals too.</td>
+<td valign="top"><img src="docs/feature-files.svg" width="100%" alt="A file dropped on Darpan's window lands on the Linux desktop"><br>
+<b>Files</b><br>Drop a file on the window:<br>it lands on the desktop.</td>
 </tr>
 </table>
 
 Plus full screen, screen resolutions to match your window, and a toolbar that tucks away.
-**Free:** open source (MIT), no subscription, and no account with us.
+**Free and open source** (MIT): no subscription, and no account with us.
 
 ## Everyday use
 
 * **Copy and paste** with ⌘C and ⌘V. The clipboard syncs both ways. In Linux terminals (with ⌘ as Ctrl, the default), ⌘ acts on the terminal
   (⌘C copies, ⌘V pastes, ⌘T opens a tab) and ⌃ goes to the shell (⌃C interrupts, ⌃R searches).
+* **Dictation** apps work in the Darpan window. With Wispr Flow, for example, you talk and the text
+  lands at the Linux cursor, as if you had typed it.
 * **Sound** from the Linux computer plays on your Mac, or in the browser. The speaker button in the toolbar mutes it.
-* **Send files** by dropping them on the window. They land in `~/Downloads/Darpan` on the Linux computer.
+* **Send files** by dropping them on the window. They land on the Linux computer's desktop.
 * **The toolbar** is the small tab at the top of the window. Hover over it for full screen, display and
   quality, keyboard, clipboard, files and sound. Drag it sideways if it's in the way.
 * **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
@@ -141,23 +150,12 @@ The wire protocol is documented in [PROTOCOL.md](PROTOCOL.md).
 
 </details>
 
-<details>
-<summary><b>For developers</b></summary>
+## Contributing
 
-```text
-linux/             host: Python daemon, C capture/NVENC encoder, browser client, packaging, tests
-mac/               native macOS client (Swift)
-PROTOCOL.md        wire protocol: the contract every client implements
-MAC_PROMPT.md      design brief for the macOS client
-dev-messageboard/  asynchronous coordination between contributors
-scripts/           repository maintenance
-```
-
-Build and test notes: [linux/README.md](linux/README.md), [mac/README.md](mac/README.md). Every change
-goes through a pull request and a review. Before publishing a release, run
-`scripts/check-private-data.sh`.
-
-</details>
+Darpan is open source, and contributions are welcome: bug reports, fixes, new clients and ideas.
+[CONTRIBUTING.md](CONTRIBUTING.md) explains how to build it, run the tests and send a pull request.
+Every client speaks the same documented [protocol](PROTOCOL.md), so a Windows or iPad client only
+has to implement that.
 
 ## License
 

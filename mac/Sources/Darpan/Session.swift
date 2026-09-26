@@ -403,7 +403,7 @@ final class Session: NSObject {
         p.allowsMultipleSelection = true
         p.canChooseDirectories = false
         p.prompt = "Send"
-        p.message = "The files are saved in Downloads/Darpan on the remote computer."
+        p.message = "The files are on the remote computer’s desktop."
         p.beginSheetModal(for: window) { [weak self] r in
             if r == .OK { self?.send(files: p.urls) }
         }

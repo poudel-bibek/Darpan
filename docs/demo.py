@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Generates docs/demo.svg, a looping CSS-animated illustration of Darpan in use: connect from the
-Mac, start a training run in a Linux terminal, open the toolbar tab, click Full screen, and watch
-the run finish full screen. Pure SVG + CSS (no scripts or external resources), so it animates in a
-GitHub README. Usage: python3 docs/demo.py docs/demo.svg"""
+"""Generates docs/demo.svg, a looping CSS-animated illustration of Darpan in use: pick your computer
+in the Mac app, start a training run in a Linux terminal, open the floating toolbar, click Full
+screen, and watch the run finish full screen. Pure SVG + CSS (no scripts or external resources), so
+it animates in a GitHub README. Usage: python3 docs/demo.py docs/demo.svg"""
+import os
+import re
 import sys
 
 T = 16.0                                   # loop length, seconds
@@ -44,13 +46,13 @@ ENTER = TYPE0 + len(CMD) * TYPE_DT + 0.3
 L2, L3, L4 = ENTER + 0.45, ENTER + 1.05, ENTER + 1.65
 BAR_END = 13.0                                  # epoch 3 reaches 100 %
 L5 = BAR_END + 0.35
-PILL_HOVER, BAR_OPEN = 8.6, 8.85                # the tab expands into the toolbar
+PILL_HOVER, BAR_OPEN = 8.6, 8.75                # pointing at the capsule opens the toolbar
 FS_HOVER, FS_CLICK = 9.4, 10.15                 # pointer on Full screen, then the click
 BAR_CLOSE, FS_T0, FS_T1 = 10.25, 10.3, 10.95    # toolbar tucks away; the window grows to full screen
 
 # ---------------------------------------------------------------- geometry
 W, H = 960, 600
-CX, CY = 330, 104                               # connect window origin (300×408)
+CX, CY = 300, 112                               # connect window origin (360 wide)
 VX, VY, VW_, VH = 70, 60, 820, 489              # viewer window (28 px title + 461 px video)
 DX, DY = VX, VY + 28                            # Linux desktop origin (820×461)
 TX, TY = DX + 110, DY + 44                      # terminal origin (580×324)
@@ -58,10 +60,18 @@ FS, LH = 10.5, 16                               # terminal font size, line heigh
 CHW = FS * 0.6                                  # monospace advance
 PROMPT = "user@workstation:~/project$ "
 CMDX = TX + 12 + len(PROMPT) * CHW
-BTN = (CX + 150, CY + 354)                      # Connect button centre
-PILL = (DX + 600, DY + 7)                       # tab dragged right of the clock; the open bar stays clear of it
+ROW = (CX + 180, CY + 208)                      # the first computer in the list
+TCX, TTOP = DX + 0.84 * 820, DY + round(0.05 * 461)        # toolbar: centre 84 % across, top 5 % down
+BAR_W = 313                                     # grip, quality dot, 7 buttons, separator, insets
+BAR_X = DX + min(0.84 * 820 - BAR_W / 2, 820 - BAR_W - 6)  # the open bar stays 6 pt inside the window
 
 # ---------------------------------------------------------------- defs
+# The app icon comes from logo.svg, so the demo always shows the current one: centred on the
+# origin, its ids prefixed so they can't clash with the demo's.
+_logo = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logo.svg")).read()
+_logo = _logo[_logo.index(">", _logo.index("<svg")) + 1:_logo.rindex("</svg>")]
+_logo = re.sub(r'(url\(#|href="#|id=")', r"\1logo-", _logo)
+LOGO = f'<g id="logo" transform="translate(-64 -64)">{_logo.strip()}</g>'
 defs = f"""<defs>
 <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#16225c"/><stop offset=".45" stop-color="#43308f"/><stop offset=".78" stop-color="#a1528f"/><stop offset="1" stop-color="#e59a74"/></linearGradient>
 <radialGradient id="glow" cx=".72" cy=".2" r=".6"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
@@ -70,26 +80,15 @@ defs = f"""<defs>
 <filter id="soft" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity=".35"/></filter>
 <clipPath id="screen"><rect width="{W}" height="{H}" rx="16"/></clipPath>
 <clipPath id="video"><rect x="{DX}" y="{DY}" width="820" height="461"/></clipPath>
-<linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FAD57A"/><stop offset="1" stop-color="#C98A1E"/></linearGradient>
-<linearGradient id="deep" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E4A845"/><stop offset="1" stop-color="#9C6610"/></linearGradient>
-<radialGradient id="glass" cx=".36" cy=".3" r=".85"><stop offset="0" stop-color="#3E66CC"/><stop offset="1" stop-color="#0C1533"/></radialGradient>
-<path id="petal" d="M0-30C17-38 12-54 0-62C-12-54-17-38 0-30Z"/>
-<path id="bud" d="M0-30C13-37 10-49 0-55C-10-49-13-37 0-30Z"/>
-<g id="logo" stroke="#8E5B0E" stroke-linejoin="round">
-<g fill="url(#gold)" stroke-width="1.2">{"".join(f'<use href="#petal" transform="rotate({a})"/>' for a in range(0, 360, 45))}</g>
-<g fill="url(#deep)" stroke-width="1">{"".join(f'<use href="#bud" transform="rotate({a + 22.5})"/>' for a in range(0, 360, 45))}</g>
-<circle r="38" fill="url(#gold)" stroke-width="1.5"/><circle r="34.5" fill="none" stroke="#B57B19"/>
-<circle r="31" fill="url(#glass)" stroke="#7A4C0B" stroke-width="1.5"/>
-<path d="M-23-6A23 23 0 0 1-6-23" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="3.5" stroke-linecap="round"/>
-<path d="M-9-17V11L-2.5 4.5 2 14.5 6.5 12.5 2 2.5H11Z" fill="#fff" stroke="#0C1533" stroke-width="2.2"/>
-</g>
+{LOGO}
 <path id="arrow" d="M0 0V15.5L3.6 12.1 6.1 17.9 8.6 16.8 6.1 11.1H11.2Z" fill="#000" stroke="#fff" stroke-width="1.1" stroke-linejoin="round"/>
 </defs>"""
 
 
-def traffic(x, y):
-    return "".join(f'<circle cx="{x + i * 20}" cy="{y}" r="6" fill="{c}" stroke="{s}" stroke-width=".6"/>'
-                   for i, (c, s) in enumerate([("#ff5f57", "#e0443e"), ("#febc2e", "#dea123"), ("#28c840", "#1aab29")]))
+def traffic(x, y, zoom=True):
+    """Close, minimize and zoom; zoom is disabled (grey) on a window that can't be resized."""
+    lights = [("#ff5f57", "#e0443e"), ("#febc2e", "#dea123"), ("#28c840", "#1aab29") if zoom else ("#dcdcdc", "#c8c8c8")]
+    return "".join(f'<circle cx="{x + i * 20}" cy="{y}" r="6" fill="{c}" stroke="{s}" stroke-width=".6"/>' for i, (c, s) in enumerate(lights))
 
 
 # ---------------------------------------------------------------- Mac desktop
@@ -105,39 +104,51 @@ body.append(f'<rect width="{W}" height="24" fill="#fff" fill-opacity=".16"/>'
             f'<rect x="816" y="8" width="17" height="8" rx="2.5"/><rect x="818" y="10" width="11" height="4" rx="1" fill="#fff" stroke="none"/>'
             f'<path d="M834.6 10.5v3" stroke-width="1.6"/></g>')
 
-# ---------------------------------------------------------------- connect window
-cw = [f'<rect width="300" height="408" rx="12" fill="#fff" stroke="#000" stroke-opacity=".1"/>', traffic(18, 16),
-      '<use href="#logo" transform="translate(150 74) scale(.47)"/>',
-      f'<g font-family="{UI}" text-anchor="middle"><text x="150" y="128" font-size="18" font-weight="600" fill="#1d1d1f">Darpan</text>'
-      '<text x="150" y="145" font-size="11" fill="#86868b">Your Linux desktop, on this Mac</text></g>',
-      f'<g font-family="{UI}" font-size="10" fill="#86868b"><text x="24" y="175">Private network</text>'
-      '<text x="24" y="228">Address</text><text x="24" y="276">Password</text></g>',
-      '<rect x="164" y="163" width="112" height="17" rx="5" fill="#e8e8ed"/>'
-      '<rect x="165.5" y="164.5" width="52" height="14" rx="4" fill="#fff" filter="url(#soft)"/>',
-      f'<g font-family="{UI}" font-size="9.5" fill="#1d1d1f" text-anchor="middle"><text x="191.5" y="175">Built-in</text><text x="247" y="175">This Mac’s</text></g>',
-      '<rect x="24" y="186" width="252" height="24" rx="6" fill="#f2f2f5"/><circle cx="36" cy="198" r="3.6" fill="#34c759"/>',
-      f'<text x="46" y="201.5" font-family="{UI}" font-size="10.5" fill="#1d1d1f">Connected as you@example.com</text>',
-      '<rect x="24" y="233" width="226" height="22" rx="5" fill="#fff" stroke="#c7c7cc"/>',
-      f'<text x="31" y="248" font-family="{UI}" font-size="11" fill="#1d1d1f">workstation.example.ts.net</text>',
-      '<g fill="none" stroke="#86868b" stroke-width="1.2" stroke-linecap="round" transform="translate(-3 0)"><path d="M259.5 244a6.5 6.5 0 1 0 2-4.7"/><path d="M259 237v3.5h3.5"/><path d="M266 240.5v3.8l2.4 1.6"/></g>',
-      '<rect x="24" y="281" width="252" height="22" rx="5" fill="#fff" stroke="#c7c7cc"/>',
-      f'<text x="31" y="296.5" font-family="{UI}" font-size="11" letter-spacing="1.5" fill="#1d1d1f">••••••••••••••</text>',
-      '<rect x="24" y="314" width="12" height="12" rx="3" fill="#0a84ff"/><path d="M27 320l2.3 2.4 4-5" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
-      f'<text x="43" y="324" font-family="{UI}" font-size="10.5" fill="#1d1d1f">Remember on this Mac</text>',
-      '<rect class="btn" x="24" y="340" width="252" height="28" rx="7" fill="#0a84ff"/>',
-      f'<text class="lbl1" x="150" y="358.5" font-family="{UI}" font-size="12" font-weight="600" fill="#fff" text-anchor="middle">Connect</text>',
-      f'<g class="lbl2"><text x="157" y="358.5" font-family="{UI}" font-size="12" font-weight="600" fill="#fff" text-anchor="middle">Cancel</text>'
-      '<g transform="translate(125 354)"><circle class="spin" r="5" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="1.6" stroke-dasharray="20 12" stroke-linecap="round"/></g></g>',
-      f'<text class="msg" x="150" y="390" font-family="{UI}" font-size="10" fill="#86868b" text-anchor="middle">Connecting to workstation…</text>']
+# ---------------------------------------------------------------- connect window: your computers
+# Window coordinates, 360 wide. Clicking a computer shows "Connecting to …" and Cancel under the
+# list, and the window grows by GROW to make room: the footer moves down and the gap fills in.
+SPLIT, GROW = 280.5, 57                         # the list's bottom edge; how much the window grows
+FONT = f'font-family="{UI}"'
+
+
+def computer(top, name, online, sub, n):
+    cy = top + 24
+    return (f'<circle cx="40" cy="{cy}" r="4" fill="{"#34c759" if online else "#b3b3b3"}"/>'
+            f'<text x="54" y="{top + 21.5}" {FONT} font-size="13" font-weight="500" fill="#262626">{name}</text>'
+            f'<text x="54" y="{top + 36.5}" {FONT} font-size="11" fill="#767676">{sub}</text>'
+            f'<path class="chev{n}" d="M320 {cy - 4.5}l4.5 4.5-4.5 4.5" fill="none" stroke="#a8a8a8" stroke-width="1.6" '
+            'stroke-linecap="round" stroke-linejoin="round"/>')
+
+
+gear = "".join(f'<rect x="-1.3" y="-7" width="2.6" height="3.4" rx=".6" transform="rotate({a})"/>' for a in range(0, 360, 45))
+cw = [f'<path d="M0 {SPLIT}V12a12 12 0 0 1 12-12h336a12 12 0 0 1 12 12V{SPLIT}z" fill="#ececec"/>',
+      f'<rect class="cwgrow" y="{SPLIT - 0.5}" width="360" height="{GROW + 1}" fill="#ececec"/>',
+      traffic(18, 16, zoom=False),
+      '<use href="#logo" transform="translate(180 84) scale(.5)"/>',
+      f'<text x="180" y="139" {FONT} font-size="20" font-weight="600" fill="#262626" text-anchor="middle">Darpan</text>',
+      f'<text x="24" y="173" {FONT} font-size="11" font-weight="600" letter-spacing=".6" fill="#767676">YOUR COMPUTERS</text>',
+      '<rect x="24" y="184" width="312" height="96.5" rx="10" fill="#000" fill-opacity=".05"/>',
+      computer(184, "workstation", True, "Ready to connect", 1),
+      '<line x1="54" y1="232.25" x2="336" y2="232.25" stroke="#000" stroke-opacity=".1" stroke-width=".5"/>',
+      computer(232.5, "lab-server", False, "Offline", 2),
+      '<g transform="translate(322 208)"><g class="busy"><circle class="spin" r="5.5" fill="none" stroke="#8a8a8a" '
+      'stroke-width="1.6" stroke-dasharray="22 13" stroke-linecap="round"/></g></g>',
+      f'<g class="foot"><path d="M0 {SPLIT}H360V{SPLIT + 50}a12 12 0 0 1-12 12H12a12 12 0 0 1-12-12z" fill="#ececec"/>'
+      f'<text x="24" y="{SPLIT + 32}" {FONT} font-size="12" fill="#0068da">Other address…</text>'
+      f'<g transform="translate(328 {SPLIT + 28})" fill="#767676">{gear}<circle r="5.2"/><circle r="2.2" fill="#ececec"/></g></g>',
+      f'<text class="msg" x="180" y="304.5" {FONT} font-size="12" fill="#767676" text-anchor="middle">Connecting to workstation…</text>',
+      f'<g class="cancel"><rect x="143" y="315.5" width="74" height="22" rx="5.5" fill="#fff" stroke="#000" stroke-opacity=".14" filter="url(#soft)"/>'
+      f'<text x="180" y="330.5" {FONT} font-size="13" fill="#262626" text-anchor="middle">Cancel</text></g>']
 body.append(f'<g class="cw"><g transform="translate({CX} {CY})" filter="url(#shadow)">{"".join(cw)}</g></g>')
 anim("cw", [(0, "opacity:0;transform:scale(.97)"), (0.35, "opacity:1;transform:scale(1)"),
             (CW_OUT, "opacity:1;transform:scale(1)"), (CW_OUT + 0.35, "opacity:0;transform:scale(.94)"),
-            (T, "opacity:0;transform:scale(.94)")], extra="transform-origin:480px 308px")
-anim("btn", [(0, "fill:#0a84ff"), (CLICK, "fill:#0a84ff"), (CLICK + 0.04, "fill:#0062cc"),
-             (CLICK + 0.2, "fill:#0062cc"), (CLICK + 0.3, "fill:#0a84ff"), (T, "fill:#0a84ff")])
-show("lbl1", 0, CLICK + 0.2, 0.001)
-show("lbl2", CLICK + 0.2, T, 0.001)
-show("msg", CLICK + 0.25, T, 0.1)
+            (T, "opacity:0;transform:scale(.94)")], extra=f"transform-origin:{CX + 180}px {CY + 200}px")
+show("chev1", 0, CLICK + 0.2, 0.001)
+show("busy", CLICK + 0.2, T, 0.001)
+for name in ("msg", "cancel", "cwgrow"):
+    show(name, CLICK + 0.25, T, 0.001)
+anim("foot", [(0, "transform:translateY(0)"), (CLICK + 0.25, "transform:translateY(0)"),
+              (CLICK + 0.251, f"transform:translateY({GROW}px)"), (T, f"transform:translateY({GROW}px)")])
 css.append(f"@keyframes spin{{to{{transform:rotate(360deg)}}}}.spin{{animation:spin .8s linear infinite}}")
 
 # ---------------------------------------------------------------- viewer window with the Linux desktop
@@ -238,42 +249,39 @@ anim("grow", [(0, "transform:scaleX(.02)"), (L4, "transform:scaleX(.02)")] +
      extra=f"transform-origin:{BX:.1f}px 0")
 d.append("".join(term))
 
-# toolbar: the collapsed tab and the expanded bar
-px, py = PILL
-d.append(f'<g class="pill"><path d="M{px - 23} {py - 7}h46v4a10 10 0 0 1-10 10h-26a10 10 0 0 1-10-10z" fill="#121418" fill-opacity=".62" stroke="#fff" stroke-opacity=".1"/>'
-         f'<circle cx="{px - 13}" cy="{py - 0.5}" r="3" fill="#3ccf7a"/><rect x="{px - 5}" y="{py - 1.5}" width="16" height="2" rx="1" fill="#fff" fill-opacity=".45"/></g>')
-bw, bh = 293, 30
-bx0 = px - bw / 2
-bar = [f'<path d="M{bx0} {py - 7}h{bw}v{bh - 12}a12 12 0 0 1-12 12h-{bw - 24}a12 12 0 0 1-12-12z" fill="#1c1e23" fill-opacity=".94" stroke="#fff" stroke-opacity=".08"/>',
-       f'<circle cx="{bx0 + 12}" cy="{py + 8}" r="3" fill="#3ccf7a"/>']
-glyphs = ["M-4.5-1.5v-3h3M4.5 1.5v3h-3M-4.5-4.5l3.5 3.5M4.5 4.5l-3.5-3.5",
-          "M-5.5-4h11v7h-11zM-2 5.5h4M0 3v2.5",
-          "M-6-3.5h12v7h-12zM-3.5-1h.1M-1-1h.1M1.5-1h.1M4-1h.1M-2.5 1.5h5",
-          "M-3.5-3h7v8h-7zM-1.5-4.5h3v2.5h-3z",
-          "M-4-1v5.5h8V-1M0 2V-5M-2.5-2.5L0-5l2.5 2.5",
-          "M-5-2v4h2.5l3.5 3v-10l-3.5 3zM2.5-2a3 3 0 0 1 0 4M4.5-4a6 6 0 0 1 0 8",
-          "M-4 4V0M0 4V-4M4 4V-1.5",
-          "M-2.9-3.7a4.6 4.6 0 1 0 5.8 0M0-5v4.2"]
-gx = bx0 + 30
+# toolbar: the floating capsule (grip + quality dot) and the bar it opens into when pointed at
+def grip(x, y):
+    return "".join(f'<circle cx="{x + c * 4 + 2}" cy="{y + r * 4 + 2}" r="1" fill="#fff" fill-opacity=".5"/>' for c in range(2) for r in range(3))
+
+
+cap_x = round(TCX - 22)
+d.append(f'<g class="pill"><g opacity=".6"><rect x="{cap_x}" y="{TTOP}" width="44" height="22" rx="11" fill="#121418" fill-opacity=".62" '
+         f'stroke="#fff" stroke-opacity=".1"/>{grip(cap_x + 10, TTOP + 6)}<circle cx="{cap_x + 29}" cy="{TTOP + 11}" r="3" fill="#3ccf7a"/></g></g>')
+bar = [f'<rect x="{BAR_X}" y="{TTOP}" width="{BAR_W}" height="40" rx="12" fill="#1e1f24" fill-opacity=".94" stroke="#fff" stroke-opacity=".08"/>',
+       grip(BAR_X + 10, TTOP + 15), f'<circle cx="{BAR_X + 29}" cy="{TTOP + 20}" r="3" fill="#3ccf7a"/>']
+glyphs = ["M-4.5-1.5v-3h3M4.5 1.5v3h-3M-4.5-4.5l3.5 3.5M4.5 4.5l-3.5-3.5",          # full screen
+          "M-5.5-4h11v7h-11zM-2 5.5h4M0 3v2.5",                                       # display
+          "M-6-3.5h12v7h-12zM-3.5-1h.1M-1-1h.1M1.5-1h.1M4-1h.1M-2.5 1.5h5",           # keyboard
+          "M-4-1v5.5h8V-1M0 2V-5M-2.5-2.5L0-5l2.5 2.5",                               # send files
+          "M-5-2v4h2.5l3.5 3v-10l-3.5 3zM2.5-2a3 3 0 0 1 0 4M4.5-4a6 6 0 0 1 0 8",    # sound
+          "M-4 4V0M0 4V-4M4 4V-1.5",                                                  # stats
+          "M-2.9-3.7a4.6 4.6 0 1 0 5.8 0M0-5v4.2"]                                    # disconnect
 for k, g in enumerate(glyphs):
-    if k == 7:                                   # the app's only separator: before Disconnect
-        bar.append(f'<line x1="{gx - 4}" y1="{py + 2}" x2="{gx - 4}" y2="{py + 14}" stroke="#fff" stroke-opacity=".18"/>')
-        gx += 6
-    hl = ' class="hov"' if k == 0 else ""
-    bar.append(f'<rect{hl} x="{gx - 1}" y="{py - 2}" width="30" height="20" rx="5" fill="#fff" fill-opacity="{".16" if k == 0 else "0"}"/>'
-               f'<path transform="translate({gx + 14} {py + 8})" d="{g}" fill="none" stroke="{"#ff5f57" if k == 7 else "#fff"}" '
-               f'stroke-opacity="{1 if k == 7 else .88}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>')
+    bx = BAR_X + 40 + k * 38 + (3 if k == 6 else 0)     # 36 pt buttons, 2 pt apart; a separator before Disconnect
+    if k == 6:
+        bar.append(f'<line x1="{bx - 2.5}" y1="{TTOP + 10}" x2="{bx - 2.5}" y2="{TTOP + 30}" stroke="#fff" stroke-opacity=".18"/>')
     if k == 0:
-        hover_x = gx + 14                        # the Full screen button
-    gx += 31
-bar.append(f'<g class="tip"><rect x="{hover_x - 54}" y="{py + 27}" width="108" height="17" rx="4" fill="#f5f5f7" stroke="#000" stroke-opacity=".15" filter="url(#soft)"/>'
-           f'<text x="{hover_x}" y="{py + 38.5}" font-family="{UI}" font-size="9.5" fill="#1d1d1f" text-anchor="middle">Full screen (⌃⌥⌘F)</text></g>')
+        bar.append(f'<rect class="hov" x="{bx}" y="{TTOP + 4}" width="36" height="32" rx="6" fill="#fff" fill-opacity=".16"/>')
+    bar.append(f'<path transform="translate({bx + 18} {TTOP + 20})" d="{g}" fill="none" stroke="{"#ff5f57" if k == 6 else "#fff"}" '
+               f'stroke-opacity="{1 if k == 6 else .88}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>')
+FS_BTN = (BAR_X + 58, TTOP + 20)                        # the Full screen button's centre
+bar.append(f'<g class="tip"><rect x="{FS_BTN[0] - 54}" y="{TTOP + 46}" width="108" height="17" rx="4" fill="#f5f5f7" stroke="#000" '
+           f'stroke-opacity=".15" filter="url(#soft)"/><text x="{FS_BTN[0]}" y="{TTOP + 57.5}" font-family="{UI}" font-size="9.5" '
+           f'fill="#1d1d1f" text-anchor="middle">Full screen (⌃⌥⌘F)</text></g>')
 d.append(f'<g class="bar">{"".join(bar)}</g>')
-anim("pill", [(0, "opacity:1"), (BAR_OPEN, "opacity:1"), (BAR_OPEN + 0.12, "opacity:0"), (BAR_CLOSE + 0.1, "opacity:0"), (BAR_CLOSE + 0.3, "opacity:1"), (T, "opacity:1")])
-anim("bar", [(0, "opacity:0;transform:scaleY(.4)"), (BAR_OPEN, "opacity:0;transform:scaleY(.4)"),
-             (BAR_OPEN + 0.18, "opacity:1;transform:scaleY(1)"), (BAR_CLOSE, "opacity:1;transform:scaleY(1)"),
-             (BAR_CLOSE + 0.18, "opacity:0;transform:scaleY(.4)"), (T, "opacity:0;transform:scaleY(.4)")],
-     extra=f"transform-origin:{px}px {py - 7}px")
+# pointing at the capsule swaps it for the bar at once, as in the app; it tucks away after the click
+anim("pill", [(0, "opacity:1"), (BAR_OPEN, "opacity:1"), (BAR_OPEN + 0.06, "opacity:0"), (BAR_CLOSE + 0.1, "opacity:0"), (BAR_CLOSE + 0.16, "opacity:1"), (T, "opacity:1")])
+anim("bar", [(0, "opacity:0"), (BAR_OPEN, "opacity:0"), (BAR_OPEN + 0.06, "opacity:1"), (BAR_CLOSE + 0.1, "opacity:1"), (BAR_CLOSE + 0.16, "opacity:0"), (T, "opacity:0")])
 show("hov", FS_HOVER + 0.05, FS_CLICK + 0.1, 0.08)
 show("tip", FS_HOVER + 0.2, FS_CLICK, 0.12)
 
@@ -295,13 +303,13 @@ anim("vw", [(0, "opacity:0;transform:scale(.96)"), (VW_IN, "opacity:0;transform:
 
 # ---------------------------------------------------------------- pointer and clicks
 term_click = (TX + 330, TY + 190)
-pts = [(0, (740, 540)), (0.35, (740, 540)), (1.35, BTN), (2.9, BTN), (3.5, term_click), (PILL_HOVER - 0.6, term_click),
-       (PILL_HOVER, (px, py + 3)), (BAR_OPEN + 0.25, (px, py + 3)), (FS_HOVER, (hover_x + 2, py + 11)),
-       (FS_CLICK + 0.15, (hover_x + 2, py + 11)), (FS_T1 + 0.2, (720, 470)), (VW_OUT, (720, 470)),
+pts = [(0, (740, 540)), (0.35, (740, 540)), (1.35, ROW), (2.9, ROW), (3.5, term_click), (PILL_HOVER - 0.6, term_click),
+       (PILL_HOVER, (TCX + 4, TTOP + 12)), (BAR_OPEN + 0.25, (TCX + 4, TTOP + 12)), (FS_HOVER, (FS_BTN[0] + 2, FS_BTN[1] + 2)),
+       (FS_CLICK + 0.15, (FS_BTN[0] + 2, FS_BTN[1] + 2)), (FS_T1 + 0.2, (720, 470)), (VW_OUT, (720, 470)),
        (T, (740, 540))]
 anim("ptr", [(t, f"transform:translate({x}px,{y}px);animation-timing-function:cubic-bezier(.45,0,.25,1)") for t, (x, y) in pts])
 body.append('<g class="ptr"><use href="#arrow"/></g>')
-for name, (x, y), t in [("r1", BTN, CLICK), ("r2", term_click, 3.62), ("r3", (hover_x + 2, py + 11), FS_CLICK)]:
+for name, (x, y), t in [("r1", ROW, CLICK), ("r2", term_click, 3.62), ("r3", (FS_BTN[0] + 2, FS_BTN[1] + 2), FS_CLICK)]:
     body.append(f'<g transform="translate({x} {y})"><circle class="{name}" r="14" fill="#fff" fill-opacity=".35" stroke="#fff" stroke-opacity=".8"/></g>')
     anim(name, [(0, "opacity:0;transform:scale(.3)"), (t, "opacity:0;transform:scale(.3)"), (t + 0.02, "opacity:1;transform:scale(.4)"),
                 (t + 0.45, "opacity:0;transform:scale(1.25)"), (T, "opacity:0;transform:scale(1.25)")])

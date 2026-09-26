@@ -37,4 +37,22 @@ bash packaging/build-deb.sh           # → ../dist/darpan_<ver>_amd64.deb
 ```bash
 python3 tools/test_host.py            # 20 protocol/input/clipboard/upload/latency checks
 node tools/webclient_test.mjs         # 17 checks: headless Chrome ↔ real host
+python3 tools/apt_test.py             # the release's APT index, as installed hosts use it
 ```
+
+## Updates
+
+Installed hosts update through the system's updater. The package ships
+`/etc/apt/sources.list.d/darpan.sources`, pointing at `releases/latest/download/` of this repository, and
+the public keyring `/etc/apt/keyrings/darpan-archive-keyring.gpg` (both conffiles: `apt remove` keeps
+them, `purge` removes them). So each release carries, next to
+`darpan_amd64.deb`, a flat APT index made by
+
+```bash
+GNUPGHOME=~/.config/darpan-release/gnupg bash packaging/apt-index.sh ../dist/darpan_<ver>_amd64.deb <dir>
+```
+
+Upload `Packages` and `InRelease` from `<dir>` with the .deb to the **draft** release, then publish it,
+so `latest` switches to all three at once. The private key stays on the release
+machine: keep a backup of `~/.config/darpan-release`, because with a new key existing installs stop
+trusting new releases until the package is reinstalled by hand.
