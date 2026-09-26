@@ -20,6 +20,8 @@ final class ConnectModel: ObservableObject {
     @Published private(set) var countdown = 0
     /// Bumped to move the focus to the password field.
     @Published private(set) var focusPassword = 0
+    /// The computer picked in the list that still needs its password.
+    @Published private(set) var selected: String?
 
     weak var handler: ConnectHandler?
     private let settings = Settings.shared
@@ -46,7 +48,13 @@ final class ConnectModel: ObservableObject {
                 return
             }
         }
+        #if DEBUG
+        // Test builds never read a saved sign-in on their own: each rebuilt binary would make
+        // macOS ask for Keychain access.
+        return
+        #else
         if hasSavedKey { connect() }
+        #endif
     }
 
     /// `keychain` false: neither save nor delete a sign-in (environment-driven test runs).
@@ -124,6 +132,20 @@ final class ConnectModel: ObservableObject {
         handler?.connect(to: a, proxy: proxy, password: pw, saved: saved, remember: remember)
     }
 
+    /// A click in the computer list: connect at once if its sign-in is saved, else ask for the password.
+    func open(_ origin: String) {
+        address = origin
+        password = ""
+        if Keychain.contains(origin) {
+            selected = nil
+            connect()
+        } else {
+            selected = origin
+            show("", error: false)
+            focusPassword += 1
+        }
+    }
+
     func cancel() {
         attempt += 1
         connecting = false
@@ -156,7 +178,10 @@ final class ConnectModel: ObservableObject {
             }
         }
         showFailure()
-        if failure.wantsPassword { focusPassword += 1 }
+        if failure.wantsPassword {
+            selected = address                              // the list shows the password field for it
+            focusPassword += 1
+        }
     }
 
     func connected() {
@@ -206,98 +231,211 @@ final class ConnectModel: ObservableObject {
 
 struct ConnectView: View {
     @ObservedObject var model: ConnectModel
+    @ObservedObject var discovery: Discovery
     @ObservedObject var settings = Settings.shared
+    @ObservedObject var net = Tailnet.shared
     @FocusState private var focus: Field?
+    @State private var manual = false
 
     private enum Field { case address, password }
 
     var body: some View {
         VStack(spacing: 0) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable().frame(width: 72, height: 72)
-            Text("Darpan").font(.system(size: 22, weight: .semibold)).padding(.top, 6)
-            Text("Your Linux desktop, on this Mac").foregroundStyle(.secondary).padding(.top, 2)
-
-            VStack(alignment: .leading, spacing: 12) {
-                PrivateNetworkRow(net: Tailnet.shared, settings: settings)
-                labeled("Address") {
-                    HStack(spacing: 6) {
-                        TextField("machine.tailnet.ts.net", text: $model.address)
-                            .textFieldStyle(.roundedBorder)
-                            .focused($focus, equals: .address)
-                            .disabled(model.connecting)
-                        if !settings.hosts.isEmpty { hostsMenu }
-                    }
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
+            Text("Darpan").font(.system(size: 20, weight: .semibold)).padding(.top, 4)
+            Group {
+                if settings.network == .builtIn && net.phase != .running && !manual {
+                    signIn
+                } else if settings.network == .builtIn && !manual {
+                    computers
+                } else {
+                    manualEntry
                 }
-                labeled("Password") {
-                    SecureField(model.hasSavedKey ? "Saved on this Mac" : "", text: $model.password)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($focus, equals: .password)
-                        .disabled(model.connecting)
-                }
-                Toggle("Remember on this Mac", isOn: $settings.remember)
-                    .toggleStyle(.checkbox)
-                    .disabled(model.connecting)
             }
-            .padding(.top, 20)
-
-            Button {
-                model.connecting ? model.cancel() : model.connect()
-            } label: {
-                HStack(spacing: 8) {
-                    if model.connecting { ProgressView().controlSize(.small) }
-                    Text(model.connecting ? "Cancel" : "Connect")
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .controlSize(.large)
-            .keyboardShortcut(model.connecting ? .cancelAction : .defaultAction)
-            .disabled(!model.connecting && model.countdown > 0)
             .padding(.top, 18)
 
-            Text(model.message)
-                .font(.system(size: 12))
-                .foregroundStyle(model.isError ? Color(nsColor: .systemRed) : .secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(minHeight: 32)
-                .padding(.top, 10)
-
-            if model.showTailscaleHint && settings.network == .system { tailscaleHint.padding(.top, 4) }
+            if !model.message.isEmpty {
+                Text(model.message)
+                    .font(.system(size: 12))
+                    .foregroundStyle(model.isError ? Color(nsColor: .systemRed) : .secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+            }
+            if model.connecting {
+                Button("Cancel") { model.cancel() }.keyboardShortcut(.cancelAction).padding(.top, 8)
+            }
+            if model.showTailscaleHint && settings.network == .system { tailscaleHint.padding(.top, 8) }
+            footer.padding(.top, 18)
         }
-        .padding(28)
+        .padding(24)
         .frame(width: 360)
-        .onAppear { focus = model.address.isEmpty ? .address : .password }
         .onChange(of: model.focusPassword) { focus = .password }
+        .onChange(of: settings.network) { if settings.network == .builtIn { net.start() } }
     }
 
-    private func labeled<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
-            content()
+    // MARK: - not signed in to the private network
+
+    @ViewBuilder private var signIn: some View {
+        VStack(spacing: 12) {
+            switch net.phase {
+            case .needsLogin(let url, let again):
+                Text(again ? "Your Tailscale sign-in on this Mac has ended. Sign in again to reach your computers."
+                           : "Darpan reaches your Linux computers over Tailscale, your private network. Sign in with the same account you use on them.")
+                    .font(.system(size: 13)).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                Button { if let url { NSWorkspace.shared.open(url) } } label: {
+                    Text(again ? "Sign in again" : "Sign in with Tailscale").frame(maxWidth: .infinity)
+                }
+                .controlSize(.large).keyboardShortcut(.defaultAction).disabled(url == nil)
+                Text("Tip: in the Tailscale admin console, turn off key expiry for this Mac so it stays signed in.")
+                    .font(.system(size: 11)).foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            case .failed(let m):
+                Text(m).font(.system(size: 12)).foregroundStyle(Color(nsColor: .systemRed))
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                Button("Try Again") { net.start() }.controlSize(.large)
+            case .starting, .off, .running:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Joining your private network…").font(.system(size: 13)).foregroundStyle(.secondary)
+                }
+                .frame(height: 60)
+            }
         }
     }
 
-    private var hostsMenu: some View {
-        Menu {
-            ForEach(settings.hosts, id: \.self) { h in
-                Button(h.replacingOccurrences(of: "https://", with: "")) { model.address = h }
+    // MARK: - the computer list
+
+    private var computers: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("YOUR COMPUTERS").font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(.secondary)
+            if discovery.computers.isEmpty {
+                VStack(spacing: 8) {
+                    if discovery.scanned {
+                        Text("No computers with Darpan found yet.").font(.system(size: 13))
+                        Text("Install Darpan on your Linux computer and sign it in to the same Tailscale account. It shows up here by itself.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        ProgressView().controlSize(.small)
+                        Text("Looking for your computers…").font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 16)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(discovery.computers.enumerated()), id: \.element.id) { i, c in
+                        if i > 0 { Divider().padding(.leading, 30) }
+                        row(c)
+                        if model.selected == c.origin && !model.hasSavedKey { passwordEntry.padding([.horizontal, .bottom], 12) }
+                    }
+                }
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
             }
-            Divider()
-            if model.hasSavedKey {
-                Button("Forget Saved Sign-in") { model.forgetSavedKey() }
-            }
-            if let current = (try? HostAddress(parsing: model.address))?.origin, settings.hosts.contains(current) {
-                Button("Remove from List") { model.removeFromList(current) }
-            }
-        } label: {
-            Image(systemName: "clock.arrow.circlepath")
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Recent computers")
-        .disabled(model.connecting)
+    }
+
+    private func row(_ c: Discovery.Computer) -> some View {
+        let saved = Keychain.contains(c.origin)
+        let busy = model.connecting && model.address == c.origin
+        return Button { model.open(c.origin) } label: {
+            HStack(spacing: 10) {
+                Circle().fill(c.online ? Color.green : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(c.name).font(.system(size: 13, weight: .medium))
+                    Text(!c.online ? "Offline" : saved ? "Ready to connect" : "Needs the password once")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if busy { ProgressView().controlSize(.small) } else { Image(systemName: "chevron.right").foregroundStyle(.tertiary) }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(model.connecting || model.countdown > 0)
+        .help(c.origin)
+        .contextMenu {
+            Button("Remove from List") { model.removeFromList(c.origin) }
+        }
+    }
+
+    private var passwordEntry: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SecureField("Password", text: $model.password)
+                .textFieldStyle(.roundedBorder)
+                .focused($focus, equals: .password)
+                .onSubmit { model.connect() }
+            Text("It's shown in Darpan on that computer, or run `darpan password` there.")
+                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Toggle("Remember on this Mac", isOn: $settings.remember).toggleStyle(.checkbox).font(.system(size: 12))
+                Spacer()
+                Button("Connect") { model.connect() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(model.password.isEmpty || model.connecting || model.countdown > 0)
+            }
+        }
+        .onAppear { focus = .password }
+    }
+
+    // MARK: - typing an address
+
+    private var manualEntry: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Address").font(.system(size: 12)).foregroundStyle(.secondary)
+                TextField("machine.tailnet.ts.net", text: $model.address)
+                    .textFieldStyle(.roundedBorder).focused($focus, equals: .address).disabled(model.connecting)
+                Text("Shown in Darpan on your Linux computer, or run `darpan status` there.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Password").font(.system(size: 12)).foregroundStyle(.secondary)
+                SecureField(model.hasSavedKey ? "Saved on this Mac" : "", text: $model.password)
+                    .textFieldStyle(.roundedBorder).focused($focus, equals: .password).disabled(model.connecting)
+                Text("Also shown there, or run `darpan password`.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Toggle("Remember on this Mac", isOn: $settings.remember).toggleStyle(.checkbox).font(.system(size: 12))
+            Button { model.connect() } label: { Text("Connect").frame(maxWidth: .infinity) }
+                .controlSize(.large).keyboardShortcut(.defaultAction)
+                .disabled(model.connecting || model.countdown > 0)
+        }
+        .onAppear { focus = model.address.isEmpty ? .address : .password }
+    }
+
+    // MARK: - footer
+
+    private var footer: some View {
+        HStack {
+            if settings.network == .builtIn {
+                Button(manual ? "Your computers" : "Other address…") { manual.toggle() }
+                    .buttonStyle(.link).font(.system(size: 12))
+            }
+            Spacer()
+            Menu {
+                Picker("Network", selection: $settings.network) {
+                    Text("Built-in Tailscale").tag(NetworkMode.builtIn)
+                    Text("This Mac’s network (Tailscale app, VPN…)").tag(NetworkMode.system)
+                }
+                .pickerStyle(.inline)
+                if settings.network == .builtIn, let account = net.account {
+                    Divider()
+                    Text("Signed in as \(account)")
+                }
+                if model.hasSavedKey {
+                    Divider()
+                    Button("Forget Saved Password for This Computer") { model.forgetSavedKey() }
+                }
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("Network and account")
+        }
     }
 
     private var tailscaleHint: some View {
@@ -320,9 +458,10 @@ struct ConnectView: View {
 
 final class ConnectWindowController: NSWindowController {
     let model = ConnectModel()
+    private let discovery = Discovery()
 
     init() {
-        let host = NSHostingController(rootView: ConnectView(model: model))
+        let host = NSHostingController(rootView: ConnectView(model: model, discovery: discovery))
         host.sizingOptions = [.preferredContentSize]
         let w = NSWindow(contentViewController: host)
         w.styleMask = [.titled, .closable, .miniaturizable]
@@ -348,77 +487,13 @@ final class ConnectWindowController: NSWindowController {
         if visible {
             if Settings.shared.network == .builtIn { Tailnet.shared.start() }
             Tailnet.shared.watch()
+            discovery.start()
         } else {
             Tailnet.shared.unwatch()
+            discovery.stop()
         }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 }
 
-/// Status of the built-in tailnet node, with sign-in; or the switch to the Mac's own network.
-struct PrivateNetworkRow: View {
-    @ObservedObject var net: Tailnet
-    @ObservedObject var settings: Settings
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Private network").font(.system(size: 12)).foregroundStyle(.secondary)
-                Spacer()
-                Picker("Network", selection: $settings.network) {
-                    Text("Built-in").tag(NetworkMode.builtIn)
-                    Text("This Mac’s").tag(NetworkMode.system)
-                }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
-                .help("Built-in: Darpan joins your tailnet itself. This Mac’s: use the Tailscale app or another network.")
-            }
-            if settings.network == .builtIn {
-                HStack(spacing: 8) {
-                    Circle().fill(dot).frame(width: 8, height: 8)
-                    Text(status).font(.system(size: 12)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    action
-                }
-                .padding(.horizontal, 10).padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.05)))
-                if case .needsLogin = net.phase {
-                    Text("After signing in, turn off key expiry for this device at login.tailscale.com/admin/machines, so it stays connected.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
-    private var dot: Color {
-        switch net.phase {
-        case .running: return .green
-        case .starting: return .yellow
-        case .needsLogin: return .orange
-        case .failed: return .red
-        case .off: return .gray
-        }
-    }
-
-    private var status: String {
-        switch net.phase {
-        case .off: return "Not connected"
-        case .starting: return "Connecting…"
-        case .needsLogin(_, let again): return again ? "Signed out — sign in again" : "Sign in to your tailnet"
-        case .running: return "Connected" + (net.account.map { " as \($0)" } ?? "")
-        case .failed(let m): return m
-        }
-    }
-
-    @ViewBuilder private var action: some View {
-        switch net.phase {
-        case .off, .failed:
-            Button("Connect") { net.start() }.controlSize(.small)
-        case .needsLogin(let url, let again):
-            Button(again ? "Sign in again" : "Sign in") { if let url { NSWorkspace.shared.open(url) } }
-                .controlSize(.small).disabled(url == nil)
-        case .starting, .running:
-            EmptyView()
-        }
-    }
-}

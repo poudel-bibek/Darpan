@@ -203,7 +203,7 @@ final class Tailnet: ObservableObject {
     }
 
     struct Status {
-        struct Peer { let dnsName: String; let curAddr: String; let relay: String }
+        struct Peer { let dnsName: String; let hostName: String; let os: String; let online: Bool; let curAddr: String; let relay: String }
         let backendState: String
         let authURL: URL?
         let account: String?
@@ -224,7 +224,8 @@ final class Tailnet: ObservableObject {
             account = u["LoginName"] as? String
         }
         let peers = ((obj["Peer"] as? [String: Any]) ?? [:]).values.compactMap { $0 as? [String: Any] }.map {
-            Status.Peer(dnsName: $0["DNSName"] as? String ?? "", curAddr: $0["CurAddr"] as? String ?? "",
+            Status.Peer(dnsName: $0["DNSName"] as? String ?? "", hostName: $0["HostName"] as? String ?? "",
+                        os: $0["OS"] as? String ?? "", online: $0["Online"] as? Bool ?? false, curAddr: $0["CurAddr"] as? String ?? "",
                         relay: $0["Relay"] as? String ?? "")
         }
         let url = (obj["AuthURL"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }

@@ -33,8 +33,10 @@ final class Settings: ObservableObject {
     @Published var showStats: Bool { didSet { d.set(showStats, forKey: "showStats") } }
     /// ⌘Tab, ⌘Space, Mission Control… go to the remote too (needs Accessibility permission).
     @Published var captureSystemKeys: Bool { didSet { d.set(captureSystemKeys, forKey: "captureSystemKeys") } }
-    /// Horizontal position of the toolbar pill, as a fraction of the window width.
-    @Published var pillX: Double { didSet { d.set(pillX, forKey: "pillX") } }
+    /// Where the toolbar sits: its centre as a fraction of the window width, its top as a fraction
+    /// of the height. Top right by default, clear of the notch and of the remote's window buttons.
+    @Published var toolbarX: Double { didSet { d.set(toolbarX, forKey: "toolbarX") } }
+    @Published var toolbarY: Double { didSet { d.set(toolbarY, forKey: "toolbarY") } }
     @Published var remember: Bool { didSet { d.set(remember, forKey: "remember") } }
     /// Play the remote computer's sound.
     @Published var sound: Bool { didSet { d.set(sound, forKey: "sound") } }
@@ -45,7 +47,7 @@ final class Settings: ObservableObject {
     @Published private(set) var hosts: [String] { didSet { d.set(hosts, forKey: "hosts") } }
 
     private init() {
-        d.register(defaults: ["quality": 0, "fps": 60, "scrollSpeed": 1.0, "pillX": 0.5, "remember": true, "sound": true])
+        d.register(defaults: ["quality": 0, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true])
         scale = ScaleMode(rawValue: d.string(forKey: "scale") ?? "") ?? .fit
         let q = d.integer(forKey: "quality")
         quality = Self.qualities.contains { $0.kbps == q } ? q : 0
@@ -56,7 +58,8 @@ final class Settings: ObservableObject {
         invertScroll = d.bool(forKey: "invertScroll")
         showStats = d.bool(forKey: "showStats")
         captureSystemKeys = d.bool(forKey: "captureSystemKeys")
-        pillX = min(0.95, max(0.05, d.double(forKey: "pillX")))
+        toolbarX = min(1, max(0, d.double(forKey: "toolbarX")))
+        toolbarY = min(1, max(0, d.double(forKey: "toolbarY")))
         remember = d.bool(forKey: "remember")
         sound = d.bool(forKey: "sound")
         network = NetworkMode(rawValue: d.string(forKey: "network") ?? "") ?? .builtIn
