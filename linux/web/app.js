@@ -1319,7 +1319,7 @@
     writeJSON('darpan.tipSeen', true);
   }
   $('tipOk').addEventListener('click', hideTip);
-  bar.querySelector('.tools').addEventListener('click', hideTip);
+  bar.querySelector('.tools').addEventListener('click', () => { if (!tip.hidden) { expand(); hideTip(); } });   // open, with its panel
 
   for (const b of document.querySelectorAll('[data-panel]')) b.addEventListener('click', () => togglePanel(b.dataset.panel, b));
   for (const b of document.querySelectorAll('[data-combo]')) b.addEventListener('click', () => combo(b.dataset.combo));

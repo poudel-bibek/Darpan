@@ -357,6 +357,16 @@ try {
   const moved = (await ev(`parseFloat(document.getElementById('bar').style.left)`)) - x0;
   ok('drag by the grip: moves, ends the tip', tip3 && !tip4.shown && tip4.seen === 'true' && Math.abs(moved - 80) <= 2,
      `moved ${moved} px; ${JSON.stringify(tip4)}`);
+  // a toolbar button ends it too (here clicked without a pointer, as from the keyboard): the toolbar
+  // stays open with its panel
+  await ev(`localStorage.removeItem('darpan.tipSeen')`);
+  await reload();
+  await until(`(${tipState}).shown`);
+  await ev(`document.querySelector('[data-panel=display]').click()`);
+  const tip5 = await ev(`(() => ({ tip: !document.getElementById('tip').hidden, panel: !document.getElementById('panel-display').hidden,
+    tools: document.querySelector('.tools').offsetWidth > 0 }))()`);
+  ok('a toolbar button ends the tip, the toolbar stays open', !tip5.tip && tip5.panel && tip5.tools, JSON.stringify(tip5));
+  await ev(`document.querySelector('[data-panel=display]').click()`);   // and closes its panel again
   await reload();
   await sleep(800);
   ok('the tip stays away after a reload', !(await ev(tipState)).shown);
