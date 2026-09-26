@@ -12,17 +12,25 @@ MONO = "ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace"
 ADV = 0.6                                  # monospace advance (em)
 
 TX, TY, TW, TH = 16, 40, 36, 60            # the Linux computer
-LINK_Y, LA, LB = 70, 56, 101               # the link: height, Linux end, Mac end
-MX, MY, MW, MH = 104, 12, 182, 117         # the Mac's display, bezel included
+MX, MY, MW, MH = 104, 12, 182, 117         # the Mac's display, bezel included, in the Mac's own units
 SX, SY, SW, SH = 108, 16, 174, 109         # its screen
+MAC_S, MAC_T = 0.9, (28.6, 7.0)            # the Mac is drawn at 90 %: x' = 28.6 + 0.9 x, y' = 7 + 0.9 y
+LINK_Y, LA = 70, 56                        # the link: height, Linux end
+LB = round(MAC_T[0] + MAC_S * MX) - 3      # its Mac end, just before the Mac
 
 DEFS = (
     '<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#141b3d"/>'
     '<stop offset=".6" stop-color="#2d2466"/><stop offset="1" stop-color="#5a2f6e"/></linearGradient>'
     '<linearGradient id="lin" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2c0f2a"/>'
     '<stop offset=".6" stop-color="#6b1d4b"/><stop offset="1" stop-color="#c2462f"/></linearGradient>'
-    '<linearGradient id="wall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3d6fd6"/>'
-    '<stop offset="1" stop-color="#a26fd8"/></linearGradient>'
+    '<linearGradient id="wall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2b4fc2"/>'
+    '<stop offset=".55" stop-color="#6a4fd0"/><stop offset="1" stop-color="#b45fc8"/></linearGradient>'
+    '<radialGradient id="glow1"><stop offset="0" stop-color="#ff9ad5" stop-opacity=".6"/>'
+    '<stop offset="1" stop-color="#ff9ad5" stop-opacity="0"/></radialGradient>'
+    '<radialGradient id="glow2"><stop offset="0" stop-color="#7cd3ff" stop-opacity=".55"/>'
+    '<stop offset="1" stop-color="#7cd3ff" stop-opacity="0"/></radialGradient>'
+    '<linearGradient id="alu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e6e8ec"/>'
+    '<stop offset="1" stop-color="#a4a8b1"/></linearGradient>'
     '<filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1.2" '
     'stdDeviation="1.4" flood-color="#000" flood-opacity=".35"/></filter>'
     f'<clipPath id="scr"><rect x="{SX}" y="{SY}" width="{SW}" height="{SH}"/></clipPath>')
@@ -109,14 +117,40 @@ def link(s, cls=""):
           '<circle cy=".6" r="1.4" fill="#3b2e87"/><rect x="-.6" y=".6" width="1.2" height="2.8" rx=".5" fill="#3b2e87"/></g></g>')
 
 
-def mac(s, content=""):
-    menu = "".join(f'<rect x="{SX + x}" y="{SY + 1.6}" width="{w}" height="1.8" rx=".9" fill="#1d1d1f" fill-opacity=".5"/>'
-                   for x, w in ((5, 3), (11, 8), (22, 6), (31, 7), (SW - 20, 5), (SW - 11, 7)))
-    s.add(f'<rect x="{MX}" y="{MY}" width="{MW}" height="{MH}" rx="7" fill="#0e0e11"/>',
-          f'<g clip-path="url(#scr)"><rect x="{SX}" y="{SY}" width="{SW}" height="{SH}" fill="url(#wall)"/>'
-          f'<rect x="{SX}" y="{SY}" width="{SW}" height="5" fill="#fff" fill-opacity=".3"/>{menu}{content}</g>',
-          f'<path d="M{MX - 7} {MY + MH}h{MW + 14}l-3.5 6h{-(MW + 7)}z" fill="#c9ccd3"/>',
-          f'<rect x="{MX + MW / 2 - 12}" y="{MY + MH}" width="24" height="2" rx="1" fill="#a3a7b0"/>')
+def mac(s, content="", over=""):
+    """A MacBook running macOS: aluminium rim, notch, menu bar and Dock. `content` (windows) is drawn
+    on the screen under the Dock and menu bar; `over` floats on top (keys pressed, the pointer).
+    Both use the Mac's own units; the whole Mac is drawn at 90 %."""
+    notch = SX + SW / 2 - 11
+    menu = (f'<rect x="{SX}" y="{SY}" width="{SW}" height="6" fill="#fff" fill-opacity=".22"/>'
+            + text(SX + 6, SY + 4.4, "Darpan", 3.9, "#fff", weight=700)
+            + "".join(text(SX + x, SY + 4.4, w, 3.9, "#fff") for x, w in ((25, "File"), (34.5, "Edit"), (44, "View"), (54, "Window")))
+            + f'<g fill="none" stroke="#fff" stroke-width=".6" stroke-linecap="round" transform="translate({SX + SW - 34} {SY + 4.3})">'
+              '<path d="M-2.4-1.6a3.4 3.4 0 0 1 4.8 0"/><path d="M-1.3-.5a1.8 1.8 0 0 1 2.6 0"/></g>'
+            + f'<circle cx="{SX + SW - 34}" cy="{SY + 4.4}" r=".45" fill="#fff"/>'
+            + f'<rect x="{SX + SW - 27}" y="{SY + 1.9}" width="7" height="3.3" rx=".9" fill="none" stroke="#fff" stroke-width=".5"/>'
+            + f'<rect x="{SX + SW - 26.2}" y="{SY + 2.7}" width="4.6" height="1.7" rx=".4" fill="#fff"/>'
+            + text(SX + SW - 5, SY + 4.4, "9:41", 3.9, "#fff", "end", 600)
+            + f'<path d="M{notch} {SY}h22v3a2 2 0 0 1-2 2h-18a2 2 0 0 1-2-2z" fill="#0e0e11"/>')
+    icons = ("#2f8cff", "#34c759", "#ff9f0a", "#bf5af2", "#ff453a", "#64d2ff")
+    dw = (len(icons) + 1) * 9 - 2.6 + 6
+    dx, dy = SX + SW / 2 - dw / 2, SY + SH - 11.4
+    dock = (f'<rect x="{dx:.1f}" y="{dy:.1f}" width="{dw:.1f}" height="9.4" rx="3.2" fill="#fff" fill-opacity=".22" '
+            'stroke="#fff" stroke-opacity=".35" stroke-width=".4"/>'
+            + "".join(f'<rect x="{dx + 3 + i * 9:.1f}" y="{dy + 1.5:.1f}" width="6.4" height="6.4" rx="1.6" fill="{c}"/>'
+                      for i, c in enumerate(icons))
+            + f'<circle cx="{dx + 3 + len(icons) * 9 + 3.2:.1f}" cy="{dy + 4.7:.1f}" r="3" fill="#1d2a6b" stroke="#e8b04a" stroke-width=".9"/>'
+            + f'<circle cx="{dx + 3 + len(icons) * 9 + 3.2:.1f}" cy="{dy + 8.6:.1f}" r=".5" fill="#fff"/>')
+    wall = (f'<rect x="{SX}" y="{SY}" width="{SW}" height="{SH}" fill="url(#wall)"/>'
+            f'<ellipse cx="{SX + 30}" cy="{SY + SH - 10}" rx="95" ry="45" fill="url(#glow1)"/>'
+            f'<ellipse cx="{SX + SW - 25}" cy="{SY + 25}" rx="80" ry="40" fill="url(#glow2)"/>')
+    s.add(f'<g transform="translate({MAC_T[0]} {MAC_T[1]}) scale({MAC_S})">',
+          f'<rect x="{MX - 1.2}" y="{MY - 1.2}" width="{MW + 2.4}" height="{MH + 1.2}" rx="8" fill="#b9bdc6"/>',
+          f'<rect x="{MX}" y="{MY}" width="{MW}" height="{MH}" rx="7" fill="#0e0e11"/>',
+          f'<g clip-path="url(#scr)">{wall}{content}{dock}{menu}</g>',
+          f'<path d="M{MX - 7} {MY + MH}h{MW + 14}l-3.5 6h{-(MW + 7)}z" fill="url(#alu)"/>',
+          f'<rect x="{MX + MW / 2 - 12}" y="{MY + MH}" width="24" height="2" rx="1" fill="#9a9ea8"/>',
+          over, '</g>')
 
 
 def viewer(s, x, y, w, inner="", cls=""):
@@ -203,7 +237,7 @@ def feels_local():
     inner += ['<g class="out">', mono(col(0), l2, "NVIDIA RTX 4090", size, "#7fd1ff"),
               mono(col(0), l3, "41°C    3 %   250 MiB", size), mono(col(0), l4, "$", size, "#8ae234"), '</g>',
               f'<rect class="cur" x="{col(2):.1f}" y="{l1 - 6.6}" width="{adv - .4:.1f}" height="8.2" fill="#e6e6e6" fill-opacity=".85"/>']
-    mac(s, viewer(s, 116, 27, 150, term(8, 8, 134, 56, "".join(inner))))
+    mac(s, viewer(s, 125, 26, 140, term(8, 8, 124, 56, "".join(inner))))
     for i in range(len(cmd)):
         s.show(f"k{i}", t0 + i * dt, 5.6, 0.01)
     s.show("out", enter + 0.08, 5.6, 0.02)
@@ -226,7 +260,7 @@ def private():
     s.add(f'<line x1="{LA}" y1="{LINK_Y}" x2="{LB}" y2="{LINK_Y}" stroke="#7ee787" stroke-opacity=".8" stroke-width="3" '
           'stroke-linecap="round"/>')
     link(s)
-    mac(s, viewer(s, 116, 27, 150, training(8, 8, 134, 44, "bar")))
+    mac(s, viewer(s, 125, 26, 140, training(8, 8, 124, 44, "bar")))
     grow(s, "bar", [(0, .35), (6, .75)])
     packets(s, [(0.2 + i, True) for i in range(5)] + [(0.7 + i, False) for i in range(5)])
     # someone else's device tries to reach the Linux computer and is refused
@@ -250,7 +284,7 @@ def light():
     tower(s, "gpu")
     s.anim("gpu", [(t / 2, "opacity:%s" % (".55" if t % 2 else "1")) for t in range(17)])
     link(s, "ln")
-    mac(s, viewer(s, 116, 27, 150, training(8, 8, 134, 44, "bar"), "vw"))
+    mac(s, viewer(s, 125, 26, 140, training(8, 8, 124, 44, "bar"), "vw"))
     grow(s, "bar", [(0, .3), (8, .7)])
     on, off = 3.2, 6.3                              # the Mac disconnects, then connects again
     s.anim("vw", [(0, "opacity:1"), (on, "opacity:1"), (on + .3, "opacity:0"), (off, "opacity:0"), (off + .3, "opacity:1"), (8, "opacity:1")])
@@ -323,16 +357,16 @@ def clipboard():
              + text(nx + 20, ny + 29, "87.8%", 7, "#1d1d1f", cls="paste1", length=20)
              + f'<rect class="sel2" x="{nx + 4.4}" y="{ny + 38.2}" width="39.2" height="8.4" fill="#b3d4ff"/>'
              + text(nx + 5, ny + 44.6, "nvidia-smi", 7, "#1d1d1f", length=38))
-    mac(s, viewer(s, 112, 26, 108, terminal) + notes)
+    keys = (keycap(166, 27, "⌘C", "c1") + keycap(nx + 31, ny + 1, "⌘V", "v1")
+            + keycap(nx + 31, ny + 1, "⌘C", "c2") + keycap(166, 27, "⌘V", "v2"))
+    mac(s, viewer(s, 112, 26, 108, terminal) + notes, keys)
     s.show("sel1", 0.4, 2.5, 0.08)
-    s.add(keycap(166, 27, "⌘C", "c1"), keycap(nx + 31, ny + 1, "⌘V", "v1"))
     s.show("c1", 0.7, 1.4, 0.1)
     s.add(doc("d1"))
     s.move("d1", [(1.0, LA, LINK_Y), (1.8, LB, LINK_Y)])
     s.show("v1", 1.8, 2.5, 0.1)
     s.show("paste1", 2.0, 5.6, 0.05)
     s.show("sel2", 2.9, 4.9, 0.08)
-    s.add(keycap(nx + 31, ny + 1, "⌘C", "c2"), keycap(166, 27, "⌘V", "v2"))
     s.show("c2", 3.1, 3.8, 0.1)
     s.add(doc("d2"))
     s.move("d2", [(3.4, LB, LINK_Y), (4.2, LA, LINK_Y)])
@@ -348,17 +382,15 @@ def files():
     backdrop(s)
     tower(s)
     link(s)
-    fm = window(6, 7, 108, 54, "#242424", "#303030",
-                text(12, 10.6, "Downloads/Darpan", 5, "#fff", opacity=.8)
-                + '<g class="landed">' + pdf(22, 29) + text(22, 44, "report.pdf", 5, "#fff", "middle", opacity=.9) + '</g>'
-                + '<g class="toast"><rect x="30" y="47" width="60" height="9" rx="4.5" fill="#000" fill-opacity=".55"/>'
-                + '<rect x="35" y="50.5" width="50" height="2" rx="1" fill="#fff" fill-opacity=".25"/>'
-                + '<rect class="tbar" x="35" y="50.5" width="50" height="2" rx="1" fill="#5aa0ff"/></g>'
-                + '<rect class="drop" x="1" y="1" width="118" height="65.5" fill="none" stroke="#5aa0ff" stroke-width="2"/>')
+    linux = ('<g class="landed">' + pdf(14, 16) + text(14, 29.5, "report.pdf", 5, "#fff", "middle", 600) + '</g>'
+             + '<g class="toast"><rect x="30" y="54" width="60" height="9" rx="4.5" fill="#000" fill-opacity=".55"/>'
+             + '<rect x="35" y="57.5" width="50" height="2" rx="1" fill="#fff" fill-opacity=".25"/>'
+             + '<rect class="tbar" x="35" y="57.5" width="50" height="2" rx="1" fill="#5aa0ff"/></g>'
+             + '<rect class="drop" x="1" y="1" width="118" height="65.5" fill="none" stroke="#5aa0ff" stroke-width="2"/>')
     desktop = pdf(257, 58) + text(257, 74, "report.pdf", 5.5, "#fff", "middle", 600)
-    mac(s, viewer(s, 112, 26, 120, fm) + desktop)
-    s.add('<g class="drag">' + pdf(0, 0, opacity=.8) + '</g>',
-          '<path class="ptr" d="M0 0v10.5l2.5-2.3 1.7 4 1.8-.8-1.7-3.9h3.4z" fill="#000" stroke="#fff" stroke-width=".8"/>')
+    mac(s, viewer(s, 112, 26, 120, linux) + desktop,
+        '<g class="drag">' + pdf(0, 0, opacity=.8) + '</g>'
+        '<path class="ptr" d="M0 0v10.5l2.5-2.3 1.7 4 1.8-.8-1.7-3.9h3.4z" fill="#000" stroke="#fff" stroke-width=".8"/>')
     s.move("ptr", [(0.3, 262, 60), (0.7, 262, 60), (1.6, 176, 64), (2.2, 176, 64)])
     s.move("drag", [(0.7, 257, 58), (1.6, 171, 62), (1.95, 171, 62)])
     s.show("drop", 1.35, 1.9, 0.1)
@@ -367,7 +399,7 @@ def files():
     s.show("toast", 1.9, 2.9, 0.1)
     grow(s, "tbar", [(0, 0), (1.9, 0), (2.8, 1), (6, 1)])
     s.show("landed", 2.9, 5.6)
-    return s.svg("A file dragged from the Mac desktop onto Darpan's window lands in the Downloads/Darpan folder on the Linux computer")
+    return s.svg("A file dragged from the Mac desktop onto Darpan's window lands on the Linux desktop")
 
 
 FEATURES = {"local": feels_local, "private": private, "light": light, "sound": sound, "clipboard": clipboard, "files": files}
