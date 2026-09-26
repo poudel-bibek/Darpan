@@ -63,7 +63,7 @@ the host encodes fewer frames instead of buffering stale ones.
    ```
    and sends
    ```json
-   {"t":"auth","proof":"<base64 of proof>","client":"Chrome 131 on macOS","ver":"1.0.0"}
+   {"t":"auth","proof":"<base64 of proof>","client":"Darpan 1.4.2 on macOS","ver":"1.4.2","caps":["h264-444"]}
    ```
    `client` is a free-form human-readable description (shown in the host UI). `caps` (optional) lists
    what the client can do beyond the basics: `"h264-444"`, it decodes H.264 High 4:4:4 Predictive
@@ -108,8 +108,9 @@ Host → client, before the first frame of every new stream:
 ```
 `id` (uint16) changes every time the encoder is (re)started. Frames whose stream id does
 not match the latest `stream` message MUST be discarded. The first frame of every stream
-is a key frame. `api` (`"vulkan"`, `"cuda"` or `"software"`) says how the host encodes, for display;
-`chroma` is `420`, or `444` for a client that asked with `h264-444`.
+is a key frame. `api` (`"vulkan"`, `"cuda"` or `"software"`) says how the host encodes, for display.
+`chroma` is `444` when the client asked with `h264-444`, its ceiling is 25000 kbit/s or more and the
+GPU can encode it; otherwise `420`.
 
 `{"t":"stop"}` pauses streaming: no more frames are encoded. The host keeps the encoder warm
 for ~15 s (so `start` resumes instantly with a new `stream` id and a key frame) and then tears

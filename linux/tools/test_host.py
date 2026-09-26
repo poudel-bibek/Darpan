@@ -1250,7 +1250,16 @@ async def run(args, tmp, probe_log):
     c.w.close()
     ok("Full GPU on: CUDA; off: Vulkan", (first, second) == ("full", "lean"), "%s, then %s" % (first, second))
 
-    # full colour: 4:4:4 for a viewer that decodes it, at Higher Quality; below that, 4:2:0 again
+    # full colour: 4:4:4 for a viewer that decodes it, at Higher Quality; below that, 4:2:0 again. A viewer
+    # that doesn't say it decodes 4:4:4 never gets it.
+    plain = await WS.connect("127.0.0.1", args.port)
+    _, h = await plain.recv()
+    plain.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py 420"})
+    while (await asyncio.wait_for(plain.recv(), 10))[1].get("t") != "ok":
+        pass
+    plain.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 30000})
+    _, plain_stream = await pump(plain, 3.0, "stream")
+    plain.w.close()
     c = await WS.connect("127.0.0.1", args.port)
     _, h = await c.recv()
     c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py 444", "caps": ["h264-444"]})
@@ -1277,6 +1286,8 @@ async def run(args, tmp, probe_log):
     ok("full colour: 4:4:4 at Higher Quality", full and full.get("chroma") == 444 and worst444 <= 6 and
        lower and lower.get("chroma") == 420, "%s, colour error %d/255; then %s" % (
            full and {k: full.get(k) for k in ("chroma", "api")}, worst444, lower and lower.get("chroma")))
+    ok("full colour only when asked for", plain_stream and plain_stream.get("chroma") == 420,
+       "a viewer without h264-444 at 30 Mbit/s: %s" % (plain_stream and plain_stream.get("chroma")))
 
     # each kind of client gets back the resolution it chose last time; Native forgets it. The test display
     # offers only 1920×1080, so count the host's switches to it.
