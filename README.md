@@ -88,7 +88,7 @@ shortcuts stay on the Mac:
 
 A minimised or hidden viewer stops the video. More in [mac/README.md](mac/README.md).
 
-SHA-256 of `Darpan.dmg` 1.0.0: `b9c9670ec76449323028ab91497b06a31ea9a770670f8bd92989155c9fdf0e67`
+SHA-256 of `Darpan.dmg` 1.0.0: `9e7f47ac5c0c7a9a4f023818f214beae957e28ab9f3766a60286d460b43573d0`
 
 ## Everyday commands
 
