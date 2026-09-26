@@ -167,6 +167,181 @@ class WS:
         return ("binary", data)
 
 
+async def http(port, method, target, headers=None, body=b""):
+    """One request on its own connection: (status, lower-cased headers, body)."""
+    r, w = await asyncio.open_connection("127.0.0.1", port)
+    h = {"Host": "127.0.0.1:%d" % port, "Connection": "close"}
+    if body or method in ("PUT", "POST"):
+        h["Content-Length"] = str(len(body))
+    h.update(headers or {})
+    w.write(("%s %s HTTP/1.1\r\n%s\r\n" % (method, target, "".join("%s: %s\r\n" % kv for kv in h.items()))).encode() + body)
+    head = await asyncio.wait_for(r.readuntil(b"\r\n\r\n"), 10)
+    lines = head.decode("latin-1").split("\r\n")
+    hdrs = {k.strip().lower(): v.strip() for k, _, v in (l.partition(":") for l in lines[1:] if l)}
+    data = b"" if method == "HEAD" else await asyncio.wait_for(r.read(), 10)
+    w.close()
+    return int(lines[0].split()[1]), hdrs, data
+
+
+async def fs_checks(port, tmp, pw, ok, caps):
+    """PROTOCOL.md §7.1: every endpoint and every error code."""
+    from urllib.parse import quote
+    ok("ok.caps offers fs", "fs" in caps, str(caps))
+    c = await WS.connect("127.0.0.1", port)
+    _, h = await c.recv()
+    c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py fs"})
+    while (await c.recv())[1].get("t") != "ok":
+        pass
+    c.send({"t": "fs"})
+    m = {}
+    while m.get("t") != "fs":
+        kind, m = await asyncio.wait_for(c.recv(), 5)
+        m = m if kind == "text" else {}
+    tok = m.get("token", "")
+    ok("fs token", len(tok) >= 43 and m.get("home") == tmp and m.get("inbox") == os.path.join(tmp, "Desktop"),
+       "home %s, inbox …%s" % (m.get("home") == tmp, m.get("inbox", "")[-8:]))
+    A = {"Authorization": "Bearer " + tok}
+    base = os.path.join(tmp, "fs-tree")
+    os.makedirs(os.path.join(base, "sub", "deeper"))
+    with open(os.path.join(base, "a.txt"), "wb") as f:
+        f.write(b"hello world\n")
+    with open(os.path.join(base, "sub", "b.bin"), "wb") as f:
+        f.write(bytes(100))
+    open(os.path.join(base, "sub", "deeper", "c.txt"), "w").close()
+    os.symlink("sub", os.path.join(base, "link"))
+    os.mkfifo(os.path.join(base, "pipe"))
+    os.close(os.open(os.fsencode(base) + b"/bad\xff.txt", os.O_CREAT | os.O_WRONLY, 0o644))
+    with open(os.path.join(base, "big.bin"), "wb") as f:
+        f.truncate(256 << 20)                               # sparse: no disk used
+    Q = lambda p: quote(p, safe="")
+    J = lambda b: json.loads(b or b"{}")
+
+    st, hd, b = await http(port, "GET", "/fs/list?path=" + Q(base))
+    ok("fs: no token → 401", st == 401 and J(b).get("e") == "token" and "bearer" in hd.get("www-authenticate", "").lower(), st)
+    st, _, b = await http(port, "GET", "/fs/list?path=" + Q(base), {"Authorization": "Bearer x" + tok[1:]})
+    ok("fs: wrong token → 401", st == 401, st)
+
+    st, _, b = await http(port, "GET", "/fs/list?path=" + Q(base), A)
+    ents = {e["name"]: e for e in J(b).get("entries", [])}
+    order = [e["name"] for e in J(b).get("entries", [])]
+    ok("fs list", st == 200 and set(ents) == {"sub", "link", "a.txt", "pipe", "big.bin"}
+       and ents["sub"]["type"] == "d" and not ents["sub"]["link"] and ents["link"]["type"] == "d" and ents["link"]["link"]
+       and ents["a.txt"]["type"] == "f" and ents["a.txt"]["size"] == 12 and ents["pipe"]["type"] == "o"
+       and order[:2] == ["link", "sub"] and J(b).get("more") is False, "%s %s" % (st, order))
+    st, _, b = await http(port, "GET", "/fs/list?deep=1&path=" + Q(base), A)
+    names = [e["name"] for e in J(b).get("entries", [])]
+    ok("fs deep list", st == 200 and {"sub/b.bin", "sub/deeper", "sub/deeper/c.txt", "link"} <= set(names)
+       and not any(n.startswith("link/") for n in names) and names.index("sub") < names.index("sub/b.bin")
+       and names.index("sub/deeper") < names.index("sub/deeper/c.txt"), str(names)[:90])
+    codes = []
+    for target in ("/fs/list?path=" + Q("fs-tree"), "/fs/list?path=" + Q(base + "/missing"),
+                   "/fs/list?path=" + Q(base + "/a.txt"), "/fs/nope?path=" + Q(base)):
+        st, _, b = await http(port, "GET", target, A)
+        codes.append((st, J(b).get("e")))
+    ok("fs: relative, missing, not a dir, unknown", codes == [(400, "invalid"), (404, "notfound"), (409, "notdir"),
+                                                          (404, "notfound")], str(codes))
+
+    a = os.path.join(base, "a.txt")
+    st, hd, b = await http(port, "GET", "/fs/file?path=" + Q(a), A)
+    etag = hd.get("etag", "")
+    ok("fs get", st == 200 and b == b"hello world\n" and etag.startswith('"') and hd.get("accept-ranges") == "bytes"
+       and "GMT" in hd.get("last-modified", ""), "%s %r" % (st, b[:20]))
+    st, hd, b = await http(port, "HEAD", "/fs/file?path=" + Q(a), A)
+    ok("fs head", st == 200 and hd.get("content-length") == "12" and b == b"", st)
+    got = []
+    for rng, extra in (("bytes=6-", {}), ("bytes=0-4", {}), ("bytes=6-", {"If-Range": etag}),
+                       ("bytes=6-", {"If-Range": '"stale"'})):
+        st, hd, b = await http(port, "GET", "/fs/file?path=" + Q(a), dict(A, Range=rng, **extra))
+        got.append((st, b, hd.get("content-range")))
+    ok("fs range + If-Range", got == [(206, b"world\n", "bytes 6-11/12"), (206, b"hello", "bytes 0-4/12"),
+                                      (206, b"world\n", "bytes 6-11/12"), (200, b"hello world\n", None)], str(got))
+    st, hd, b = await http(port, "GET", "/fs/file?path=" + Q(a), dict(A, Range="bytes=50-"))
+    ok("fs: range past the end → 416", st == 416 and J(b).get("e") == "range" and hd.get("content-range") == "bytes */12", st)
+    t0 = time.monotonic()
+    st1, _, b1 = await http(port, "GET", "/fs/file?path=" + Q(base + "/sub"), A)
+    st2, _, b2 = await http(port, "GET", "/fs/file?path=" + Q(base + "/pipe"), A)
+    ok("fs: directory, pipe refused", (st1, J(b1).get("e"), st2, J(b2).get("e")) == (409, "isdir", 409, "notfile")
+       and time.monotonic() - t0 < 2, "%s %s in %.1f s" % (J(b1), J(b2), time.monotonic() - t0))
+
+    up = os.path.join(base, "up.txt")
+    res = []
+    for mode, body in (("fail", b"abc"), ("fail", b"no"), ("replace", b"xyz"), ("rename", b"123")):
+        st, _, b = await http(port, "PUT", "/fs/file?exists=%s&path=%s" % (mode, Q(up)), A, body)
+        res.append((st, J(b).get("path") or J(b).get("e")))
+    ok("fs put: fail, exists, replace, rename", res == [(201, up), (409, "exists"), (201, up),
+                                                       (201, os.path.join(base, "up (1).txt"))]
+       and open(up, "rb").read() == b"xyz" and open(os.path.join(base, "up (1).txt"), "rb").read() == b"123", str(res))
+    res = []
+    for target in ("/fs/file?path=" + Q(base + "/nodir/x.txt"), "/fs/file?exists=maybe&path=" + Q(up),
+                   "/fs/file?exists=replace&path=" + Q(base + "/sub")):
+        st, _, b = await http(port, "PUT", target, A, b"data")
+        res.append((st, J(b).get("e")))
+    ok("fs put: no parent, bad mode, onto a dir", res == [(404, "notfound"), (400, "invalid"), (409, "isdir")], str(res))
+    r, w = await asyncio.open_connection("127.0.0.1", port)       # an upload cut off halfway leaves nothing
+    w.write(("PUT /fs/file?path=%s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nAuthorization: Bearer %s\r\nContent-Length: 1000000\r\n\r\n"
+             % (Q(base + "/cut.bin"), port, tok)).encode() + bytes(300000))
+    await w.drain()
+    await asyncio.sleep(0.3)
+    w.transport.abort()
+    await asyncio.sleep(0.5)
+    parts = [f for f in os.listdir(base) if f.startswith(".darpan-upload-")]
+    ok("fs put: aborted upload leaves nothing", not parts and not os.path.exists(base + "/cut.bin"), str(parts))
+
+    res = []
+    for p in (base + "/newdir", base + "/newdir", base + "/nodir/newdir"):
+        st, _, b = await http(port, "POST", "/fs/mkdir?path=" + Q(p), A)
+        res.append((st, J(b).get("path") or J(b).get("e")))
+    ok("fs mkdir", res == [(201, base + "/newdir"), (409, "exists"), (404, "notfound")] and os.path.isdir(base + "/newdir"),
+       str(res))
+
+    st, _, b = await http(port, "POST", "/fs/ticket?path=" + Q(a), A)
+    ticket = J(b).get("ticket", "")
+    st1, hd1, b1 = await http(port, "GET", "/fs/file?ticket=" + Q(ticket))
+    st2, _, b2 = await http(port, "GET", "/fs/file?ticket=" + Q(ticket))
+    st3, _, b3 = await http(port, "POST", "/fs/ticket?path=" + Q(base + "/sub"), A)
+    ok("fs ticket: once, as an attachment", st == 200 and st1 == 200 and b1 == b"hello world\n"
+       and hd1.get("content-disposition", "").startswith("attachment")
+       and "filename*=UTF-8''a.txt" in hd1.get("content-disposition", "")
+       and st2 == 401 and (st3, J(b3).get("e")) == (409, "isdir"), "%s %s %s %s" % (st, st1, st2, st3))
+
+    st1, _, b1 = await http(port, "GET", "/fs/list?path=" + Q(base), dict(A, Origin="https://evil.example"))
+    st2, _, _ = await http(port, "GET", "/fs/list?path=" + Q(base), dict(A, Origin="http://127.0.0.1:%d" % port))
+    ok("fs: foreign origin refused", (st1, J(b1).get("e"), st2) == (403, "denied", 200), "%s %s" % (st1, st2))
+
+    async def stuck_download():
+        """A download the client doesn't read: the host stays busy sending it."""
+        r, w = await asyncio.open_connection("127.0.0.1", port)
+        w.write(("GET /fs/file?path=%s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nAuthorization: Bearer %s\r\n\r\n"
+                 % (Q(base + "/big.bin"), port, tok)).encode())
+        await r.readuntil(b"\r\n\r\n")
+        return r, w
+    stuck = [await stuck_download() for _ in range(4)]
+    await asyncio.sleep(0.3)
+    st1, _, b1 = await http(port, "GET", "/fs/list?path=" + Q(base), A)
+    for _, w in stuck:
+        w.transport.abort()
+    await asyncio.sleep(0.5)
+    st2, _, _ = await http(port, "GET", "/fs/list?path=" + Q(base), A)
+    ok("fs: a 5th request at once → 429", (st1, J(b1).get("e"), st2) == (429, "busy", 200), "%s then %s" % (st1, st2))
+
+    r, w = await stuck_download()                                  # the session ends: its transfer stops
+    c.w.close()
+    got, t0 = 0, time.monotonic()
+    try:
+        while time.monotonic() - t0 < 5:
+            chunk = await asyncio.wait_for(r.read(1 << 20), 5)
+            if not chunk:
+                break
+            got += len(chunk)
+            await asyncio.sleep(0.05)                               # slower than the host sends
+    except (ConnectionError, asyncio.TimeoutError):
+        pass
+    w.close()
+    st, _, _ = await http(port, "GET", "/fs/list?path=" + Q(base), A)
+    ok("fs: session end stops transfers and the token", got < (256 << 20) and st == 401,
+       "%d MiB of 256 read, then %s" % (got >> 20, st))
+
+
 def proof_for(password, hello):
     salt = base64.b64decode(hello["kdf"]["salt"])
     key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, hello["kdf"]["iter"], 32)
@@ -457,6 +632,8 @@ async def run(args, tmp, probe_log):
     leftovers = [f for f in os.listdir(dl) if f.endswith(".part")]
     ok("fput + immediate fabort: no partial file", not leftovers and not os.path.exists(os.path.join(dl, "gone.bin")),
        str(leftovers))
+
+    await fs_checks(args.port, tmp, pw, ok, msgs["ok"]["caps"])
 
     def capture_pids():
         r = subprocess.run(["pgrep", "-f", "darpan-capture .*--display %s" % args.display], capture_output=True, text=True)
