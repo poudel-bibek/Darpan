@@ -242,7 +242,7 @@ d.append("".join(term))
 px, py = PILL
 d.append(f'<g class="pill"><path d="M{px - 23} {py - 7}h46v4a10 10 0 0 1-10 10h-26a10 10 0 0 1-10-10z" fill="#121418" fill-opacity=".62" stroke="#fff" stroke-opacity=".1"/>'
          f'<circle cx="{px - 13}" cy="{py - 0.5}" r="3" fill="#3ccf7a"/><rect x="{px - 5}" y="{py - 1.5}" width="16" height="2" rx="1" fill="#fff" fill-opacity=".45"/></g>')
-bw, bh = 262, 30
+bw, bh = 293, 30
 bx0 = px - bw / 2
 bar = [f'<path d="M{bx0} {py - 7}h{bw}v{bh - 12}a12 12 0 0 1-12 12h-{bw - 24}a12 12 0 0 1-12-12z" fill="#1c1e23" fill-opacity=".94" stroke="#fff" stroke-opacity=".08"/>',
        f'<circle cx="{bx0 + 12}" cy="{py + 8}" r="3" fill="#3ccf7a"/>']
@@ -251,17 +251,18 @@ glyphs = ["M-4.5-1.5v-3h3M4.5 1.5v3h-3M-4.5-4.5l3.5 3.5M4.5 4.5l-3.5-3.5",
           "M-6-3.5h12v7h-12zM-3.5-1h.1M-1-1h.1M1.5-1h.1M4-1h.1M-2.5 1.5h5",
           "M-3.5-3h7v8h-7zM-1.5-4.5h3v2.5h-3z",
           "M-4-1v5.5h8V-1M0 2V-5M-2.5-2.5L0-5l2.5 2.5",
+          "M-5-2v4h2.5l3.5 3v-10l-3.5 3zM2.5-2a3 3 0 0 1 0 4M4.5-4a6 6 0 0 1 0 8",
           "M-4 4V0M0 4V-4M4 4V-1.5",
           "M-2.9-3.7a4.6 4.6 0 1 0 5.8 0M0-5v4.2"]
 gx = bx0 + 30
 for k, g in enumerate(glyphs):
-    if k == 6:                                   # the app's only separator: before Disconnect
+    if k == 7:                                   # the app's only separator: before Disconnect
         bar.append(f'<line x1="{gx - 4}" y1="{py + 2}" x2="{gx - 4}" y2="{py + 14}" stroke="#fff" stroke-opacity=".18"/>')
         gx += 6
     hl = ' class="hov"' if k == 0 else ""
     bar.append(f'<rect{hl} x="{gx - 1}" y="{py - 2}" width="30" height="20" rx="5" fill="#fff" fill-opacity="{".16" if k == 0 else "0"}"/>'
-               f'<path transform="translate({gx + 14} {py + 8})" d="{g}" fill="none" stroke="{"#ff5f57" if k == 6 else "#fff"}" '
-               f'stroke-opacity="{1 if k == 6 else .88}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>')
+               f'<path transform="translate({gx + 14} {py + 8})" d="{g}" fill="none" stroke="{"#ff5f57" if k == 7 else "#fff"}" '
+               f'stroke-opacity="{1 if k == 7 else .88}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>')
     if k == 0:
         hover_x = gx + 14                        # the Full screen button
     gx += 31
