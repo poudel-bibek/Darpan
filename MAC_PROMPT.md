@@ -1,33 +1,56 @@
 # Build the Porthole macOS app
 
-You are working on a Mac, in a clone of this repository. The Linux host (the machine being
-controlled) is finished and running. Your job is the **native macOS client** in `mac/`, shipped
-as `dist/Porthole.dmg`. The owner uses it from home to work on a Linux workstation that trains ML
-models, so it must feel instant for typing and cost almost nothing.
+You are a Claude instance on the owner's Mac, in a clone of `github.com/OWNER/porthole`
+(private). The Linux host — the machine being controlled — is finished and running. Your job is
+the **native macOS client** in `mac/`, shipped as `dist/Porthole.dmg` and attached to the GitHub
+release. The owner uses it from home to work on a Linux workstation that trains ML models, so it
+must feel instant for typing and cost almost nothing. Work autonomously; post short progress
+updates; ask the owner only for the things listed in §0.
 
-## Read first (in this order)
+## 0. Before you start
+
+Run and report: `sw_vers`, `uname -m`, `xcode-select -p`, `swift --version`, `gh auth status`,
+`git config user.name`, `git config user.email`, `git status`, `git log --oneline -3`.
+
+* No Command Line Tools → ask the owner to run `xcode-select --install`.
+* `gh` missing/not logged in → ask the owner to install it (`brew install gh`) and run
+  `gh auth login` (they can type `! gh auth login` in Claude Code).
+* No git identity → ask the owner for name/email; never invent one.
+* Ask the owner for the **host address** (`https://<machine>.<tailnet>.ts.net`) and **password**
+  (shown in the Porthole window on Linux, or `porthole status`). Check reachability with
+  `curl -sS <address>/api/info`. If it fails: Tailscale must be running and signed in on this
+  Mac with the same account, and the Linux setup steps in `README.md` must be done — tell the
+  owner which one is missing, then continue with everything that doesn't need the host.
+* **Never write the address or password into any file in the repo.** For live tests read them
+  from environment variables (`PORTHOLE_URL`, `PORTHOLE_PASSWORD`) or the Keychain.
+
+## 1. Read first (in this order)
 
 1. `PROTOCOL.md` — the wire contract. Implement it exactly; don't change it.
 2. `linux/web/app.js` — a complete, tested client for the same protocol (browser). Port its
-   logic: auth, Annex-B→AVCC conversion, ack-after-decode, cursor, clipboard, uploads, resolution
-   menu, reconnect, stats. When unsure how something behaves, it is the reference.
-3. `README.md` — what the product is and how the owner connects (Tailscale on both machines).
+   logic: auth, Annex-B→AVCC, ack-after-decode, cursor, clipboard, uploads, resolution menu,
+   reconnect, stats. When unsure how something should behave, it is the reference.
+3. `README.md` and `linux/README.md` — the product, and how a frame travels end to end.
 
-## Priorities
+## 2. Priorities
 
-1. **Latency** (typing must feel local). 2. **Efficiency** (no busy loops, no idle work).
-3. Correctness and security. 4. Polish. **No third-party dependencies** — Apple frameworks only.
+1. **Latency** (typing must feel local). 2. **Efficiency** (no busy loops, no work while idle or
+hidden). 3. Correctness and security. 4. Polish. **Apple frameworks only — no dependencies.**
 
-## Architecture (Swift 5.9+, SwiftPM, macOS 13+, not sandboxed)
+## 3. Architecture (Swift 5.9+, SwiftPM, not sandboxed)
 
-* **Connection** — `Network.framework` `NWConnection` with `NWProtocolWebSocket`, TLS, and
-  `NWProtocolTCP.Options.noDelay = true`, to `wss://<host>.<tailnet>.ts.net/ws` (valid Let's
-  Encrypt certificate; the Mac runs Tailscale). Handle text (JSON) and binary messages. Send the
-  `Origin` header only if it equals the host (or omit it).
-* **Auth** — PBKDF2-HMAC-SHA256 with CommonCrypto `CCKeyDerivationPBKDF`, HMAC with CryptoKit,
-  label `porthole-auth-v1`. Password NFC-normalised (`precomposedStringWithCanonicalMapping`).
-  Store the **derived key** (never the password) plus salt/iter in the Keychain per host; reuse
-  it while `hello` carries the same salt/iter. Known-answer test (put it in a unit test):
+Deployment target: macOS 13, or 12 if the owner's Mac is older (nothing below needs more).
+
+* **Connection** — `Network.framework`: `NWConnection` to `NWEndpoint.url(<address>/ws)` with
+  `NWProtocolWebSocket.Options` (`autoReplyPing = true`, max message 8 MiB), TLS with default
+  certificate validation (valid Let's Encrypt cert on `*.ts.net`), `NWProtocolTCP.Options.noDelay
+  = true`. Omit the `Origin` header. Refuse plain `ws://` except to `localhost`.
+* **Auth** — PBKDF2-HMAC-SHA256 via CommonCrypto `CCKeyDerivationPBKDF`, HMAC via CryptoKit,
+  label `porthole-auth-v1`; password NFC-normalised (`precomposedStringWithCanonicalMapping`).
+  Keychain stores the **derived key** (never the password) + salt + iter per host
+  (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`); reuse it while `hello` carries the same
+  salt/iter, otherwise ask for the password again. `auth.client` = `"Porthole for Mac 1.0.0 on
+  macOS <version>"`, `ver` = `"1.0.0"`. Known-answer test:
 
   ```text
   password  "correct horse battery"
@@ -36,53 +59,63 @@ models, so it must feel instant for typing and cost almost nothing.
   key (hex) a58c2cefe9e01e0464dad113872d0867db9889f547e517fb39ce046b3506a845
   proof     wyZGzNpll1CwX3ZcThEoUAHMf5d8zkgbExTI/lYsAEE=
   ```
-* **Video** — parse the 16-byte VIDEO header, split Annex-B NALs, build a
-  `CMVideoFormatDescription` from SPS/PPS (`CMVideoFormatDescriptionCreateFromH264ParameterSets`,
-  4-byte NAL length) on key frames (recreate when SPS/PPS change), wrap length-prefixed NALs
-  (drop SPS/PPS/AUD) in `CMBlockBuffer`/`CMSampleBuffer`. Decode with `VTDecompressionSession`
-  (`kVTDecompressionPropertyKey_RealTime = true`, hardware decoder) on a dedicated queue and
-  **ack every frame from the decode callback**. Display with the least buffering you can
-  measure: start with `AVSampleBufferDisplayLayer` (+ `kCMSampleAttachmentKey_DisplayImmediately`)
-  or set the decoded `CVPixelBuffer` as a layer's contents; a `CAMetalLayer` path is welcome if it
-  measurably lowers latency. On decoder error: send `{"t":"kf"}` and wait for the next key frame.
-  Frames flagged REFRESH carry an old capture timestamp — exclude them from latency stats.
-* **Input** — an `NSView` that is first responder; `NSEvent.addLocalMonitorForEvents` for
-  `.keyDown/.keyUp/.flagsChanged` (AppKit doesn't deliver key-up for ⌘ combos to responders —
-  if you still lose them, send ⌘-combos as down+up like the web client). Map `event.keyCode` with
-  the table below; modifiers come from `.flagsChanged` (compare with previous flags to get
-  down/up; left/right via keyCode). ⌘ → `ControlLeft/Right` by default, user-switchable to
-  `MetaLeft/Right`. CapsLock: down+up per toggle. Send auto-repeat `keyDown`s as extra `d:true`.
-  Mouse: absolute `mm` in stream pixels (handle letterboxing and Retina), buttons 0–4, scroll:
-  `scrollingDeltaY` with `hasPreciseScrollingDeltas` ≈ pixels → `×2.4` units (1 notch = 120 ≈
-  50 px), line deltas `×40`; respect the user's natural-scrolling setting as the OS reports it.
-  On window resign-key: send `{"t":"rel"}`.
-* **System shortcuts (optional toggle "Capture ⌘Tab / ⌘Space")** — a `CGEventTap` on
-  `.cgSessionEventTap` active only while the viewer window is key, forwarding keyDown/keyUp/
-  flagsChanged and swallowing them. Needs Accessibility permission (`AXIsProcessTrustedWithOptions`);
-  provide an escape (e.g. ⌃⌥⌘Esc releases capture) and never leave the tap enabled after quit.
-* **Cursor** — `cur` messages → `NSCursor(image:hotSpot:)` (cache by id; id 0 → hide). Image is
-  in remote pixels: scale by the on-screen scale so it looks right on Retina.
-* **Clipboard** — host `clip` → `NSPasteboard` (not on the first message after connect: don't
-  clobber the Mac's clipboard). Local → host: poll `NSPasteboard.general.changeCount` at 2 Hz
-  **only while connected and the app is active**; send when it changes (not echoing what came
-  from the host).
-* **Files** — drag & drop onto the viewer → PROTOCOL §7 (256 KiB chunks, ≤512 KiB un-acked).
-* **Visibility** — when the window is minimised/occluded (`NSWindow.occlusionState`) send
-  `stop`; on visible send `start` (the host then idles the GPU encoder).
-* **UI** — SwiftUI where it helps, AppKit where it's faster.
-  * Connect window: saved hosts (name + URL), password field, "Remember", clear errors (wrong
-    password, locked with countdown, unreachable → "Is Tailscale running?").
-  * Viewer window: the remote screen fills it (Fit / Actual pixels). A **collapsed pill** at the
-    top centre (like the web client, ~46×14 pt) that expands to: full screen, display (remote
-    resolution from `modes`, scaling, quality Auto/Low/Balanced/High/Max = 0/3000/10000/20000/
-    50000 kbps, fps 30/60/120), keys (Super, Alt+Tab, Alt+F4, Ctrl+Alt+T, Ctrl+Alt+Del, PrtSc,
-    Esc, Lock = Super+L, workspace ←/→), clipboard (view/send/type text via `txt`), upload,
-    stats, disconnect. Also expose these in the menu bar with shortcuts.
+* **Video** — parse the 16-byte VIDEO header; drop frames whose stream id isn't the latest
+  `stream`. Split Annex-B NALs; on key frames build a `CMVideoFormatDescription` with
+  `CMVideoFormatDescriptionCreateFromH264ParameterSets` (NAL length 4), recreating the session when
+  SPS/PPS change. Wrap length-prefixed NALs (drop SPS/PPS/AUD) in `CMBlockBuffer`/`CMSampleBuffer`
+  and decode with a **`VTDecompressionSession`** (hardware, `kVTDecompressionPropertyKey_RealTime
+  = true`, output `kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange`) on a serial queue.
+  **Ack each frame from the decode callback.** Then display the *decoded* `CVPixelBuffer`
+  immediately — wrap it in an uncompressed `CMSampleBuffer` enqueued into an
+  `AVSampleBufferDisplayLayer` with `kCMSampleAttachmentKey_DisplayImmediately`, or set it as
+  a `CALayer`'s contents. (Don't feed compressed frames to the display layer: you'd lose the
+  decode callback the protocol's flow control needs.) Keep the decoder's BT.709 colour
+  attachments. The video view is plain AppKit/Core Animation — never re-render SwiftUI per frame.
+  On decode error: `{"t":"kf"}` and wait for the next key frame. REFRESH-flagged frames carry an
+  old capture timestamp: exclude them from latency stats.
+* **Timing** — while connected, hold `ProcessInfo.processInfo.beginActivity(options:
+  [.userInitiated, .latencyCritical], reason:)` so App Nap / timer coalescing never add delay;
+  end it on disconnect.
+* **Keyboard** — viewer `NSView` as first responder plus `NSEvent.addLocalMonitorForEvents` for
+  `.keyDown/.keyUp/.flagsChanged` (AppKit doesn't deliver key-up for ⌘ combos to responders; if
+  some are still lost, send ⌘ combos as down+up like the web client). Map `event.keyCode` with the
+  table in §4. Modifiers come from `.flagsChanged`: diff against the previous flags, left/right by
+  keyCode. ⌘ → `ControlLeft/Right` by default, user-switchable to `MetaLeft/Right` (Super).
+  CapsLock → down+up per toggle. OS auto-repeat `keyDown`s → extra `d:true`. Window resigns key or
+  app deactivates → `{"t":"rel"}`. IME input (`insertText`) → `txt`.
+* **Mouse** — `acceptsMouseMovedEvents` + a tracking area; send `mm` for every move (skip
+  duplicates) in **stream pixels**, accounting for letterboxing and `backingScaleFactor` (also
+  when the window moves to another display). Buttons → protocol `b`: left 0, right 2,
+  `otherMouse` buttonNumber 2 → 1 (middle), 3 → 3 (back), 4 → 4 (forward).
+  **Scroll sign:** AppKit deltas describe content movement, the protocol wants scroll direction:
+  `dy = −scrollingDeltaY × k`, `dx = −scrollingDeltaX × k`, with `k = 2.4` when
+  `hasPreciseScrollingDeltas` (trackpad pixels; 50 px ≈ one notch) and `k = 120` otherwise (one
+  wheel notch = one notch). Keep fractional remainders; the OS already applied natural scrolling.
+* **System shortcuts (optional toggle "Capture ⌘Tab / ⌘Space")** — a `CGEventTap`
+  (`.cgSessionEventTap`) active only while the viewer window is key; forwards and swallows
+  keyDown/keyUp/flagsChanged. Needs Accessibility permission (`AXIsProcessTrustedWithOptions`).
+  Escape hatch ⌃⌥⌘Esc releases capture; never leave the tap running after quit or disconnect.
+* **Cursor** — `cur` → `NSCursor(image:hotSpot:)`, cache by id, scale remote pixels to the view
+  scale. id 0 → hide the cursor, but only while it's inside the viewer (unhide on exit).
+* **Clipboard** — host `clip` → `NSPasteboard`, except the first one after connecting (don't
+  clobber the Mac's clipboard). Mac → host: poll `NSPasteboard.general.changeCount` at 2 Hz only
+  while connected and the app is active; send changes that didn't just come from the host.
+* **Files** — drag & drop onto the viewer → PROTOCOL §7 (256 KiB chunks, ≤ 512 KiB un-acked).
+* **Visibility** — window minimised/occluded (`NSWindow.occlusionState`) → `stop`; visible again
+  → `start` (the host then idles its GPU encoder).
+* **UI** — SwiftUI for windows/forms, AppKit where it's faster.
+  * Connect window: saved hosts (name + URL in `UserDefaults`), password, "Remember", clear errors:
+    wrong password, locked (countdown from `retry`), unreachable → "Is Tailscale running?".
+  * Viewer window: remote screen fills it (Fit / Actual pixels). A **collapsed pill** top-centre
+    (~46×14 pt, like the web client) expanding to: full screen · display (remote resolution from
+    `modes`, scaling, quality Auto/Low/Balanced/High/Max = 0/3000/10000/20000/50000 kbps, fps
+    30/60/120) · keys (Super, Alt+Tab, Alt+F4, Ctrl+Alt+T, Ctrl+Alt+Del, PrtSc, Esc, Lock = Super+L,
+    workspace ←/→) · clipboard (view, send, type via `txt`) · upload · stats · disconnect. Mirror
+    them in the menu bar (with a Disconnect shortcut that works even when keys are captured).
   * Stats overlay: fps, Mbps, RTT (ping every 2 s), decode ms, capture→display estimate, host
     `stats`. Native full screen. Auto-reconnect with backoff using the stored key.
-  * App icon: `mac/assets/logo-1024.png` (from `logo.svg`).
 
-### macOS virtual key code → W3C `code`
+## 4. macOS virtual key code → W3C `code`
 
 ```swift
 let keyCodeMap: [UInt16: String] = [
@@ -107,32 +140,94 @@ let keyCodeMap: [UInt16: String] = [
   0x7C:"ArrowRight",0x7D:"ArrowDown",0x7E:"ArrowUp",
 ]
 ```
-(ISO keyboards swap `IntlBackslash`/`Backquote` physically; keep the table, it matches Chrome.)
+(ISO keyboards swap `IntlBackslash`/`Backquote` physically; this matches Chrome. `Fn` isn't sent.)
 
-## Build, package, ship
+## 5. Layout of `mac/`
 
-* `mac/Package.swift` (executable target `Porthole`, test target) and `mac/build.sh`:
-  `swift build -c release` → assemble `Porthole.app` (Info.plist: `CFBundleIdentifier`
-  `dev.porthole.Porthole`, `LSMinimumSystemVersion` 13.0, `NSHighResolutionCapable`,
-  icon from `mac/assets/logo-1024.png` via `sips` + `iconutil`) → ad-hoc sign
-  (`codesign --force --deep -s -`) → `hdiutil create … -format UDZO dist/Porthole.dmg`.
-* Everything must build with only Xcode Command Line Tools if possible (`xcode-select --install`).
-* Don't commit build outputs (`.gitignore` covers `dist/`, `mac/.build/`).
+```text
+mac/Package.swift
+mac/Sources/PortholeCore/   protocol types, auth, Annex-B/AVCC, key map — no UI, testable
+mac/Sources/Porthole/       the app (AppKit/SwiftUI, VideoToolbox, input, UI)
+mac/Sources/SelfTest/       test runner executable (see §7) — or Tests/ if XCTest exists
+mac/build.sh                one command: test → build → .app → sign → .dmg
+mac/assets/logo-1024.png    icon source (exists)
+mac/README.md               update: how to build, run, install
+mac/NOTES.md                anything the Linux side should fix (create only if needed)
+```
 
-## Test
+## 6. Build and package — `mac/build.sh`
 
-* Unit tests: the auth vector above, Annex-B splitting/AVCC building, key map sanity.
-* Live: ask the owner for the address and password (the host is at
-  `https://<machine>.<tailnet>.ts.net`, shown in the Linux app / `porthole status`). First
-  confirm the browser client works in Safari from this Mac, then your app. Check: video,
-  typing latency (stats), mouse/scroll, ⌘C/⌘V both ways, file drop, resolution change (and that it
-  reverts on disconnect), window minimise → host stops encoding, reconnect after Wi-Fi blip.
-* Report measured numbers (decode ms, capture→display ms, CPU of the app while streaming).
+1. Run the self-tests; stop on failure.
+2. `swift build -c release` (universal `--arch arm64 --arch x86_64` only if the toolchain
+   supports it; otherwise the Mac's own arch is fine).
+3. Assemble `dist/Porthole.app`: `Contents/MacOS/Porthole`, `Contents/Info.plist`
+   (`CFBundleIdentifier` `dev.porthole.Porthole`, `CFBundleName` Porthole,
+   `CFBundleShortVersionString` 1.0.0, `CFBundleVersion` 1, `LSMinimumSystemVersion`,
+   `NSHighResolutionCapable` true, `CFBundleIconFile` AppIcon), `Contents/Resources/AppIcon.icns`
+   built from `mac/assets/logo-1024.png` with `sips` + `iconutil`.
+4. Sign: if `PORTHOLE_SIGN_ID` names a certificate in the keychain use it, else ad-hoc
+   (`codesign --force --deep -s -`). A stable self-signed "code signing"
+   certificate (Keychain Access → Certificate Assistant) keeps the Accessibility permission across
+   rebuilds; with ad-hoc signing macOS asks again after every rebuild — say so in the README.
+5. DMG: stage `Porthole.app` + a symlink to `/Applications`, then
+   `hdiutil create -volname Porthole -srcfolder <stage> -ov -format UDZO dist/Porthole.dmg`.
+6. Print the DMG path and its `shasum -a 256`.
 
-## Rules
+Everything must work with only the Command Line Tools installed.
 
-* Work only in `mac/` (plus `dist/`, and a short "Mac app" section in `README.md`). If the
-  protocol or host looks wrong, don't change `linux/` or `PROTOCOL.md` — write it up in
-  `mac/NOTES.md` for the Linux side.
-* Commit to `main` with clear messages and push. Attach the DMG to the release:
-  `gh release upload v1.0.0 dist/Porthole.dmg --clobber` (or create `v1.0.0` if missing).
+## 7. Test
+
+* **Self-tests** (XCTest ships with Xcode, not the Command Line Tools — if `import XCTest` fails,
+  put the tests in the `SelfTest` executable that exits non-zero on failure): the auth vector in
+  §3, Annex-B splitting incl. 3- and 4-byte start codes, avcC/format-description creation from a
+  real SPS/PPS, key-map sanity, wheel-sign conversion.
+* **Live, against the owner's host**: first open the address in Safari on this Mac to confirm the
+  host works, then your app. Check: video appears, typing latency (stats), mouse and scroll
+  (direction!), ⌘C/⌘V both ways, file drop lands in `~/Downloads/Porthole/` on Linux, resolution
+  change and that it reverts on disconnect, minimise → host stops encoding (stats stop), reconnect
+  after toggling Wi-Fi, wrong password shows the error. Don't leave the host in a changed
+  resolution when you finish.
+* Measure and report: decode ms, capture→display ms, app CPU % while streaming and while idle.
+
+## 8. Git
+
+* Before starting: `git checkout main && git pull --rebase`.
+* Commit in logical steps with clear messages (e.g. `mac: connection + auth`, `mac: video
+  pipeline`, `mac: input`, `mac: UI`, `mac: packaging`). Commit only sources, scripts and docs —
+  never `dist/`, `.build/`, `.app`, `.dmg`, secrets, the host address or the password.
+* Before every push: `git pull --rebase origin main` (the Linux side may have pushed meanwhile —
+  conflicts can only be in `README.md`; keep both sides), then `git push origin main`.
+  Never force-push or rewrite history.
+* Stay inside `mac/` plus a "Mac app" section in `README.md`. Don't edit `linux/` or
+  `PROTOCOL.md`; if the host or protocol looks wrong, write it up in `mac/NOTES.md`, push it, and
+  tell the owner.
+
+## 9. Release
+
+```bash
+bash mac/build.sh
+gh release view v1.0.0 >/dev/null 2>&1 || gh release create v1.0.0 --title "Porthole 1.0.0" --notes ""
+gh release upload v1.0.0 dist/Porthole.dmg --clobber
+gh release view v1.0.0 --json body -q .body > /tmp/notes.md   # then append the Mac section:
+gh release edit v1.0.0 --notes-file /tmp/notes.md
+```
+The appended Mac section: install (open the DMG, drag Porthole to Applications), first launch of a
+downloaded copy (System Settings → Privacy & Security → *Open Anyway*, or
+`xattr -dr com.apple.quarantine /Applications/Porthole.app`), Accessibility permission for
+shortcut capture, and the DMG's SHA-256. Put the same install notes in the README's Mac section.
+
+## 10. Definition of done
+
+- [ ] `bash mac/build.sh` passes self-tests and produces `dist/Porthole.dmg` from a clean clone
+- [ ] every live check in §7 passes against the owner's host (or the owner was told which
+      couldn't be run and why)
+- [ ] `README.md` Mac section + `mac/README.md` written
+- [ ] all work committed and pushed to `main`; working tree clean; no secrets committed
+- [ ] DMG uploaded to release v1.0.0 and the release notes updated
+- [ ] the owner has the app: offer to copy `dist/Porthole.app` to `/Applications`
+
+## 11. Final report to the owner
+
+A short message: what was built, how to install and launch it, the measured numbers (§7), anything
+that didn't pass or wasn't tested, links to the commit and the release, and anything written to
+`mac/NOTES.md` for the Linux side.
