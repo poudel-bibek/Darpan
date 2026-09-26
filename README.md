@@ -9,6 +9,9 @@ Use your Linux computer from your Mac or any browser. It feels local, stays priv
 
 ## Download
 
+**The only setup is a free [Tailscale](https://tailscale.com) account.** Darpan has it built in, so
+there's no port forwarding and nothing to change on your router.
+
 | Install on | Download | |
 |---|---|---|
 | **Linux**: the computer you connect **to** | [darpan_amd64.deb](../../releases/latest/download/darpan_amd64.deb) | Ubuntu 24.04 or similar |
@@ -40,13 +43,27 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 
 ## Why Darpan
 
-| | |
-|---|---|
-| **Feels local** | About 27 ms from a change on the Linux screen to your Mac, over the internet. Typing and scrolling keep up. |
-| **Private** | Only your own devices can reach it. The connection is encrypted end to end, no ports are opened, and on top of that there's a password that never crosses the network. |
-| **Light** | On the Linux computer, nothing runs until you connect: 0 % CPU while idle, and about 0.3 % of one CPU core while you're connected. Your long GPU jobs keep the machine. |
-| **Complete** | Sound, clipboard in both directions, drag-and-drop file transfer, screen resolution changes, full screen, and a toolbar that tucks away. |
-| **Free** | Open source (MIT). No subscription, and no account with us. |
+<table>
+<tr>
+<td width="33%" valign="top"><img src="docs/feature-local.svg" width="100%" alt="Typing on the Mac shows up on the Linux computer at once"><br>
+<b>Feels local</b><br>About 27 ms from a change on the Linux screen to your Mac, even over the internet.</td>
+<td width="33%" valign="top"><img src="docs/feature-private.svg" width="100%" alt="Another device trying to reach the Linux computer is refused"><br>
+<b>Private</b><br>Only your own devices can reach it: encrypted end to end, no open ports, and a password that never crosses the network.</td>
+<td width="33%" valign="top"><img src="docs/feature-light.svg" width="100%" alt="Darpan's CPU use drops to zero when the Mac disconnects, while the GPU keeps training"><br>
+<b>Light</b><br>0 % CPU while nobody's connected. While you are, about 0.3 % of one core on a quiet screen and 5 % during video with sound.</td>
+</tr>
+<tr>
+<td valign="top"><img src="docs/feature-sound.svg" width="100%" alt="A video plays on the Linux computer and its sound comes out of the Mac"><br>
+<b>Sound</b><br>Whatever plays on the Linux computer plays on your Mac.</td>
+<td valign="top"><img src="docs/feature-clipboard.svg" width="100%" alt="Copying in a Linux terminal and pasting on the Mac, then back"><br>
+<b>Copy and paste</b><br>⌘C and ⌘V work both ways, in Linux terminals too. ⌃C still interrupts.</td>
+<td valign="top"><img src="docs/feature-files.svg" width="100%" alt="A file dropped on Darpan's window lands on the Linux computer"><br>
+<b>Files</b><br>Drop files on the window. They land in <code>~/Downloads/Darpan</code>.</td>
+</tr>
+</table>
+
+Plus full screen, a screen resolution that follows your window, and a toolbar that tucks away.
+**Free:** open source (MIT), no subscription, and no account with us.
 
 ## Everyday use
 
