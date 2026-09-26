@@ -946,6 +946,22 @@ async def run(args, tmp, probe_log):
     os.remove(nv_l)
     ok("GPU: restart note after a driver update", seen == [False, True, False, False], seen)
 
+    # the Linux window's Update button: only for a newer version APT already knows about
+    from darpan import update as darpan_update
+    aptbin = os.path.join(tmp, "aptbin")
+    os.makedirs(aptbin)
+    with open(os.path.join(aptbin, "apt-cache"), "w") as f:
+        f.write('#!/bin/sh\nprintf "darpan:\\n  Installed: %s\\n  Candidate: %s\\n" "$FAKE_HAVE" "$FAKE_NEW"\n')
+    os.chmod(os.path.join(aptbin, "apt-cache"), 0o755)
+    path = os.environ["PATH"]
+    os.environ["PATH"] = aptbin + os.pathsep + path
+    seen = []
+    for have, new in (("1.4.0", "1.4.1"), ("1.4.1", "1.4.1"), ("1.4.1", "1.4.0"), ("(none)", "1.4.1")):
+        os.environ.update(FAKE_HAVE=have, FAKE_NEW=new)
+        seen.append(darpan_update.available())
+    os.environ["PATH"] = path
+    ok("update: offered only when newer", seen == ["1.4.1", None, None, None], seen)
+
     # at most 4 connections per source may wait unauthenticated; a 5th is told "busy"
     waiting = []
     for _ in range(4):

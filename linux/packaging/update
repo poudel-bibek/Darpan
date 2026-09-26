@@ -1,0 +1,5 @@
+#!/bin/sh
+# The Linux window's Update button, as root through pkexec: installs the newest Darpan that APT
+# already knows about. Takes no arguments.
+export DEBIAN_FRONTEND=noninteractive
+exec apt-get install -y --only-upgrade -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confold darpan
