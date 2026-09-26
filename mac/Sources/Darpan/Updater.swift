@@ -170,7 +170,10 @@ final class Updater: ObservableObject {
             return .failure(.mount)
         }
         defer {
-            _ = run("/usr/bin/hdiutil", ["detach", "-force", mount.path])
+            let ok = run("/usr/bin/hdiutil", ["detach", "-force", mount.path])
+            #if DEBUG
+            FileHandle.standardError.write(Data("[update] detach \(ok)\n".utf8))
+            #endif
             try? fm.removeItem(at: mount)
         }
         let source = mount.appendingPathComponent("Darpan.app")
