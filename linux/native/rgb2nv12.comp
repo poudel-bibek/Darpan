@@ -1,0 +1,42 @@
+// BGRx (the X server's 32-bit pixels) → NV12, limited range, for the Vulkan encoder (vkenc.c).
+// One invocation converts a 4×2 block: two words of luma and one of interleaved chroma. Pixels
+// past the visible size (the coded size is a multiple of 16) repeat the edge.
+// Rebuild rgb2nv12.h after changing this: make shader (needs glslangValidator).
+#version 450
+layout(local_size_x = 16, local_size_y = 8) in;
+layout(std430, binding = 0) readonly buffer Src { uint px[]; };
+layout(std430, binding = 1) writeonly buffer Dst { uint nv12[]; };
+layout(push_constant) uniform P { uint w, h, pitch, cw, ch, m601; };    // pitch in pixels
+
+vec3 rgb(uint x, uint y) {
+    uint v = px[min(y, h - 1u) * pitch + min(x, w - 1u)];
+    return vec3((v >> 16) & 255u, (v >> 8) & 255u, v & 255u);
+}
+
+uint byte(float v) { return uint(clamp(v + 0.5, 0.0, 255.0)); }
+
+void main() {
+    uint bx = gl_GlobalInvocationID.x, by = gl_GlobalInvocationID.y;
+    if (bx * 4u >= cw || by * 2u >= ch) return;
+    // BT.709 or BT.601 (as the stream's VUI says), studio range: Y 16..235, Cb/Cr 16..240
+    vec3 ky = m601 != 0u ? vec3(0.2568, 0.5041, 0.0979) : vec3(0.1826, 0.6142, 0.0620);
+    vec3 ku = m601 != 0u ? vec3(-0.1482, -0.2910, 0.4392) : vec3(-0.1006, -0.3386, 0.4392);
+    vec3 kv = m601 != 0u ? vec3(0.4392, -0.3678, -0.0714) : vec3(0.4392, -0.3989, -0.0403);
+    vec3 a[4], b[4];
+    uint y0 = 0u, y1 = 0u, uv = 0u;
+    for (uint i = 0u; i < 4u; i++) {
+        a[i] = rgb(bx * 4u + i, by * 2u);
+        b[i] = rgb(bx * 4u + i, by * 2u + 1u);
+        y0 |= byte(dot(ky, a[i]) + 16.0) << (8u * i);
+        y1 |= byte(dot(ky, b[i]) + 16.0) << (8u * i);
+    }
+    for (uint j = 0u; j < 2u; j++) {
+        vec3 s = (a[2u * j] + a[2u * j + 1u] + b[2u * j] + b[2u * j + 1u]) * 0.25;
+        uv |= byte(dot(ku, s) + 128.0) << (16u * j);
+        uv |= byte(dot(kv, s) + 128.0) << (16u * j + 8u);
+    }
+    uint row = cw / 4u;                        // words per luma row, and per chroma row
+    nv12[by * 2u * row + bx] = y0;
+    nv12[(by * 2u + 1u) * row + bx] = y1;
+    nv12[ch * row + by * row + bx] = uv;       // the chroma plane follows the luma plane
+}
