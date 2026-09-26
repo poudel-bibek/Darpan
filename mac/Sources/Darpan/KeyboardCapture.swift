@@ -98,7 +98,10 @@ final class KeyboardCapture {
     /// A key press that goes out as a key (also the input method's pass-through keys).
     func keyDown(_ e: NSEvent) {
         let f = e.modifierFlags
-        if e.keyCode == KeyCodes.v && !e.isARepeat && (f.contains(.command) || f.contains(.control)) && !f.contains(.option) {
+        // Paste is ⌘V by character: dictation apps post the layout's V key, which isn't key code 9
+        // on Dvorak or AZERTY.
+        let isV = e.keyCode == KeyCodes.v || e.charactersIgnoringModifiers?.lowercased() == "v"
+        if isV && !e.isARepeat && (f.contains(.command) || f.contains(.control)) && !f.contains(.option) {
             if beforePaste?() == false { return }
         }
         out(translator.keyDown(keyCode: e.keyCode, isRepeat: e.isARepeat, flags: f.rawValue))
