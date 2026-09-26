@@ -3,8 +3,8 @@
 <h1 align="center">Darpan</h1>
 
 <p align="center"><b>Stop paying for remote desktop.</b><br>
-Darpan is a free, open-source remote desktop: use your Linux computer from a native Mac app. It
-feels local and stays private.</p>
+Darpan is a high-performance, lightweight remote desktop: use your Linux computer from a native
+Mac app. It feels local, stays private, and is free and open source.</p>
 
 <p align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT license"></a>
@@ -47,7 +47,10 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 Darpan shows on it. That's it.
 
 > **From a browser instead:** install [Tailscale](https://tailscale.com/download) on that device,
-> sign in with the same account, and open the address. In Chrome, *Install Darpan* turns it into its own window.
+> sign in with the same account, and open your Linux computer's address:
+> `https://<computer>.<tailnet>.ts.net`. Darpan shows it on the Linux computer, and it's also in the
+> [Tailscale admin console](https://login.tailscale.com/admin/machines). In Chrome, *Install Darpan*
+> turns it into its own window.
 
 ## Why Darpan
 
@@ -97,6 +100,21 @@ Darpan shows on it. That's it.
 </table>
 
 Plus full screen, screen resolutions to match your window, and a toolbar that tucks away.
+
+## Performance
+
+Measured with Darpan 1.4.1 on a Linux PC with an RTX 4090 at 2560×1440, viewed from a MacBook
+over Wi-Fi. CPU is a share of one core.
+
+| | Linux computer | Mac app |
+|---|---|---|
+| Nobody connected | 0 % CPU, no GPU memory | — |
+| Everyday use | 3 % CPU | 8–10 % CPU |
+| Full-screen video with sound | 6 % CPU | 32 % CPU |
+| Memory while connected | 40 MB of GPU memory | 50–90 MB |
+
+A key press shows up in about 20–30 ms, Wi-Fi to Wi-Fi. The Linux computer turns it into a video
+frame in 5 ms, and the Mac decodes that in hardware in about 4 ms.
 **Free and open source** (MIT): no subscription, and no account with us.
 
 ## Everyday use
