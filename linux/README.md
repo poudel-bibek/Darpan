@@ -68,17 +68,16 @@ lingering, so the user's services start at boot, and sets `WaylandEnable=false` 
 ## Updates
 
 Installed hosts update through the system's updater. The package ships
-`/etc/apt/sources.list.d/darpan.sources`, pointing at `apt/` on this repository's GitHub Pages site
-(`https://<owner>.github.io/<repo>/`), and the public keyring `/etc/apt/keyrings/darpan-archive-keyring.gpg`
-(both conffiles: `apt remove` keeps them, `purge` removes them). A release's page carries only
-`darpan_amd64.deb` and `Darpan.dmg`; the update files go to the site. Make the flat APT index with
+`/etc/apt/sources.list.d/darpan.sources`, pointing at `releases/latest/download/` of this repository, and
+the public keyring `/etc/apt/keyrings/darpan-archive-keyring.gpg` (both conffiles: `apt remove` keeps
+them, `purge` removes them). So each release carries, next to
+`darpan_amd64.deb`, a flat APT index made by
 
 ```bash
-GNUPGHOME=~/.config/darpan-release/gnupg bash packaging/apt-index.sh ../dist/darpan_<ver>_amd64.deb <apt-dir>
+GNUPGHOME=~/.config/darpan-release/gnupg bash packaging/apt-index.sh ../dist/darpan_<ver>_amd64.deb <dir>
 ```
 
-and the Mac's manifest with `scripts/mac-manifest.sh` (into `<mac-dir>`). Publish the release, then
-`scripts/publish-updates.sh <apt-dir> <mac-dir>` replaces the site's files, so hosts and Macs see the new
-version only once its downloads exist. The private key stays on the release
+Upload `Packages` and `InRelease` from `<dir>` with the .deb to the **draft** release, then publish it,
+so `latest` switches to all three at once. The private key stays on the release
 machine: keep a backup of `~/.config/darpan-release`, because with a new key existing installs stop
 trusting new releases until the package is reinstalled by hand.
