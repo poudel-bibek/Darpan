@@ -158,6 +158,8 @@ public final class Client {
         case modes(Modes)
         case notice(String, error: Bool)
         case upload(Upload)
+        /// File access for this session (PROTOCOL.md §7.1), the answer to `requestFiles()`.
+        case files(FilesAccess)
         /// Sign-in with a freshly typed password worked; keep this if the user asked to be remembered.
         case authenticated(SavedKey)
         /// The saved key is no longer valid.
@@ -351,6 +353,9 @@ public final class Client {
     }
 
     public func upload(_ urls: [URL]) { uploads.enqueue(urls) }
+
+    /// Asks for the session's file token; the answer arrives as `.files`.
+    public func requestFiles() { send(Msg.fs) }
 
     public func cancelUploads() { uploads.cancelAll(reason: "cancelled") }
 
@@ -571,6 +576,10 @@ public final class Client {
             if let w = m.int("w"), let h = m.int("h"), w > 0, h > 0 { emit(.screen(DisplayMode(w, h))) }
         case "notice":
             if let t = m.string("text"), !t.isEmpty { emit(.notice(t, error: m.string("level") == "error")) }
+        case "fs":
+            if let token = m.string("token"), let home = m.string("home") {
+                emit(.files(FilesAccess(token: token, home: home, inbox: m.string("inbox") ?? home)))
+            }
         case "fok", "fack", "fdone", "ferr":
             uploads.handle(m)
         default:

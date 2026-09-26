@@ -39,6 +39,7 @@ public enum Msg {
     public static let rel = #"{"t":"rel"}"#
     public static let kf = #"{"t":"kf"}"#
     public static let stop = #"{"t":"stop"}"#
+    public static let fs = #"{"t":"fs"}"#
     public static func audio(on: Bool) -> String { #"{"t":"audio","on":\#(on)}"# }
 
     public static func auth(proof: Data, client: String) -> String? {

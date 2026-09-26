@@ -119,6 +119,17 @@ enum DebugHooks {
             NSPasteboard.general.setString(rest, forType: .string)
         case "pbget": say("pasteboard: \(NSPasteboard.general.string(forType: .string)?.debugDescription ?? "nil")")
         case "upload": s?.client.upload(a.dropFirst().map { URL(fileURLWithPath: $0) })
+        case "fremote": s?.debugFiles?.remote.go(rest)              // Files window: remote folder
+        case "flocal": s?.debugFiles?.local.go(rest)                // local folder
+        case "fsel":                                                // fsel <local|remote> <name>…
+            let p = a.count > 1 && a[1] == "local" ? s?.debugFiles?.local : s?.debugFiles?.remote
+            p?.selection = Set(a.dropFirst(2))
+        case "fsend": s?.debugFiles?.send()
+        case "frecv": s?.debugFiles?.receive()
+        case "fstate":
+            let m = s?.debugFiles
+            say("files: remote \(m?.remote.path ?? "-") (\(m?.remote.entries.count ?? 0)) \(m?.remote.error ?? "")"
+                + " local \(m?.local.path ?? "-") | " + (m?.transfers.map { "\($0.name)=\($0.state) \($0.sent)/\($0.total)" }.joined(separator: ", ") ?? ""))
         case "close": w?.performClose(nil)
         case "quit": NSApp.terminate(nil)
         default: say("unknown command: \(line)")
