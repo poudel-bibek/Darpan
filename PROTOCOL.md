@@ -281,8 +281,10 @@ client-selected mode is active. Client → host:
 * `{"t":"res","native":true}` — restore the original mode.
 * `{"t":"modes"}` — ask for a fresh `modes` message.
 
-The host restores the original mode automatically when the last session ends. A resolution
-change produces `screen`, `modes` and a new `stream`.
+The host restores the original mode automatically when the last session ends. It remembers the last `res`
+of each kind of client (`auth.client` without version numbers; `native` forgets it) and switches back
+to it when that kind of client connects again with nobody else connected. A resolution change produces `screen`, `modes`
+and a new `stream`.
 
 ## 9. Other host → client messages
 
