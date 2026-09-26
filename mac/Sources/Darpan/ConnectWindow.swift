@@ -63,6 +63,15 @@ final class ConnectModel: ObservableObject {
             return
         }
         let keep = remember ?? settings.remember
+        #if DEBUG
+        // DARPAN_DEBUG_SOCKS=host:port:user:password tests the proxy path without a tailnet.
+        if let spec = ProcessInfo.processInfo.environment["DARPAN_DEBUG_SOCKS"]?.split(separator: ":").map(String.init),
+           spec.count == 4, let port = UInt16(spec[1]) {
+            begin(a, proxy: SOCKSProxy(host: spec[0], port: port, username: spec[2], password: spec[3]),
+                  password: pw, saved: saved, remember: keep)
+            return
+        }
+        #endif
         guard settings.network == .builtIn, !HostAddress.isLoopback(a.host) else {
             begin(a, proxy: nil, password: pw, saved: saved, remember: keep)
             return

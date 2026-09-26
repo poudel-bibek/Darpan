@@ -67,7 +67,9 @@ For unattended use, disable key expiry for the host in the Tailscale admin conso
 **macOS app.** Download `Darpan.dmg` from the latest release, open it and drag **Darpan** to
 **Applications**. The app is not notarized: on first launch, allow it in System Settings →
 Privacy & Security (**Open Anyway**). Enter the host address and password; with *Remember on this
-Mac* only a key derived from the password is kept, in the Keychain. See
+Mac* only a key derived from the password is kept, in the Keychain. The app has Tailscale built
+in, so the Mac needs no Tailscale app: sign in once from the *Private network* row, then disable
+key expiry for the new device in the Tailscale admin console. See
 [mac/README.md](mac/README.md) for shortcut capture and other details.
 
 **Browser.** On a device signed in to the same tailnet, open the host address
