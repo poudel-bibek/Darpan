@@ -134,8 +134,8 @@ final class Session: NSObject {
         }
 
         settings.$scale.sink { [weak self] in self?.video.scaleMode = $0 }.store(in: &bag)
-        settings.$fps.combineLatest(settings.$quality)
-            .sink { [weak self] fps, kbps in self?.client.setVideo(fps: fps, bitrate: kbps) }.store(in: &bag)
+        settings.$fps.combineLatest(settings.$quality, settings.$fullGPU)
+            .sink { [weak self] fps, kbps, full in self?.client.setVideo(fps: fps, bitrate: kbps, fullGPU: full) }.store(in: &bag)
         settings.$command.sink { [weak self] in self?.keyboard.translator.command = $0 }.store(in: &bag)
         settings.$scrollSpeed.combineLatest(settings.$invertScroll).sink { [weak self] speed, invert in
             self?.video.wheel.speed = speed

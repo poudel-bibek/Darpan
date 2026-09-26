@@ -22,14 +22,17 @@ public enum Msg {
 
     public static func ping(_ clientMs: Double) -> String { #"{"t":"ping","c":\#(String(format: "%.3f", clientMs))}"# }
 
-    public static func start(fps: Int, bitrate: Int) -> String {
-        #"{"t":"start","codec":"h264","fps":\#(fps),"bitrate":\#(bitrate)}"#
+    /// `fullGPU`: the host may use more of its GPU's memory for sharper, faster video
+    /// (`"gpu":"full"`, NVENC through CUDA); otherwise `"lean"` (PROTOCOL.md §4).
+    public static func start(fps: Int, bitrate: Int, fullGPU: Bool = false) -> String {
+        #"{"t":"start","codec":"h264","fps":\#(fps),"bitrate":\#(bitrate),"gpu":"\#(fullGPU ? "full" : "lean")"}"#
     }
 
-    public static func cfg(fps: Int? = nil, bitrate: Int? = nil) -> String {
+    public static func cfg(fps: Int? = nil, bitrate: Int? = nil, fullGPU: Bool? = nil) -> String {
         var parts = [#""t":"cfg""#]
         if let fps { parts.append(#""fps":\#(fps)"#) }
         if let bitrate { parts.append(#""bitrate":\#(bitrate)"#) }
+        if let fullGPU { parts.append(#""gpu":"\#(fullGPU ? "full" : "lean")""#) }
         return "{" + parts.joined(separator: ",") + "}"
     }
 

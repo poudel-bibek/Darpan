@@ -42,6 +42,10 @@ func protocolTests() {
         check(huge.int("id") == nil && huge.int("w") == nil && huge.int("h") == Int.min, "out-of-range numbers are nil, not a trap")
         eq(Incoming(Data(Msg.txt("héllo ✓\n\"x\"")!.utf8))!.string("s"), "héllo ✓\n\"x\"", "txt round trip")
         eq(Incoming(Data(Msg.cfg(fps: 60, bitrate: 0).utf8))!.int("bitrate"), 0, "cfg.bitrate")
+        eq(Incoming(Data(Msg.start(fps: 60, bitrate: 15000).utf8))!.string("gpu"), "lean", "start: lean by default")
+        eq(Incoming(Data(Msg.start(fps: 60, bitrate: 15000, fullGPU: true).utf8))!.string("gpu"), "full", "start: full GPU")
+        eq(Incoming(Data(Msg.cfg(fullGPU: true).utf8))!.string("gpu"), "full", "cfg.gpu")
+        check(Incoming(Data(Msg.cfg(fps: 30).utf8))!.string("gpu") == nil, "cfg without gpu leaves it alone")
         let modes = Incoming(Data(#"{"t":"modes","current":[2560,1440],"modes":[[2560,1440],[1920,1080],["x",1]],"changed":false}"#.utf8))!
         eq(modes.mode("current"), DisplayMode(2560, 1440), "modes.current")
         eq(modes.modes("modes"), [DisplayMode(2560, 1440), DisplayMode(1920, 1080)], "malformed entries ignored")
