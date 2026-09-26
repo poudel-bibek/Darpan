@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# The flat APT index a release carries next to its .deb: Packages and a signed InRelease. With these
-# three files in the latest release, installed hosts get new versions from the system's updater.
+# The flat APT index for a release's .deb: Packages and a signed InRelease. Published with the .deb on
+# the Pages site (scripts/publish-updates.sh), they bring installed hosts new versions through the
+# system's updater.
 # Usage: apt-index.sh <darpan_amd64.deb> <out-dir>   (signs with the release key in $GNUPGHOME)
 set -euo pipefail
 deb=$(realpath "$1")
