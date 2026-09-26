@@ -14,6 +14,10 @@ final class FilePane: ObservableObject {
     @Published var sortOrder = [KeyPathComparator(\FileEntry.name, comparator: .localizedStandard)]
     @Published var showHidden = false { didSet { refresh() } }
     @Published private(set) var loading = false
+    /// The file token has arrived: transfers can start.
+    @Published var ready = false
+    /// Something selected that a transfer would take (the remote side can't receive sockets and such).
+    var canTransfer: Bool { ready && selected.contains { side == .local || $0.kind != .other } }
     @Published private(set) var error: String?
     private var all: [FileEntry] = []
     private var generation = 0
@@ -153,11 +157,10 @@ final class FilesModel: ObservableObject {
         t.ask = { [weak self] name, isFolder, reply in self?.askConflict(name, isFolder: isFolder, reply) }
         engine = t
         transfers = []
+        local.ready = true
+        remote.ready = true
         if firstTime { remote.go(access.home) } else { remote.refresh() }
     }
-
-    var canSend: Bool { engine != nil && !local.selected.isEmpty }
-    var canReceive: Bool { engine != nil && remote.selected.contains { $0.kind != .other } }
 
     func send() {
         let urls = local.selected.map { local.localURL.appendingPathComponent($0.name) }
@@ -241,9 +244,9 @@ private struct PaneView: View {
                 Toggle("Hidden files", isOn: $pane.showHidden).toggleStyle(.checkbox).font(.system(size: 11))
                 Spacer()
                 if pane.side == .local {
-                    Button("Send") { model.send() }.buttonStyle(.borderedProminent).disabled(pane.selection.isEmpty).help("Send the selection to the folder on the right")
+                    Button("Send") { model.send() }.buttonStyle(.borderedProminent).disabled(!pane.canTransfer).help("Send the selection to the folder on the right")
                 } else {
-                    Button("Receive") { model.receive() }.buttonStyle(.borderedProminent).disabled(pane.selection.isEmpty).help("Receive the selection into the folder on the left")
+                    Button("Receive") { model.receive() }.buttonStyle(.borderedProminent).disabled(!pane.canTransfer).help("Receive the selection into the folder on the left")
                 }
             }
             .padding(8)
@@ -276,8 +279,8 @@ private struct PaneView: View {
         }
         .onChange(of: pane.sortOrder) { pane.resort() }
         .contextMenu(forSelectionType: FileEntry.ID.self) { _ in
-            if pane.side == .local { Button("Send") { model.send() }.disabled(!model.canSend) }
-            else { Button("Receive") { model.receive() }.disabled(!model.canReceive) }
+            if pane.side == .local { Button("Send") { model.send() }.disabled(!pane.canTransfer) }
+            else { Button("Receive") { model.receive() }.disabled(!pane.canTransfer) }
         } primaryAction: { ids in
             if ids.count == 1, let e = pane.entries.first(where: { ids.contains($0.id) }) { pane.open(e) }
         }
