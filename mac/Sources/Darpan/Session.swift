@@ -121,14 +121,9 @@ final class Session: NSObject {
             self.content.toasts.show("Changing resolution…", ttl: 1.5)
         }
         model.sendCombo = { [weak self] codes in self?.keyboard.combo(codes) }
-        model.copyRemote = { [weak self] in self?.copyRemoteClipboard(nil) }
         model.setRemoteClipboard = { [weak self] text in
             self?.clipboard.setRemote(text)
             self?.content.toasts.show("Remote clipboard set")
-        }
-        model.type = { [weak self] text in
-            self?.type(text)
-            self?.popover?.close()
         }
 
         settings.$scale.sink { [weak self] in self?.video.scaleMode = $0 }.store(in: &bag)
@@ -291,9 +286,6 @@ final class Session: NSObject {
         case .keys:
             model.accessibilityTrusted = KeyboardCapture.accessibilityTrusted
             togglePanel(item, button, KeysPanel(model: model, settings: settings))
-        case .clipboard:
-            model.localClip = clipboard.local ?? ""
-            togglePanel(item, button, ClipboardPanel(model: model))
         case .upload:
             sendFiles(nil)
         case .sound:
@@ -509,7 +501,6 @@ extension Session: ClientDelegate {
             video.setCursor(cur)
         case .clipboard(let text, let initial):
             clipboard.received(text, initial: initial)
-            model.remoteClip = text
         case .modes(let m):
             model.modes = m
         case .notice(let text, let error):

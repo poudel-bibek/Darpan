@@ -8,15 +8,11 @@ final class ViewerModel: ObservableObject {
     @Published var modes: Client.Modes?
     /// Device pixels of the video area, for "Fit this window".
     @Published var windowPixels: CGSize = .zero
-    @Published var remoteClip = ""
-    @Published var localClip = ""
     @Published var accessibilityTrusted = KeyboardCapture.accessibilityTrusted
 
     var setResolution: (DisplayMode?) -> Void = { _ in }     // nil: native
     var sendCombo: ([String]) -> Void = { _ in }
-    var copyRemote: () -> Void = {}
     var setRemoteClipboard: (String) -> Void = { _ in }
-    var type: (String) -> Void = { _ in }
 
     static let combos: [(name: String, codes: [String])] = [
         ("Super", ["MetaLeft"]), ("Alt+Tab", ["AltLeft", "Tab"]), ("Alt+F4", ["AltLeft", "F4"]),
@@ -153,40 +149,5 @@ struct KeysPanel: View {
         }
         .padding(14)
         .frame(width: 320)
-    }
-}
-
-struct ClipboardPanel: View {
-    @ObservedObject var model: ViewerModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            PanelSection(title: "Remote clipboard") {
-                ScrollView {
-                    Text(model.remoteClip.isEmpty ? "Copy something on the remote computer…" : model.remoteClip)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(model.remoteClip.isEmpty ? .secondary : .primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(6)
-                }
-                .frame(height: 70)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
-                Button("Copy to this Mac") { model.copyRemote() }.disabled(model.remoteClip.isEmpty)
-            }
-            PanelSection(title: "Send to remote") {
-                TextEditor(text: $model.localClip)
-                    .font(.system(size: 12, design: .monospaced))
-                    .frame(height: 70)
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.15)))
-                HStack {
-                    Button("Set remote clipboard") { model.setRemoteClipboard(model.localClip) }
-                    Button("Type it") { model.type(model.localClip) }
-                }
-                .disabled(model.localClip.isEmpty)
-            }
-        }
-        .padding(14)
-        .frame(width: 360)
     }
 }

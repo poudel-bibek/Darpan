@@ -9,17 +9,21 @@ Install and first launch: see *Mac app* in the [main README](../README.md#mac-ap
 ## Using it
 
 * **Private network**: Darpan has Tailscale built in (libtailscale), so the Tailscale app isn't
-  needed. Sign in once from the *Private network* row; the device appears as `darpan-<Mac name>`.
-  Turn off its key expiry in the admin console. Only Darpan's own connection uses it: no VPN, no
-  DNS changes. The node's keys are in `~/Library/Application Support/Darpan/tailscale`; delete
-  that folder to sign out. *This Mac's* uses the system network instead, e.g. the Tailscale app.
-* **Connect window**: the computer's address (`https://<machine>.<tailnet>.ts.net`), the password,
-  *Remember on this Mac*. The clock button lists recent computers. A remembered computer
-  connects at launch.
-* **Viewer**: the small pill at the top edge opens the toolbar (hover or click; drag it sideways
-  to move it): full screen, display (remote resolution, Fit / Actual size, quality, frame rate),
-  keys (Super, Alt+Tab, Ctrl+Alt+Del…, what ⌘ sends, system shortcuts, scrolling), clipboard,
-  send files, stats, disconnect. The *Connection* and *View* menus have the same commands.
+  needed. The first time, click **Sign in with Tailscale**; the Mac appears on the tailnet as
+  `darpan-<Mac name>`. Turn off its key expiry in the admin console. Only Darpan's own connection
+  uses it: no VPN, no DNS changes. The node's keys are in
+  `~/Library/Application Support/Darpan/tailscale`; delete that folder to sign out. The ⚙︎ menu can
+  switch to *This Mac's network* instead (e.g. the Tailscale app).
+* **Connect window**: *Your computers* lists the Linux computers on your tailnet that run Darpan,
+  found by themselves, plus the ones you've used. Click one to connect. The first time, enter the
+  password Darpan shows on that computer (or `darpan password` there); with *Remember on this
+  Mac* it's one click from then on. Right-click a computer to remove it from the list.
+  *Other address…* takes an address by hand. A remembered computer connects at launch.
+* **Viewer**: the small capsule at the upper right opens the toolbar when you point at it; drag it
+  by its grip to move it anywhere. It has full screen, display (remote resolution, Fit / Actual
+  size, quality, frame rate), keys (Super, Alt+Tab, Ctrl+Alt+Del…, what ⌘ sends, system shortcuts,
+  scrolling), send files, sound, stats, disconnect. The *Connection* and *View* menus have the same
+  commands, plus the clipboard ones (*Type Clipboard on Remote* for places where pasting doesn't work).
 * **Keyboard**: while the viewer is in front every key goes to the remote computer, ⌘Q and ⌘W
   included. ⌘ is Ctrl there by default (⌘C / ⌘V copy and paste), or Super. Always on the Mac:
   * ⌃⌥⌘D disconnect
