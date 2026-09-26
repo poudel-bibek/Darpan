@@ -103,18 +103,19 @@ Plus full screen, screen resolutions to match your window, and a toolbar that tu
 
 ## Performance
 
-Measured with Darpan 1.4.1 on a Linux PC with an RTX 4090 at 2560×1440, viewed from a MacBook
-over Wi-Fi. CPU is a share of one core.
+Measured on a Linux PC with an RTX 4090 at 2560×1440 (Darpan 1.4.1), viewed from a MacBook over
+Wi-Fi (Darpan 1.4.0; its video path is the same in 1.4.1). CPU is a share of one core.
 
 | | Linux computer | Mac app |
 |---|---|---|
 | Nobody connected | 0 % CPU, no GPU memory | — |
 | Everyday use | 3 % CPU | 8–10 % CPU |
 | Full-screen video with sound | 6 % CPU | 32 % CPU |
-| Memory while connected | 40 MB of GPU memory | 50–90 MB |
+| Memory while connected | 40 MB of GPU memory | 50–90 MB (as Activity Monitor shows it) |
 
-A key press shows up in about 20–30 ms, Wi-Fi to Wi-Fi. The Linux computer turns it into a video
-frame in 5 ms, and the Mac decodes that in hardware in about 4 ms.
+A frame reaches the Mac's screen about 27 ms after the Linux computer captures it, over Wi-Fi. Of
+that, turning a change into a video frame takes the Linux computer 5 ms, and the Mac decodes it in
+hardware in about 4 ms.
 **Free and open source** (MIT): no subscription, and no account with us.
 
 ## Everyday use
