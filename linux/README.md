@@ -40,8 +40,27 @@ bash packaging/build-deb.sh           # → ../dist/darpan_<ver>_amd64.deb
 python3 tools/test_host.py            # 20 protocol/input/clipboard/upload/latency checks
 node tools/webclient_test.mjs         # 17 checks: headless Chrome ↔ real host
 python3 tools/apt_test.py             # the release's APT index, as installed hosts use it
-python3 tools/capture_exit_test.py    # darpan-capture exits at once when its X server goes away
+python3 tools/capture_exit_test.py    # darpan-capture exits when its X server goes away; works without XShm
 ```
+
+## The login screen
+
+`darpan login-screen on` (or the switch in the window) runs `packaging/login-screen-setup` as root
+through pkexec, for the calling user only. It marks the user in `/etc/darpan/login-screen.d/`, enables
+lingering, so the user's services start at boot, and sets `WaylandEnable=false` for GDM (marked, so
+`off` undoes exactly that). Then:
+
+1. At boot, `darpan-login-screen.target` (conditioned on the mark) brings up the socket and Tailscale.
+   The host starts on the first connection. Until a screen exists it closes signed-in viewers with
+   4004, and they retry.
+2. GDM's login screen runs `login-screen-access` from its autostart, as its own user. It grants each
+   marked user access with `xhost +SI:localuser:<user>`, which covers every process of that user.
+   The host finds that X server by its socket's owner (`gdm`) and accepts it only if the connection's
+   peer credentials say GDM's user runs it. The capture helper can't share memory with an X server run by another user, so it
+   copies frames over the X connection.
+3. At login, `darpan-desktop.service` restarts the host, which then finds the desktop's `DISPLAY`.
+   The socket and Tailscale are `StopWhenUnneeded=`: the login-screen target keeps them up past a
+   logout, while for everyone else they stop with the desktop session, as before.
 
 ## Updates
 

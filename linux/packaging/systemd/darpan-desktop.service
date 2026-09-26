@@ -1,0 +1,15 @@
+[Unit]
+Description=Darpan moves from the login screen to the desktop
+Documentation=file:///usr/share/doc/darpan/README.md
+ConditionPathExists=/etc/darpan/login-screen.d/%u
+PartOf=graphical-session.target
+# Ahead of the host's own start: it restarts a host that is showing the login screen, which then
+# finds the desktop. --no-block, since the restart waits for this unit.
+Before=darpan.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl --user --no-block try-restart darpan.service
+
+[Install]
+WantedBy=graphical-session.target

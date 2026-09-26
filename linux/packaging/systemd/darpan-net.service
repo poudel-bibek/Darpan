@@ -5,7 +5,8 @@ Documentation=https://tailscale.com/kb/1112/userspace-networking
 # 127.0.0.1:47470) or goes away, Tailscale stops and forwards nothing.
 BindsTo=darpan.socket
 After=darpan.socket
-PartOf=graphical-session.target
+# Only while something wants it: the desktop session, or from boot, darpan-login-screen.target.
+StopWhenUnneeded=yes
 StartLimitIntervalSec=0
 
 [Service]

@@ -24,7 +24,7 @@ R=$STAGE/root
 install -d -m 0755 "$R/DEBIAN" "$R/opt/darpan/darpan" "$R/opt/darpan/native" "$R/opt/darpan/web" \
     "$R/opt/darpan/tailscale" "$R/usr/bin" "$R/usr/lib/systemd/user" "$R/usr/share/applications" \
     "$R/usr/share/icons/hicolor/scalable/apps" "$R/usr/share/doc/darpan" "$R/etc/apt/sources.list.d" \
-    "$R/etc/apt/keyrings"
+    "$R/etc/apt/keyrings" "$R/usr/share/gdm/greeter/autostart" "$R/usr/share/polkit-1/actions"
 install -m 0644 darpan/*.py "$R/opt/darpan/darpan/"
 install -m 0755 native/darpan-capture "$R/opt/darpan/native/"
 install -m 0644 web/index.html web/app.js web/audio-worklet.js web/style.css web/favicon.svg web/manifest.webmanifest "$R/opt/darpan/web/"
@@ -33,7 +33,10 @@ tar -xzf "$TGZ" -C "$STAGE"
 install -m 0755 "$STAGE/tailscale_${TSVER}_amd64/tailscaled" "$R/opt/darpan/tailscale/"
 install -m 0755 packaging/darpan "$R/usr/bin/darpan"
 install -m 0755 packaging/darpan-migrate "$R/opt/darpan/migrate"
-install -m 0644 packaging/systemd/*.service packaging/systemd/*.socket "$R/usr/lib/systemd/user/"
+install -m 0755 packaging/login-screen-setup packaging/login-screen-access "$R/opt/darpan/"
+install -m 0644 packaging/darpan-login-screen.desktop "$R/usr/share/gdm/greeter/autostart/"
+install -m 0644 packaging/dev.darpan.login-screen.policy "$R/usr/share/polkit-1/actions/"
+install -m 0644 packaging/systemd/*.service packaging/systemd/*.socket packaging/systemd/*.target "$R/usr/lib/systemd/user/"
 install -m 0644 packaging/dev.darpan.Darpan.desktop "$R/usr/share/applications/"
 install -m 0644 ../logo.svg "$R/usr/share/icons/hicolor/scalable/apps/darpan.svg"
 install -m 0644 packaging/debian/copyright "$R/usr/share/doc/darpan/copyright"

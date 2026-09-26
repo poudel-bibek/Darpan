@@ -8,8 +8,13 @@ no polling.
 import ctypes
 import logging
 import os
+import pwd
+import re
+import socket
 import zlib
 import struct
+
+from . import login_screen
 
 log = logging.getLogger("darpan.x11")
 
@@ -151,6 +156,58 @@ def png_rgba(w, h, rgba):
 
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) +
             chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+
+
+LOGIN_USER = "gdm"                             # GDM runs the login screen's X server as this user
+X11_SOCKETS = "/tmp/.X11-unix"
+
+
+def _owner(name):
+    m = re.fullmatch(r":(\d+)(?:\.\d+)?", name)
+    try:
+        return pwd.getpwuid(os.stat(os.path.join(X11_SOCKETS, "X" + m.group(1))).st_uid).pw_name if m else None
+    except (OSError, KeyError):
+        return None
+
+
+def _server_uid(name):
+    """Who runs the X server at `name`, from the connection's peer credentials: the socket file's
+    owner says nothing about who listens (libxcb tries the abstract socket first). None if it can't
+    be opened."""
+    d = XOpenDisplay(name.encode())
+    if not d:
+        return None
+    try:
+        s = socket.fromfd(XConnectionNumber(d), socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            return struct.unpack("3i", s.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1]
+        finally:
+            s.close()
+    except OSError:
+        return None
+    finally:
+        XCloseDisplay(d)
+
+
+def find_display():
+    """(display, login_screen): the desktop session's display (an X server run by us or root), else,
+    for a user who turned it on, the login screen's (run by GDM's user). None while there is neither,
+    e.g. during boot."""
+    try:
+        login_uid = pwd.getpwnam(LOGIN_USER).pw_uid
+    except KeyError:
+        login_uid = None
+    name = os.environ.get("DISPLAY")
+    uid = _server_uid(name) if name else None
+    if uid is not None and uid != login_uid and uid in (os.getuid(), 0):
+        return name, False
+    if login_uid is None or not login_screen.on():
+        return None
+    for sock in sorted(os.listdir(X11_SOCKETS)) if os.path.isdir(X11_SOCKETS) else ():
+        name = ":" + sock[1:]
+        if sock[:1] == "X" and _owner(name) == LOGIN_USER and _server_uid(name) == login_uid:
+            return name, True
+    return None
 
 
 class X11:

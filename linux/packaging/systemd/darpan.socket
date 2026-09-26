@@ -1,10 +1,8 @@
 [Unit]
 Description=Darpan host socket (held by systemd for the whole desktop session)
 Documentation=file:///usr/share/doc/darpan/README.md
-# Only while a desktop exists: a connection before login (or after logout) would otherwise start a
-# service whose ConditionEnvironment=DISPLAY skips it, until the trigger limit fails this socket
-# and, through BindsTo=, darpan-net with it.
-PartOf=graphical-session.target
+# Only while something wants it: the desktop session, or from boot, darpan-login-screen.target.
+StopWhenUnneeded=yes
 
 [Socket]
 # Bound when the desktop session starts and kept while the host restarts, so no other local user can

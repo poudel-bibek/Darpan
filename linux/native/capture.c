@@ -721,7 +721,6 @@ static int capture_open(Capture *c, const char *display) {
     XGetWindowAttributes(c->dpy, c->root, &wa);
     c->w = wa.width & ~1;    // 4:2:0 needs even dimensions
     c->h = wa.height & ~1;
-    if (!XShmQueryExtension(c->dpy)) { logf_("X server lacks MIT-SHM"); return -1; }
     int derr;
     if (!XDamageQueryExtension(c->dpy, &c->damage_event, &derr)) { logf_("X server lacks DAMAGE"); return -1; }
 
@@ -742,11 +741,14 @@ static int capture_open(Capture *c, const char *display) {
     c->shm.shmaddr = c->img->data = shmat(c->shm.shmid, NULL, 0);
     if (c->shm.shmaddr == (void *)-1) { logf_("shmat: %s", strerror(errno)); return -1; }
     c->shm.readOnly = False;
-    if (!XShmAttach(c->dpy, &c->shm)) { logf_("XShmAttach failed"); return -1; }
-    XSync(c->dpy, False);
+    x_error_code = 0;
+    if (XShmQueryExtension(c->dpy) && XShmAttach(c->dpy, &c->shm)) XSync(c->dpy, False);
+    else x_error_code = -1;
     shmctl(c->shm.shmid, IPC_RMID, NULL);   // freed automatically once both sides detach
-    if (x_error_code) { logf_("XShmAttach X error %d", x_error_code); return -1; }
-    c->shm_attached = 1;
+    // An X server running as another user (the login screen's) can't map our segment. Then frames
+    // come over the X connection into it instead: slower, but a login screen hardly changes.
+    if (x_error_code) logf_("no shared memory with the X server (%d); copying frames", x_error_code);
+    else c->shm_attached = 1;
 
     // StructureNotify tells us when the root window (screen) changes size.
     XSelectInput(c->dpy, c->root, StructureNotifyMask);
@@ -758,7 +760,14 @@ static int capture_open(Capture *c, const char *display) {
 // Grabs the whole screen into the shm segment. Returns 0 on success.
 static int capture_grab(Capture *c) {
     x_error_code = 0;
-    if (!XShmGetImage(c->dpy, c->root, c->img, 0, 0, AllPlanes) || x_error_code) return -1;
+    if (c->shm_attached)
+        return !XShmGetImage(c->dpy, c->root, c->img, 0, 0, AllPlanes) || x_error_code ? -1 : 0;
+    XImage *t = XGetImage(c->dpy, c->root, 0, 0, (unsigned)c->w, (unsigned)c->h, AllPlanes, ZPixmap);
+    if (!t || x_error_code) { if (t) XDestroyImage(t); return -1; }
+    for (int y = 0; y < c->h; y++)
+        memcpy(c->img->data + (size_t)y * (size_t)c->img->bytes_per_line,
+               t->data + (size_t)y * (size_t)t->bytes_per_line, (size_t)c->w * 4);
+    XDestroyImage(t);
     return 0;
 }
 
@@ -974,7 +983,7 @@ int main(int argc, char **argv) {
             uint64_t t0 = now_us();
             if (capture_grab(&cap)) {
                 // Usually a transient BadMatch while the screen is being reconfigured.
-                logf_("XShmGetImage failed (X error %d)", x_error_code);
+                logf_("screen grab failed (X error %d)", x_error_code);
                 XSync(cap.dpy, False);
                 next_allowed = now + 50000;
                 continue;

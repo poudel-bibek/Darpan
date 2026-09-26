@@ -5,8 +5,6 @@ PartOf=graphical-session.target
 Requires=darpan.socket
 After=graphical-session.target darpan.socket darpan-net.service
 Wants=darpan-net.service
-# The desktop must exist; without it (e.g. a stray connection before login) don't even try.
-ConditionEnvironment=DISPLAY
 StartLimitIntervalSec=0
 
 [Service]

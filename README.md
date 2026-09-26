@@ -109,6 +109,8 @@ Plus full screen, screen resolutions to match your window, and a toolbar that tu
 * **Files**: **Files** in the toolbar opens two panes, this Mac and the Linux computer. Select files
   or folders and **Send** or **Receive** them, or drag between the panes. Files dropped on the window
   land on the Linux desktop. The browser has the same window, with the Linux side only.
+* **After a restart**, Darpan can show the Linux login screen, so you log in from your Mac with
+  nobody at the Linux computer. Turn on *Show the login screen* in the Darpan window, once.
 * **Resolution**: pick one in the toolbar's display panel. The Linux computer remembers it, for the
   Mac app and for each browser, and switches back to it the next time you connect; *Native* goes back
   to normal.
@@ -134,8 +136,10 @@ Plus full screen, screen resolutions to match your window, and a toolbar that tu
   With an NVIDIA GPU, video is encoded in hardware;
   without one, Darpan falls back to software encoding, which uses several CPU cores while you're
   connected.
-* **After a reboot**, someone has to log in on the Linux computer before Darpan can show its screen,
-  unless automatic login is enabled.
+* **After a restart**, someone has to log in on the Linux computer before Darpan can show its screen,
+  unless *Show the login screen* is on. Turning it on moves the login screen, and everyone's sessions,
+  to Xorg, and lets every program running as you see and control the login screen, including what
+  other people type there. On a computer other people use, leave it off.
 * **Staying signed in:** Tailscale signs devices out after 180 days. To avoid that, open the
   [Tailscale admin console](https://login.tailscale.com/admin/machines) and choose
   **Disable key expiry** for the Linux computer and for Darpan on your Mac.
@@ -152,6 +156,7 @@ darpan password     show the password; --set to choose one, --generate for a new
 darpan disconnect   end all remote sessions
 darpan doctor       check the display, GPU encoder, network and service
 darpan net          network status: direct connection or relayed
+darpan login-screen after a restart, show the login screen: on or off
 ```
 
 Logs: `journalctl --user -u darpan -u darpan-net -f`
