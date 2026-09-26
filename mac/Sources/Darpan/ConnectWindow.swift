@@ -280,11 +280,15 @@ struct ConnectView: View {
             Text("Welcome to Darpan").font(.system(size: 22, weight: .semibold)).padding(.top, 6)
             Text("Your Linux computer, on this Mac.")
                 .font(.system(size: 13)).foregroundStyle(.secondary).padding(.top, 2)
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 step(1, "On the Linux computer, open Darpan and click **Get started**.")
                 step(2, "Here, sign in with the same account: Google, Apple, GitHub or Microsoft.")
                 step(3, "Click your computer. The first time, type the password shown in the Darpan window there.")
             }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
             .padding(.top, 20)
             Button {
                 settings.welcomed = true
@@ -302,13 +306,18 @@ struct ConnectView: View {
                 .padding(.top, 10)
         }
         .padding(28)
-        .frame(width: 380)
+        .frame(width: 420)
     }
 
+    /// A numbered step: the number is text too, so it sits on the same baseline as the first line.
     private func step(_ n: Int, _ text: LocalizedStringKey) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: "\(n).circle.fill").font(.system(size: 16)).foregroundStyle(Color.accentColor)
-            Text(text).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+            Text("\(n)")
+                .font(.system(size: 11, weight: .bold, design: .rounded)).monospacedDigit()
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(Circle().fill(Color.accentColor))
+            Text(text).font(.system(size: 13)).lineSpacing(2).fixedSize(horizontal: false, vertical: true)
         }
     }
 
