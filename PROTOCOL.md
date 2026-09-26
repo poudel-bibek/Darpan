@@ -63,9 +63,12 @@ the host encodes fewer frames instead of buffering stale ones.
    ```
    and sends
    ```json
-   {"t":"auth","proof":"<base64 of proof>","client":"Chrome 131 on macOS","ver":"1.0.0"}
+   {"t":"auth","proof":"<base64 of proof>","client":"Darpan 1.4.2 on macOS","ver":"1.4.2","caps":["h264-444"]}
    ```
-   `client` is a free-form human-readable description (shown in the host UI).
+   `client` is a free-form human-readable description (shown in the host UI). `caps` (optional) lists
+   what the client can do beyond the basics: `"h264-444"`, it decodes H.264 High 4:4:4 Predictive
+   (chroma_format_idc 3, CAVLC, 8-bit), which the host then sends at the higher quality settings
+   (a bitrate ceiling of 25000 kbit/s or more), for full-resolution colour.
    All base64 in this protocol is standard base64 **with** padding.
 3. Host replies either
    ```json
@@ -101,11 +104,13 @@ Client → host:
 
 Host → client, before the first frame of every new stream:
 ```json
-{"t":"stream","id":3,"codec":"h264","w":2560,"h":1440,"fps":60,"enc":"nvenc"}
+{"t":"stream","id":3,"codec":"h264","w":2560,"h":1440,"fps":60,"enc":"nvenc","api":"vulkan","chroma":420}
 ```
 `id` (uint16) changes every time the encoder is (re)started. Frames whose stream id does
 not match the latest `stream` message MUST be discarded. The first frame of every stream
-is a key frame.
+is a key frame. `api` (`"vulkan"`, `"cuda"` or `"software"`) says how the host encodes, for display.
+`chroma` is `444` when the client asked with `h264-444`, its ceiling is 25000 kbit/s or more and the
+GPU can encode it; otherwise `420`.
 
 `{"t":"stop"}` pauses streaming: no more frames are encoded. The host keeps the encoder warm
 for ~15 s (so `start` resumes instantly with a new `stream` id and a key frame) and then tears
@@ -137,7 +142,7 @@ second but never drops a request: a second one within that second is served when
 For `h264` the payload is exactly one **access unit in Annex-B format** (start codes
 `00 00 00 01` / `00 00 01`). Key frames carry SPS and PPS in-band. Profile is High or
 Main, **no B-frames** (decode order == display order; P frames may be non-reference
-pictures), 4:2:0, 8-bit. Colour: BT.709,
+pictures), 4:2:0, 8-bit; or High 4:4:4 Predictive (CAVLC) when the `stream` says `"chroma":444`. Colour: BT.709,
 limited range unless the VUI says otherwise. Resolution == the `stream` message's w×h.
 
 ### 3.3 Flow control — clients MUST ack every frame

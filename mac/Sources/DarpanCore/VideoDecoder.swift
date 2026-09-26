@@ -101,7 +101,9 @@ public final class H264Decoder {
         guard let fd = VideoFormat.make(sps: s, pps: p) else { return kVTParameterErr }
         let spec: [CFString: Any] = [kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: true]
         let attrs: [CFString: Any] = [
-            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            // Full colour (4:4:4) when the host sends it (it does only for `h264-444`); 4:2:0 otherwise.
+            kCVPixelBufferPixelFormatTypeKey: SPSInfo.chromaFormat(s) == 3 ? kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange
+                                                                           : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
             kCVPixelBufferIOSurfacePropertiesKey: [CFString: Any](),
             kCVPixelBufferMetalCompatibilityKey: true,
         ]

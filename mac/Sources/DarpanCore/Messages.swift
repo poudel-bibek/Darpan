@@ -45,8 +45,11 @@ public enum Msg {
     public static let fs = #"{"t":"fs"}"#
     public static func audio(on: Bool) -> String { #"{"t":"audio","on":\#(on)}"# }
 
-    public static func auth(proof: Data, client: String) -> String? {
-        json(["t": "auth", "proof": proof.base64EncodedString(), "client": client, "ver": DarpanVersion.string])
+    /// `caps`: what this client decodes beyond the basics (`h264-444`), PROTOCOL.md §2.
+    public static func auth(proof: Data, client: String, caps: [String] = []) -> String? {
+        var o: [String: Any] = ["t": "auth", "proof": proof.base64EncodedString(), "client": client, "ver": DarpanVersion.string]
+        if !caps.isEmpty { o["caps"] = caps }
+        return json(o)
     }
 
     public static func txt(_ s: String) -> String? { json(["t": "txt", "s": s]) }

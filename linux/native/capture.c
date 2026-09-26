@@ -252,6 +252,7 @@ static const char cmp_ptx[] =
 
 typedef struct {
     VkEnc *vk;                 // Vulkan Video; otherwise NVENC through CUDA (the fields below)
+    int c444;                  // 4:4:4 (High 4:4:4 Predictive): asked for, then what the encoder does
     void *enc;
     CUcontext ctx;
     CUdeviceptr dptr;
@@ -359,10 +360,15 @@ static int encoder_open(Encoder *e, int gpu, int preset, int matrix601, void *sr
     if (known && !getenv("DARPAN_NVENC_CUDA")) {
         memset(src, 0, src_size);      // the GPU can only import pages that exist
         VkEncParams vp = {which, e->w, e->h, e->fps, e->kbps, e->vbv_frames, MAX_KBPS, preset, matrix601,
-                          src, src_size, src_pitch};
+                          e->c444, src, src_size, src_pitch};
         const uint8_t *ps;
         uint32_t ps_len;
-        if ((e->vk = vkenc_open(&vp, e->gpu, &ps, &ps_len))) return 0;
+        if (!(e->vk = vkenc_open(&vp, e->gpu, &ps, &ps_len)) && vp.chroma444) {
+            logf_("no 4:4:4 through Vulkan Video: 4:2:0");
+            vp.chroma444 = e->c444 = 0;
+            e->vk = vkenc_open(&vp, e->gpu, &ps, &ps_len);
+        }
+        if (e->vk) return 0;
         logf_("no Vulkan Video: NVENC through CUDA");
     }
     if (cuda_load() || nvenc_load()) return -1;
@@ -397,7 +403,16 @@ static int encoder_open(Encoder *e, int gpu, int preset, int matrix601, void *sr
                                             NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY, &pc));
     e->cfg = pc.presetCfg;
     e->cfg.version = NV_ENC_CONFIG_VER;
-    e->cfg.profileGUID = NV_ENC_H264_PROFILE_HIGH_GUID;
+    if (e->c444) {                   // only if this NVENC can
+        NV_ENC_CAPS_PARAM cp = {NV_ENC_CAPS_PARAM_VER, NV_ENC_CAPS_SUPPORT_YUV444_ENCODE, {0}};
+        int yes = 0;
+        if (nv.nvEncGetEncodeCaps(e->enc, NV_ENC_CODEC_H264_GUID, &cp, &yes) != NV_ENC_SUCCESS || !yes) {
+            logf_("no 4:4:4 on this NVENC: 4:2:0");
+            e->c444 = 0;
+        }
+    }
+    // (4:4:4 comes out CAVLC whatever is asked: NVENC has CABAC only for 4:2:0)
+    e->cfg.profileGUID = e->c444 ? NV_ENC_H264_PROFILE_HIGH_444_GUID : NV_ENC_H264_PROFILE_HIGH_GUID;
     e->cfg.gopLength = NVENC_INFINITE_GOPLENGTH;   // key frames only on demand
     e->cfg.frameIntervalP = 1;                      // no B-frames
     set_rc(e);
@@ -408,7 +423,7 @@ static int encoder_open(Encoder *e, int gpu, int preset, int matrix601, void *sr
     h->outputAUD = 0;
     h->sliceMode = 0;
     h->sliceModeData = 0;
-    h->chromaFormatIDC = 1;
+    h->chromaFormatIDC = e->c444 ? 3 : 1;
     h->level = NV_ENC_LEVEL_AUTOSELECT;
     if (!getenv("DARPAN_NVENC_DEFAULT_REFS")) {
         // Screen content is predicted from the previous frame; a single reference keeps the
@@ -679,13 +694,13 @@ static void usage(void) {
     fprintf(stderr,
             "usage: darpan-capture [--display :1] [--fps 60] [--bitrate KBPS] [--credits N]\n"
             "                  [--preset 1-7] [--vbv-frames N] [--gpu N] [--matrix 709|601]\n"
-            "                  [--probe] [--bench N]\n");
+            "                  [--chroma 420|444] [--probe] [--bench N]\n");
 }
 
 int main(int argc, char **argv) {
     const char *display = NULL;
     int fps = 60, kbps = 12000, credits = 4, preset = 3, gpu = 0, vbv_frames = 4, matrix601 = 0;
-    int probe = 0, bench = 0;
+    int probe = 0, bench = 0, chroma444 = 0;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *v = i + 1 < argc ? argv[i + 1] : NULL;
@@ -699,6 +714,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--gpu")) gpu = atoi(v);
         else if (!strcmp(a, "--vbv-frames")) vbv_frames = atoi(v);
         else if (!strcmp(a, "--matrix")) matrix601 = !strcmp(v, "601");
+        else if (!strcmp(a, "--chroma")) chroma444 = !strcmp(v, "444");
         else if (!strcmp(a, "--bench")) bench = atoi(v);
         else { usage(); return 2; }
         i++;
@@ -741,6 +757,7 @@ int main(int argc, char **argv) {
     enc.fps = (uint32_t)fps;
     enc.kbps = (uint32_t)kbps;
     enc.vbv_frames = (uint32_t)vbv_frames;
+    enc.c444 = chroma444;
     if (encoder_open(&enc, gpu, preset, matrix601, cap.shm.shmaddr, cap.shm_size, (uint32_t)cap.img->bytes_per_line)) {
         emit_info("{\"ev\":\"error\",\"msg\":\"nvenc init failed\"}");
         rc = 4;
@@ -755,8 +772,8 @@ int main(int argc, char **argv) {
             logf_("cuMemHostRegister failed; using pageable copies");
     }
 
-    emit_info("{\"ev\":\"start\",\"w\":%d,\"h\":%d,\"enc\":\"nvenc\",\"api\":\"%s\",\"gpu\":\"%s\",\"preset\":%d,\"fps\":%d,\"kbps\":%d}",
-              cap.w, cap.h, enc.vk ? "vulkan" : "cuda", enc.gpu, preset, fps, kbps);
+    emit_info("{\"ev\":\"start\",\"w\":%d,\"h\":%d,\"enc\":\"nvenc\",\"api\":\"%s\",\"chroma\":%d,\"gpu\":\"%s\",\"preset\":%d,\"fps\":%d,\"kbps\":%d}",
+              cap.w, cap.h, enc.vk ? "vulkan" : "cuda", enc.c444 ? 444 : 420, enc.gpu, preset, fps, kbps);
 
     CUDA_MEMCPY2D cp = {0};
     cp.srcMemoryType = CU_MEMORYTYPE_HOST;

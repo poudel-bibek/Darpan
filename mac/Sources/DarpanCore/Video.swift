@@ -1,6 +1,7 @@
 import CoreMedia
 import CoreVideo
 import Foundation
+import VideoToolbox
 
 /// 16-byte big-endian header of a binary VIDEO message (PROTOCOL.md §3.2).
 public struct VideoHeader: Equatable {
@@ -111,4 +112,77 @@ public enum VideoFormat {
                                        sampleSizeArray: &size, sampleBufferOut: &sb)
         return st == noErr ? sb : nil
     }
+}
+
+/// Reading an SPS: the chroma format (PROTOCOL.md §3.2 allows 4:2:0 and, with `h264-444`, 4:4:4).
+public enum SPSInfo {
+    /// chroma_format_idc: 1 (4:2:0) unless a High-family SPS says otherwise; 3 is 4:4:4.
+    public static func chromaFormat(_ sps: Data) -> Int {
+        var r = BitReader(unescaping: sps.dropFirst())            // after the NAL header byte
+        guard let profile = r.bits(8) else { return 1 }
+        _ = r.bits(16)                                           // constraint flags, level_idc
+        _ = r.ue()                                               // seq_parameter_set_id
+        let high: Set<Int> = [100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135]
+        guard high.contains(profile), let idc = r.ue() else { return 1 }
+        return idc
+    }
+
+    /// Exp-Golomb and plain bits over an RBSP (emulation-prevention bytes removed).
+    struct BitReader {
+        private let bytes: [UInt8]
+        private var pos = 0
+
+        init<C: Collection>(unescaping d: C) where C.Element == UInt8 {
+            var out: [UInt8] = []
+            var zeros = 0
+            for b in d {
+                if zeros >= 2 && b == 3 { zeros = 0; continue }
+                out.append(b)
+                zeros = b == 0 ? zeros + 1 : 0
+            }
+            bytes = out
+        }
+
+        mutating func bits(_ n: Int) -> Int? {
+            var v = 0
+            for _ in 0..<n {
+                guard pos < bytes.count * 8 else { return nil }
+                v = v << 1 | Int(bytes[pos / 8] >> (7 - UInt8(pos % 8)) & 1)
+                pos += 1
+            }
+            return v
+        }
+
+        mutating func ue() -> Int? {
+            var zeros = 0
+            while true {
+                guard let b = bits(1) else { return nil }
+                if b == 1 { break }
+                zeros += 1
+                if zeros > 31 { return nil }
+            }
+            guard let rest = bits(zeros) else { return nil }
+            return (1 << zeros) - 1 + rest
+        }
+    }
+}
+
+/// What this Mac's decoder can take beyond the basics, for `auth.caps` (PROTOCOL.md §2).
+public enum DecoderCaps {
+    /// H.264 High 4:4:4 Predictive in hardware (probed once with a 2560×1440 SPS/PPS from the host's encoder).
+    public static let fullColour: Bool = {
+        let sps = Data([0x67, 0xf4, 0x00, 0x33, 0x91, 0x85, 0x95, 0x00, 0x50, 0x01, 0x6b, 0x4d, 0x40, 0x43, 0x40, 0x41, 0xe9, 0x54])
+        let pps = Data([0x68, 0xce, 0x3c, 0xb0])
+        guard let fd = VideoFormat.make(sps: sps, pps: pps) else { return false }
+        let spec = [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: true] as CFDictionary
+        var s: VTDecompressionSession?
+        guard VTDecompressionSessionCreate(allocator: nil, formatDescription: fd, decoderSpecification: spec,
+                                           imageBufferAttributes: nil, outputCallback: nil, decompressionSessionOut: &s) == noErr,
+              let s else { return false }
+        VTDecompressionSessionInvalidate(s)
+        return true
+    }()
+
+    /// The `caps` this client sends.
+    public static var list: [String] { fullColour ? ["h264-444"] : [] }
 }

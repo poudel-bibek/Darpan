@@ -12,6 +12,7 @@ typedef struct {
     uint32_t max_kbps;              // the highest bitrate it may be asked for (it sets the H.264 level)
     int preset;                     // NVENC-style 1..7, mapped to a quality level
     int matrix601;                  // BT.601 instead of BT.709
+    int chroma444;                  // 4:4:4 (High 4:4:4 Predictive): full-resolution colour
     void *src;                      // the frame buffer (BGRx), page-aligned, read by the GPU in place
     size_t src_size;                // a multiple of the page size
     uint32_t src_pitch;             // bytes per row

@@ -14,3 +14,10 @@ second. That makes 159 pictures: one IDR (the first), reference frames with moti
 non-reference probes. FFmpeg's decoder (GStreamer's avdec_h264) decodes all of them with no warnings;
 the last picture is 40.5 dB PSNR against the screen. `…json` lists the IDR and non-reference
 pictures, and `…-last.png` is that decode of the last picture.
+
+`vulkan-444-2560x1440.h264`: full colour (4:4:4) through Vulkan Video, as a viewer that sends the
+`h264-444` capability gets it at Higher Quality: High 4:4:4 Predictive, CAVLC (NVENC's only choice for
+4:4:4), 30 Mbit/s. Made by `linux/tools/make_fixture.py --444`: six pictures of 2560×1440 coloured
+code, the IDR, two 20 px scroll steps and three refreshes, 405 KB. FFmpeg's decoder decodes all of
+them with no warnings; the last picture is 34.3 dB PSNR against the screen. `…-last.png` is the
+top-left 640×360 of that decode.

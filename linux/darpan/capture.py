@@ -67,14 +67,15 @@ class _Source:
         self.on_start, self.on_frame, self.on_exit = on_start, on_frame, on_exit
         self.stopped = False
         self.api = None                  # how it encodes: "vulkan", "cuda" or "software"
+        self.chroma = 420                # 444: full-resolution colour
 
 
 class NvencCapture(_Source):
     encoder = "nvenc"
 
-    def __init__(self, *a, preset=3, gpu=0, cuda=False, **kw):
+    def __init__(self, *a, preset=3, gpu=0, cuda=False, chroma444=False, **kw):
         super().__init__(*a, **kw)
-        self.preset, self.gpu, self.cuda = preset, gpu, cuda
+        self.preset, self.gpu, self.cuda, self.c444 = preset, gpu, cuda, chroma444
         self.proc = None
         self.task = None
 
@@ -83,6 +84,8 @@ class NvencCapture(_Source):
                 "--credits", str(self.credits), "--preset", str(self.preset), "--gpu", str(self.gpu)]
         if self.display:
             args += ["--display", self.display]
+        if self.c444:
+            args += ["--chroma", "444"]
         self.proc = await asyncio.create_subprocess_exec(
             *args, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=None,
             limit=1 << 20, env=dict(os.environ, DARPAN_NVENC_CUDA="1") if self.cuda else None)
@@ -104,7 +107,7 @@ class NvencCapture(_Source):
                     info = json.loads(data)
                     ev = info.get("ev")
                     if ev == "start":
-                        self.api = info.get("api")
+                        self.api, self.chroma = info.get("api"), info.get("chroma", 420)
                         self.on_start(info["w"], info["h"], "nvenc")
                     elif ev in ("resize", "error"):
                         reason = ev

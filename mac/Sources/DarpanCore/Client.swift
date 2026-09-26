@@ -112,6 +112,8 @@ public final class Client {
         public let height: Int
         public let fps: Int
         public let encoder: String
+        /// 444 for full colour (with the `h264-444` capability), else 420.
+        public var chroma = 420
     }
 
     public struct Cursor {
@@ -625,7 +627,7 @@ public final class Client {
             fail(.needPassword)
             return
         }
-        socket?.send(text: Msg.auth(proof: Auth.proof(key: k, nonce: nonce), client: Auth.clientName()) ?? "")
+        socket?.send(text: Msg.auth(proof: Auth.proof(key: k, nonce: nonce), client: Auth.clientName(), caps: DecoderCaps.list) ?? "")
     }
 
     private func onOK(_ m: Incoming) {
@@ -761,7 +763,8 @@ public final class Client {
     private func onStream(_ m: Incoming) {
         guard let id = m.int("id"), (0...0xFFFF).contains(id), let w = m.int("w"), let h = m.int("h"),
               w > 0, h > 0 else { return }
-        let info = StreamInfo(id: UInt16(id), width: w, height: h, fps: m.int("fps") ?? fps, encoder: m.string("enc") ?? "")
+        var info = StreamInfo(id: UInt16(id), width: w, height: h, fps: m.int("fps") ?? fps, encoder: m.string("enc") ?? "")
+        info.chroma = m.int("chroma") ?? 420
         stream = info
         decoder.requireKeyFrame()
         needKeySince = Clock.nowMs()
