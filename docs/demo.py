@@ -255,12 +255,13 @@ glyphs = ["M-4.5-1.5v-3h3M4.5 1.5v3h-3M-4.5-4.5l3.5 3.5M4.5 4.5l-3.5-3.5",
           "M-2.9-3.7a4.6 4.6 0 1 0 5.8 0M0-5v4.2"]
 gx = bx0 + 30
 for k, g in enumerate(glyphs):
-    if k in (5, 6):
+    if k == 6:                                   # the app's only separator: before Disconnect
         bar.append(f'<line x1="{gx - 4}" y1="{py + 2}" x2="{gx - 4}" y2="{py + 14}" stroke="#fff" stroke-opacity=".18"/>')
         gx += 6
     hl = ' class="hov"' if k == 0 else ""
     bar.append(f'<rect{hl} x="{gx - 1}" y="{py - 2}" width="30" height="20" rx="5" fill="#fff" fill-opacity="{".16" if k == 0 else "0"}"/>'
-               f'<path transform="translate({gx + 14} {py + 8})" d="{g}" fill="none" stroke="#fff" stroke-opacity=".88" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>')
+               f'<path transform="translate({gx + 14} {py + 8})" d="{g}" fill="none" stroke="{"#ff5f57" if k == 6 else "#fff"}" '
+               f'stroke-opacity="{1 if k == 6 else .88}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>')
     if k == 0:
         hover_x = gx + 14                        # the Full screen button
     gx += 31
