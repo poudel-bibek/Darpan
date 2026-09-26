@@ -175,7 +175,7 @@ class Window(Adw.ApplicationWindow):
         if st:
             gpu = st.get("encoder")
             if st.get("restart_for_gpu"):
-                self.enc.set_subtitle("Software (x264) · the NVIDIA driver was updated: restart to use the GPU")
+                self.enc.set_subtitle("Restart to use the GPU after the NVIDIA driver update")
             else:
                 self.enc.set_subtitle(("NVENC hardware · " + gpu) if gpu else "Software (x264)")
             self._sessions(st.get("sessions") or [])

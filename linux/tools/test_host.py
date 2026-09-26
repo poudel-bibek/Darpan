@@ -939,7 +939,11 @@ async def run(args, tmp, probe_log):
         seen.append(darpan_capture.driver_restart_needed())
         os.remove(nv_l)
     seen.append(darpan_capture.driver_restart_needed())     # no NVIDIA libraries
-    ok("GPU: restart note after a driver update", seen == [False, True, False], seen)
+    darpan_capture.NV_KERNEL = os.path.join(tmp, "no-nvidia-module")
+    os.symlink("libcuda.so.600.12", nv_l)
+    seen.append(darpan_capture.driver_restart_needed())     # no NVIDIA kernel module
+    os.remove(nv_l)
+    ok("GPU: restart note after a driver update", seen == [False, True, False, False], seen)
 
     # at most 4 connections per source may wait unauthenticated; a 5th is told "busy"
     waiting = []

@@ -58,7 +58,7 @@ def _status(args):
         st = control.request("status")
         enc = ("NVENC on " + st["encoder"]) if st.get("encoder") else "x264 (software)"
         if st.get("restart_for_gpu"):
-            enc = "x264 (software): the NVIDIA driver was updated, restart to use the GPU"
+            enc += "; restart to use the GPU after the NVIDIA driver update"
         print("  Host service : running on port %d, encoder %s" % (st["port"], enc))
     except OSError:
         st = None
@@ -201,7 +201,7 @@ def _doctor(args):
     from . import capture
     gpu = asyncio.run(capture.probe_nvenc())
     check("NVENC", True if gpu else True, gpu or "unavailable — software x264 fallback will be used")
-    if capture.driver_restart_needed():
+    if config.load()["encoder"] != "x264" and capture.driver_restart_needed():
         check("NVIDIA driver", False, "updated but not loaded yet: restart this computer to use the GPU")
     r = subprocess.run(["gst-inspect-1.0", "x264enc"], capture_output=True)
     check("x264 fallback", r.returncode == 0, "gstreamer1.0-plugins-ugly" if r.returncode else "ok")
