@@ -155,8 +155,10 @@ final class FilesModel: ObservableObject {
 
     func send(_ urls: [URL]) { engine?.send(urls, to: remote.path) }
 
-    func receive() {
-        engine?.receive(remote.selected, from: remote.path, to: local.localURL)
+    func receive() { receive(remote.selected) }
+
+    func receive(_ entries: [FileEntry]) {
+        engine?.receive(entries, from: remote.path, to: local.localURL)
     }
 
     func cancel(_ id: Int) { engine?.cancel(id) }
@@ -245,6 +247,7 @@ private struct PaneView: View {
                     Image(systemName: e.isDirectory ? "folder.fill" : e.kind == .file ? "doc" : "questionmark.square.dashed")
                         .foregroundStyle(e.isDirectory ? Color.accentColor : .secondary)
                 }
+                .onDrag { dragProvider(e) }
             }
             .width(min: 120, ideal: 180)
             TableColumn("Size", value: \.size) { e in
@@ -271,11 +274,49 @@ private struct PaneView: View {
                 ProgressView().controlSize(.small)
             }
         }
-        .onDrop(of: pane.side == .remote ? [.fileURL] : [], isTargeted: $dropTarget) { providers in
-            loadURLs(providers) { model.send($0) }
-            return true
+        .onDrop(of: [.fileURL, .utf8PlainText], isTargeted: $dropTarget) { providers in
+            drop(providers)
         }
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.accentColor, lineWidth: dropTarget ? 2 : 0))
+    }
+
+    /// What a row drags: this Mac's files as file URLs (the Finder takes them too), or a list of
+    /// names from the pane (the selection when the row is part of it) for the other pane.
+    private func dragProvider(_ e: FileEntry) -> NSItemProvider {
+        let names = pane.selection.contains(e.id) ? pane.selected.map(\.name) : [e.name]
+        if pane.side == .local && names.count == 1 {
+            return NSItemProvider(object: pane.localURL.appendingPathComponent(e.name) as NSURL)
+        }
+        let tag = pane.side == .local ? PaneDrag.local : PaneDrag.remote
+        return NSItemProvider(object: ([tag, pane.path] + names).joined(separator: "\n") as NSString)
+    }
+
+    private func drop(_ providers: [NSItemProvider]) -> Bool {
+        if let p = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }), !providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) {
+            _ = p.loadObject(ofClass: NSString.self) { s, _ in
+                guard let s = s as? String else { return }
+                DispatchQueue.main.async { dropNames(s) }
+            }
+            return true
+        }
+        guard pane.side == .remote else {
+            // Files from this Mac dropped on the Mac side: nothing to transfer.
+            return false
+        }
+        loadURLs(providers) { model.send($0) }
+        return true
+    }
+
+    /// Names dragged from the other pane: Send (onto the remote side) or Receive (onto this Mac's).
+    private func dropNames(_ s: String) {
+        let lines = s.components(separatedBy: "\n")
+        guard lines.count >= 3 else { return }
+        let names = Set(lines.dropFirst(2))
+        if lines[0] == PaneDrag.local, pane.side == .remote, lines[1] == model.local.path {
+            model.send(model.local.entries.filter { names.contains($0.name) }.map { model.local.localURL.appendingPathComponent($0.name) })
+        } else if lines[0] == PaneDrag.remote, pane.side == .local, lines[1] == model.remote.path {
+            model.receive(model.remote.entries.filter { names.contains($0.name) })
+        }
     }
 
     /// Today: the time; otherwise the date.
@@ -300,6 +341,10 @@ private struct PaneView: View {
         }
         if let w = model.window { a.beginSheetModal(for: w, completionHandler: done) } else { done(a.runModal()) }
     }
+}
+
+private enum PaneDrag {
+    static let local = "darpan-files-local", remote = "darpan-files-remote"
 }
 
 private func loadURLs(_ providers: [NSItemProvider], _ done: @escaping ([URL]) -> Void) {
@@ -330,7 +375,7 @@ private struct TransferList: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
             if model.transfers.isEmpty {
-                Text("Select files or folders and click Send or Receive, or drop files from the Finder on the right.")
+                Text("Select files or folders and click Send or Receive, or drag them to the other side.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.bottom, 10)
             } else {
                 ScrollView {
