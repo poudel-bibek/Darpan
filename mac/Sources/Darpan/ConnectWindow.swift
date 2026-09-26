@@ -57,6 +57,12 @@ final class ConnectModel: ObservableObject {
         #endif
     }
 
+    /// After a restart the remote computer answers before its screen is ready; the client retries.
+    func hostStarting(_ name: String) {
+        guard connecting else { return }
+        show("\(name) is starting up. Darpan connects as soon as it’s ready.", error: false)
+    }
+
     /// `keychain` false: neither save nor delete a sign-in (environment-driven test runs).
     func connect(remember: Bool? = nil, keychain: Bool = true) {
         guard !connecting, countdown == 0 else { return }

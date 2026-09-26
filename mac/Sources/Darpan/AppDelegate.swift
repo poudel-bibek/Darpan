@@ -119,6 +119,11 @@ extension AppDelegate: SessionOwner {
         connectWindow.window?.orderOut(nil)
     }
 
+    func sessionWaitingForHost(_ s: Session) {
+        guard s === session else { return }
+        connectWindow.model.hostStarting(s.address.shortName)
+    }
+
     func sessionDidEnd(_ s: Session, failure: Client.Failure?) {
         guard s === session else { return }
         session = nil
