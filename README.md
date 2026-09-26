@@ -3,8 +3,8 @@
 <h1 align="center">Darpan</h1>
 
 <p align="center"><b>Stop paying for remote desktop.</b><br>
-Darpan is a free, open-source remote desktop: use your Linux computer from a native Mac app. It
-feels local and stays private.</p>
+Darpan is a high-performance, lightweight remote desktop: use your Linux computer from a native
+Mac app. It feels local, stays private, and is free and open source.</p>
 
 <p align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT license"></a>
@@ -47,7 +47,10 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 Darpan shows on it. That's it.
 
 > **From a browser instead:** install [Tailscale](https://tailscale.com/download) on that device,
-> sign in with the same account, and open the address. In Chrome, *Install Darpan* turns it into its own window.
+> sign in with the same account, and open your Linux computer's address:
+> `https://<computer>.<tailnet>.ts.net`. Darpan shows it on the Linux computer, and it's also in the
+> [Tailscale admin console](https://login.tailscale.com/admin/machines). In Chrome, *Install Darpan*
+> turns it into its own window.
 
 ## Why Darpan
 
@@ -97,6 +100,22 @@ Darpan shows on it. That's it.
 </table>
 
 Plus full screen, screen resolutions to match your window, and a toolbar that tucks away.
+
+## Performance
+
+Measured on a Linux PC with an RTX 4090 at 2560×1440 (Darpan 1.4.1), viewed from a MacBook over
+Wi-Fi (Darpan 1.4.0; its video path is the same in 1.4.1). CPU is a share of one core.
+
+| | Linux computer | Mac app |
+|---|---|---|
+| Nobody connected | 0 % CPU, no GPU memory | — |
+| Everyday use | 3 % CPU | 8–10 % CPU |
+| Full-screen video with sound | 6 % CPU | 32 % CPU |
+| Memory while connected | 40 MB of GPU memory | 50–90 MB (as Activity Monitor shows it) |
+
+A frame reaches the Mac's screen about 27 ms after the Linux computer captures it, over Wi-Fi. Of
+that, turning a change into a video frame takes the Linux computer 5 ms, and the Mac decodes it in
+hardware in about 4 ms.
 **Free and open source** (MIT): no subscription, and no account with us.
 
 ## Everyday use
@@ -181,8 +200,8 @@ On the Mac, drag Darpan from Applications to the Trash, delete `~/Library/Applic
 <summary><b>How it works</b></summary>
 
 * **Capture only what changes.** The host waits for X11 damage events; there's no capture timer. A
-  changed frame is copied straight to the GPU and encoded with NVENC (H.264, ultra-low-latency) in
-  about 5 ms.
+  changed frame goes straight to the GPU and is encoded by its video encoder (H.264, through Vulkan
+  Video) in about 5 ms. That takes about 40 MB of GPU memory while you're connected, and none otherwise.
 * **No queues.** Each frame needs a credit, and the viewer returns one after decoding. A slow
   network means fewer frames, never a backlog. The pointer is drawn on your side, so it never lags.
 * **A private network built in.** Both ends include an unprivileged [Tailscale](https://tailscale.com)

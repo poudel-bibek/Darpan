@@ -946,6 +946,22 @@ async def run(args, tmp, probe_log):
     os.remove(nv_l)
     ok("GPU: restart note after a driver update", seen == [False, True, False, False], seen)
 
+    # the Linux window's Update button: only for a newer version APT already knows about
+    from darpan import update as darpan_update
+    aptbin = os.path.join(tmp, "aptbin")
+    os.makedirs(aptbin)
+    with open(os.path.join(aptbin, "apt-cache"), "w") as f:
+        f.write('#!/bin/sh\nprintf "darpan:\\n  Installed: %s\\n  Candidate: %s\\n" "$FAKE_HAVE" "$FAKE_NEW"\n')
+    os.chmod(os.path.join(aptbin, "apt-cache"), 0o755)
+    path = os.environ["PATH"]
+    os.environ["PATH"] = aptbin + os.pathsep + path
+    seen = []
+    for have, new in (("1.4.0", "1.4.1"), ("1.4.1", "1.4.1"), ("1.4.1", "1.4.0"), ("(none)", "1.4.1")):
+        os.environ.update(FAKE_HAVE=have, FAKE_NEW=new)
+        seen.append(darpan_update.available())
+    os.environ["PATH"] = path
+    ok("update: offered only when newer", seen == ["1.4.1", None, None, None], seen)
+
     # at most 4 connections per source may wait unauthenticated; a 5th is told "busy"
     waiting = []
     for _ in range(4):
@@ -1089,6 +1105,37 @@ async def run(args, tmp, probe_log):
              lss.xorg_off(lss.xorg_on(explicit)) == explicit,
              lss.xorg_on("[daemon]\nWaylandEnable=false\n") == "[daemon]\nWaylandEnable=false\n",
              lss.xorg_off(lss.xorg_on("[chooser]\n")) == "[chooser]\n\n[daemon]\n")
+    # Vulkan Video breaking after it started: the host carries on through CUDA, not software
+    port3 = args.port + 9
+    env3 = dict(args.host_env, XDG_RUNTIME_DIR=os.path.join(tmp, "run4"), XDG_STATE_HOME=os.path.join(tmp, "state4"),
+                DARPAN_TEST_VULKAN_FAIL="1")
+    os.makedirs(env3["XDG_RUNTIME_DIR"], mode=0o700)
+    log3 = os.path.join(tmp, "host3.log")
+    host3 = subprocess.Popen([sys.executable, "-m", "darpan", "serve", "--port", str(port3), "-v"], env=env3,
+                             cwd=args.root, stdout=open(log3, "w"), stderr=subprocess.STDOUT)
+    got = 0
+    try:
+        for _ in range(100):
+            try:
+                (await asyncio.open_connection("127.0.0.1", port3))[1].close()
+                break
+            except OSError:
+                await asyncio.sleep(0.1)
+        c = await WS.connect("127.0.0.1", port3)
+        _, h = await c.recv()
+        c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py"})
+        while (await asyncio.wait_for(c.recv(), 10))[1].get("t") != "ok":
+            pass
+        c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 0})
+        got, _ = await pump(c, 4.0)
+        c.w.close()
+    finally:
+        host3.terminate()
+        host3.wait(5)
+    said = open(log3).read()
+    ok("Vulkan fails: NVENC through CUDA, not software", got > 0 and "NVENC through CUDA from now on" in said
+       and "software encoding" not in said, "%d frames after the failure" % got)
+
     ok("login-screen-setup: Xorg while anyone has it on, undone",
        lss.MARK + "\nWaylandEnable=false\n" in conf[0] and conf[0] == conf[1] == conf[2] and conf[3] == ubuntu
        and not os.path.exists(lss.DIR) and all(edits) and calls == [["enable-linger", "darpan-test-a"],

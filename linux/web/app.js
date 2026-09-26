@@ -1033,9 +1033,9 @@
     }
     for (const e of ents) {
       const p = joinPath(FS.path, e.name), el = xferUI('down', e.name, false);
-      el.querySelector('.x').remove();
-      if (e.type !== 'f' && e.type !== 'd') { finished(el, 'fail', FS_MSG.notfile); continue; }
       if (e.type === 'd' && into) { await fsReceiveTree(el, p, e.name, into); continue; }
+      el.querySelector('.x').remove();              // the browser's own downloads take it from here
+      if (e.type !== 'f' && e.type !== 'd') { finished(el, 'fail', FS_MSG.notfile); continue; }
       try {
         let files = [p];
         if (e.type === 'd') {
@@ -1054,7 +1054,18 @@
   }
   // Names come from the Linux computer: each part must be a plain name, so nothing lands outside `into`.
   const safePart = (n) => !!n && n !== '.' && n !== '..' && !/[\\/\0]/.test(n);
+  async function fsBody(path, signal, retry = true) {   // a file's bytes; a new token if we reconnected meanwhile
+    await fsSession();
+    const r = await fetch('/fs/file?' + new URLSearchParams({ path }), { cache: 'no-store', signal, headers: { Authorization: 'Bearer ' + FS.token } });
+    if (r.ok) return r;
+    const j = await r.json().catch(() => ({}));
+    if (j.e === 'token' && retry) { FS.token = null; fsWait = null; return fsBody(path, signal, false); }
+    throw new FsError(j.e || 'failed');
+  }
   async function fsReceiveTree(el, src, name, into) {
+    const stop = new AbortController();              // its × cancels while it runs, and dismisses it after
+    let over = false, got = 0, files = [];
+    el.querySelector('.x').addEventListener('click', () => (over ? el.remove() : stop.abort()));
     try {
       const r = await fsFetch('GET', '/fs/list', { path: src, deep: 1 });
       if (r.more) { finished(el, 'fail', 'Over 50,000 items: receive a smaller folder'); return; }
@@ -1063,21 +1074,28 @@
       for (let n = 1; await into.getDirectoryHandle(target).then(() => true, () => false); n++) target = `${name} (${n})`;
       const root = await into.getDirectoryHandle(target, { create: true });
       const dir = async (parts) => { let h = root; for (const q of parts) h = await h.getDirectoryHandle(q, { create: true }); return h; };
-      for (const x of r.entries) if (x.type === 'd') await dir(x.name.split('/'));
-      const files = r.entries.filter((x) => x.type === 'f');
+      for (const x of r.entries) if (x.type === 'd') { stop.signal.throwIfAborted(); await dir(x.name.split('/')); }
+      files = r.entries.filter((x) => x.type === 'f');
       const total = files.reduce((a, f) => a + f.size, 0) || 1;
       let done = 0;
       for (const f of files) {
+        stop.signal.throwIfAborted();
         const parts = f.name.split('/'), leaf = parts.pop();
         const h = await (await dir(parts)).getFileHandle(leaf, { create: true });
-        const resp = await fetch('/fs/file?' + new URLSearchParams({ path: joinPath(src, f.name) }),
-                                 { cache: 'no-store', headers: { Authorization: 'Bearer ' + FS.token } });
-        if (!resp.ok) throw new FsError((await resp.json().catch(() => ({}))).e || 'failed');
+        const resp = await fsBody(joinPath(src, f.name), stop.signal);
         const count = new TransformStream({ transform(chunk, c) { done += chunk.byteLength; progress(el, done / total); c.enqueue(chunk); } });
-        await resp.body.pipeThrough(count).pipeTo(await h.createWritable());   // written to a temporary file, kept when complete
+        // written to a temporary file, kept only when complete
+        await resp.body.pipeThrough(count).pipeTo(await h.createWritable(), { signal: stop.signal });
+        got++;
       }
+      stop.signal.throwIfAborted();
       finished(el, 'done', `${files.length} file${files.length === 1 ? '' : 's'} into ${into.name}/${target}`);
-    } catch (err) { finished(el, 'fail', err.message); }
+    } catch (err) {
+      if (stop.signal.aborted) finished(el, 'cancelled', `${FS_MSG.cancelled}: ${got} of ${files.length} files`);
+      else finished(el, 'fail', err.message);
+    } finally {
+      over = true;                                    // from now on the × only dismisses the line
+    }
   }
   $('fsReceive').addEventListener('click', () => fsReceive());
 

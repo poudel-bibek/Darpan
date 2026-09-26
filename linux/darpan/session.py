@@ -416,7 +416,7 @@ class Session:
         self.withhold = 0
         use_nvenc = hub.encoder and time.monotonic() >= self.x264_until and cfg["encoder"] != "x264"
         cls = capture.NvencCapture if use_nvenc else capture.X264Capture
-        kw = {"preset": cfg["preset"], "gpu": cfg["gpu"]} if use_nvenc else {}
+        kw = {"preset": cfg["preset"], "gpu": cfg["gpu"], "cuda": hub.no_vulkan} if use_nvenc else {}
         fps = p["fps"] if use_nvenc else min(p["fps"], 30)   # software encoding: spare the CPU
         self.stream_id = (self.stream_id % 0xFFFF) + 1
         self.seq = 0
@@ -488,6 +488,10 @@ class Session:
             delay = 0.3
         elif reason == "no-nvenc":
             self._fall_back_to_x264("NVENC unavailable (GPU memory full?)")
+            delay = 0
+        elif reason == "vulkan":                   # the same NVENC through CUDA, for as long as we run
+            log.warning("session %s: Vulkan Video failed — NVENC through CUDA from now on", self.sid)
+            self.hub.no_vulkan = True
             delay = 0
         else:
             self.errors.append(now)
@@ -804,6 +808,7 @@ class Hub:
         self.login_screen = False        # nobody is logged in: we show the login screen
         self.x = None
         self.encoder = None
+        self.no_vulkan = False           # Vulkan Video broke once: encode through CUDA
         self.url = None
         self.modes = None
         self.clip = None
