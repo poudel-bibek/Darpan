@@ -10,7 +10,7 @@ MAC="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$MAC/.build/libtailscale"
 SRC="$OUT/src"
 
-STAMP="$COMMIT nologs"
+STAMP="$COMMIT nologs gomaxprocs2"
 if [ -f "$OUT/libtailscale.a" ] && [ "$(cat "$OUT/commit" 2>/dev/null)" = "$STAMP" ]; then exit 0; fi
 
 GO="$(command -v go || true)"
@@ -28,11 +28,19 @@ cat > "$SRC/darpan_nologs.go" <<'GO'
 package main
 
 import (
+	"runtime"
+
 	"tailscale.com/envknob"
 	"tailscale.com/logtail"
 )
 
-func init() { envknob.SetNoLogsNoSupport(); logtail.Disable() }
+func init() {
+	envknob.SetNoLogsNoSupport()
+	logtail.Disable()
+	// One remote-desktop stream needs little parallelism; fewer Ps means far fewer thread
+	// wake-ups per packet (measured).
+	runtime.GOMAXPROCS(2)
+}
 GO
 
 export CGO_ENABLED=1 GOTOOLCHAIN=local MACOSX_DEPLOYMENT_TARGET=14.0

@@ -3,7 +3,7 @@ import DarpanCore
 import SwiftUI
 
 protocol ConnectHandler: AnyObject {
-    func connect(to address: HostAddress, proxy: SOCKSProxy?, password: String?, saved: SavedKey?, remember: Bool)
+    func connect(to address: HostAddress, proxy: SOCKSProxy?, password: String?, saved: SavedKey?, remember: Bool?)
     func cancelConnect()
 }
 
@@ -38,14 +38,15 @@ final class ConnectModel: ObservableObject {
             address = url
             if let pw = env["DARPAN_PASSWORD"], !pw.isEmpty {
                 password = pw
-                connect(remember: false)
+                connect(remember: nil, keychain: false)     // a test run: leave saved sign-ins alone
                 return
             }
         }
         if hasSavedKey { connect() }
     }
 
-    func connect(remember: Bool? = nil) {
+    /// `keychain` false: neither save nor delete a sign-in (environment-driven test runs).
+    func connect(remember: Bool? = nil, keychain: Bool = true) {
         guard !connecting, countdown == 0 else { return }
         let a: HostAddress
         do {
@@ -62,7 +63,7 @@ final class ConnectModel: ObservableObject {
             focusPassword += 1
             return
         }
-        let keep = remember ?? settings.remember
+        let keep: Bool? = keychain ? (remember ?? settings.remember) : nil
         #if DEBUG
         // DARPAN_DEBUG_SOCKS=host:port:user:password tests the proxy path without a tailnet.
         if let spec = ProcessInfo.processInfo.environment["DARPAN_DEBUG_SOCKS"]?.split(separator: ":").map(String.init),
@@ -99,7 +100,7 @@ final class ConnectModel: ObservableObject {
         }
     }
 
-    private func begin(_ a: HostAddress, proxy: SOCKSProxy?, password pw: String?, saved: SavedKey?, remember: Bool) {
+    private func begin(_ a: HostAddress, proxy: SOCKSProxy?, password pw: String?, saved: SavedKey?, remember: Bool?) {
         password = ""
         address = a.origin
         connecting = true
