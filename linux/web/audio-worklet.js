@@ -1,6 +1,7 @@
 // Plays the host's sound with a small jitter buffer (PROTOCOL.md §12). Runs on the audio thread.
 // Starts at 40 ms of buffering; a late packet grows it by 10 ms (up to 200 ms), ~4 s without one
-// shrinks it again. A gap that ends with a FIRST packet was silence, not lateness: re-prime only.
+// shrinks it again. A gap that ends with a FIRST packet was silence, not lateness: if audio is still
+// buffered, the skipped slots are played as silence (timing kept); if not, it re-primes.
 class DarpanSound extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -14,7 +15,11 @@ class DarpanSound extends AudioWorkletProcessor {
     this.calm = 0;
     this.port.onmessage = (e) => {
       const m = e.data;
-      if (m.reset) { this.playing = false; this.starved = false; return; }
+      if (m.reset) {
+        this.starved = false;
+        if (this.n > 0 && m.gap) this.silence(m.gap); else this.playing = false;
+        return;
+      }
       if (this.starved) { this.target = Math.min(9600, this.target + 480); this.starved = false; this.calm = 0; }
       const L = m.l, R = m.r, k = L.length;
       if (this.n + k > this.cap) this.skip(this.n + k - this.cap);
@@ -27,6 +32,12 @@ class DarpanSound extends AudioWorkletProcessor {
   }
 
   skip(k) { this.rd = (this.rd + k) % this.cap; this.n -= k; }
+
+  silence(k) {
+    k = Math.min(k, this.cap - this.n);
+    for (let i = 0; i < k; i++) { this.l[this.w] = 0; this.r[this.w] = 0; this.w = (this.w + 1) % this.cap; }
+    this.n += k;
+  }
 
   process(inputs, outputs) {
     const L = outputs[0][0], R = outputs[0][1] || outputs[0][0], k = L.length;

@@ -203,6 +203,9 @@
     if (S.connected && settings.audio && S.caps.includes('audio') && 'AudioDecoder' in window) send({ t: 'audio', on: true });
   }
   function stopSound() {
+    clearTimeout(SND.idle);
+    SND.slot = null;
+    if (SND.ctx && SND.ctx.state === 'running') SND.ctx.suspend().catch(() => {});
     if (SND.ws) { SND.ws.close(); SND.ws = null; }
     if (SND.dec && SND.dec.state !== 'closed') SND.dec.close();
     SND.dec = null;
@@ -229,8 +232,16 @@
       if (typeof e.data === 'string' || dec.state !== 'configured') return;   // {"t":"ok"}
       const d = new DataView(e.data);
       if (d.getUint8(0) !== 3) return;
-      if (d.getUint8(1) & 1) SND.node.port.postMessage({ reset: true });      // after silence: re-prime
+      const slot = d.getUint32(2);
+      if (d.getUint8(1) & 1) {                          // after silence: keep its length, or re-prime
+        const gap = SND.slot == null ? 0 : (slot - SND.slot - 1) >>> 0;
+        SND.node.port.postMessage({ reset: true, gap: gap <= 100 ? gap * 480 : 0 });
+      }
+      SND.slot = slot;
       SND.packets++;
+      if (SND.ctx.state === 'suspended') SND.ctx.resume().catch(() => {});
+      clearTimeout(SND.idle);                           // nothing for 2 s: let the audio device sleep
+      SND.idle = setTimeout(() => SND.ctx.suspend().catch(() => {}), 2000);
       dec.decode(new EncodedAudioChunk({ type: 'key', timestamp: d.getUint32(2) * 10000, data: new Uint8Array(e.data, 14) }));
     };
     ws.onclose = () => { if (SND.ws === ws) SND.ws = null; };

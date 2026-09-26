@@ -80,10 +80,12 @@ def lookahead():
 
 
 class Capture:
-    """pw-record → 10 ms frames → Opus packets → on_packet(bytes). stop() ends pw-record."""
+    """pw-record → 10 ms frames → Opus packets → on_packet(bytes). stop() ends pw-record; if it ends on
+    its own (PipeWire restarted), on_exit(seconds it ran) is called."""
 
-    def __init__(self, loop, on_packet):
-        self.loop, self.on_packet = loop, on_packet
+    def __init__(self, loop, on_packet, on_exit):
+        self.loop, self.on_packet, self.on_exit = loop, on_packet, on_exit
+        self.started = 0.0
         self.proc = self.opus = None
         self.buf = bytearray()
         self.header = True                             # a WAV header precedes the PCM
@@ -102,6 +104,7 @@ class Capture:
         fd = self.proc.stdout.fileno()
         os.set_blocking(fd, False)
         self.loop.add_reader(fd, self._readable)
+        self.started = time.monotonic()
         log.info("sound: capturing (pw-record %d)", self.proc.pid)
 
     def stop(self):
@@ -125,9 +128,10 @@ class Capture:
             chunk = os.read(self.proc.stdout.fileno(), 65536)
         except BlockingIOError:
             return
-        if not chunk:                                  # pw-record ended (PipeWire gone?)
+        if not chunk:                                  # pw-record ended (PipeWire restarted?)
             log.warning("sound: pw-record exited")
             self.stop()
+            self.on_exit(time.monotonic() - self.started)
             return
         now = time.monotonic()
         if now - self.last > GAP:

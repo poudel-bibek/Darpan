@@ -171,6 +171,19 @@ try {
     await sleep(100);
   }
   ok('sound plays (Opus → worklet buffer)', snd.packets > 50 && snd.depth > 0 && snd.state === 'running', JSON.stringify(snd));
+  // muting stops the stream and lets the audio graph sleep; unmuting brings it back
+  await ev(`document.querySelector('[data-act=audio]').click()`);
+  await sleep(600);
+  const muted = await ev(`({state: window.__darpan.sound.ctx.state, ws: !!window.__darpan.sound.ws, packets: window.__darpan.sound.packets})`);
+  await ev(`document.querySelector('[data-act=audio]').click()`);
+  let resumed = null;
+  for (let i = 0; i < 40; i++) {
+    resumed = await ev(`({state: window.__darpan.sound.ctx.state, packets: window.__darpan.sound.packets})`);
+    if (resumed.packets > muted.packets + 30 && resumed.state === 'running') break;
+    await sleep(100);
+  }
+  ok('mute suspends audio, unmute resumes', muted.state === 'suspended' && !muted.ws && resumed.packets > muted.packets + 30 && resumed.state === 'running',
+     `muted ${muted.state}, then ${resumed.state} +${resumed.packets - muted.packets} packets`);
 
   // toolbar: collapsed by default, expands on click
   ok('toolbar collapsed by default', await ev(`document.getElementById('bar').classList.contains('collapsed')`));

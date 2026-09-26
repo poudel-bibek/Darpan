@@ -789,6 +789,7 @@ class Hub:
         self.audio_tokens = {}           # token -> (session, expiry): single use, 10 s
         self.listeners = {}              # /audio socket -> [session, dropped since last packet]
         self.sound = None                # audio.Capture while anyone listens
+        self.audio_fails = 0
         self.loop = None
 
     async def start(self):
@@ -858,8 +859,7 @@ class Hub:
         session.sound.add(ws)
         try:
             if self.sound is None:
-                self.sound = audio.Capture(self.loop, self._audio_packet)
-                self.sound.start()
+                self._audio_start()
             while await ws.recv() is not None:               # nothing to read; wait for the close
                 pass
         except OSError as e:
@@ -872,6 +872,32 @@ class Hub:
                 self.sound = None
             if not ws.closed:
                 ws.close(1000)
+
+    def _audio_start(self):
+        self.sound = audio.Capture(self.loop, self._audio_packet, self._audio_exited)
+        try:
+            self.sound.start()
+        except OSError:
+            self.sound = None
+            raise
+
+    def _audio_exited(self, ran):
+        # PipeWire restarted, say: start again for the listeners, but give up after 3 quick failures
+        self.sound = None
+        self.audio_fails = 0 if ran > 5 else self.audio_fails + 1
+        if self.listeners and self.audio_fails < 3:
+            self.loop.call_later(2, self._audio_retry)
+        else:
+            for ws in list(self.listeners):
+                ws.close(1011, "sound unavailable")
+
+    def _audio_retry(self):
+        if self.sound is None and self.listeners:
+            try:
+                self._audio_start()
+            except OSError as e:
+                log.warning("sound: %s", e)
+                self._audio_exited(0)
 
     def _audio_packet(self, pkt):
         for ws, ent in self.listeners.items():

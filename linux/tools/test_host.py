@@ -533,6 +533,12 @@ async def run(args, tmp, probe_log):
     snd2.send({"t": "auth", "token": grant["token"]})
     kind, m = await snd2.recv()
     ok("audio token is single-use", kind == "close" and m == 4001, str(m))
+    # PipeWire restarting ends pw-record: the host starts a new one for the listener
+    subprocess.run(["pkill", "-f", os.path.join(tmp, "bin", "pw-record")])
+    pkts.clear()
+    await asyncio.gather(listen(snd, 4.0), pump(ws, 4.0))
+    restarted = open(os.path.join(tmp, "pw.log")).read().count("START")
+    ok("capture restarts after pw-record exits", restarted == 2 and len(pkts) > 50, "%d starts, %d packets after" % (restarted, len(pkts)))
     snd.w.close()
     await asyncio.sleep(1.0)
     left = subprocess.run(["pgrep", "-f", os.path.join(tmp, "bin", "pw-record")], capture_output=True, text=True).stdout.split()
