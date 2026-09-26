@@ -49,6 +49,8 @@ final class Discovery: ObservableObject {
         timer = nil
         phaseWatch = nil
         hostsWatch = nil
+        session?.invalidateAndCancel()                   // probes still in flight end with the window
+        session = nil
     }
 
     private func scan() {
@@ -81,7 +83,9 @@ final class Discovery: ObservableObject {
                     defer { group.leave() }
                     guard let data, let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                           o["app"] as? String == "darpan" else { return }
-                    DispatchQueue.main.async { self.found["https://\(host)"] = (o["host"] as? String) ?? p.hostName }
+                    // Label it with the tailnet's name for the peer, which the peer can't choose
+                    // (a shared-in node could claim to be one of yours in its own answer).
+                    DispatchQueue.main.async { self.found["https://\(host)"] = p.hostName.isEmpty ? host : p.hostName }
                 }.resume()
             }
             group.notify(queue: .main) {
