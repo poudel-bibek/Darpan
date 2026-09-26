@@ -871,11 +871,13 @@ class Hub:
         session.sound.add(ws)
         try:
             if self.sound is None:
-                self._audio_start()
+                try:
+                    self._audio_start()
+                except OSError as e:                         # e.g. pw-record gone since startup
+                    log.warning("sound: %s", e)
+                    self._audio_exited(0)                    # the same back-off as a capture that died
             while await ws.recv() is not None:               # nothing to read; wait for the close
                 pass
-        except OSError as e:
-            log.warning("sound: %s", e)
         finally:
             self.listeners.pop(ws, None)
             session.sound.discard(ws)
