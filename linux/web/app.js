@@ -738,7 +738,8 @@
   };
   const FS_MSG = { notfound: 'Not found', denied: 'Permission denied', exists: 'Already exists', notdir: 'Not a folder',
     isdir: 'It’s a folder', notfile: 'Not a regular file', nospace: 'The disk is full', busy: 'Busy', token: 'The session ended',
-    invalid: 'Not a valid path', failed: 'Failed', network: 'Connection lost', cancelled: 'Cancelled', range: 'Failed' };
+    invalid: 'Not a valid path', failed: 'Failed', network: 'Connection lost', cancelled: 'Cancelled', range: 'Failed',
+    unsafe: 'A name from the Linux computer isn’t safe to save' };
   class FsError extends Error { constructor(code) { super(FS_MSG[code] || code); this.code = code; } }
   const FS = { token: null, home: '', inbox: '', ready: null, path: '', entries: [], view: [], more: false, sel: new Set(), anchor: -1,
     sort: { key: 'name', dir: 1 }, xfers: [], running: 0 };
@@ -1021,12 +1022,18 @@
     input.addEventListener('blur', () => finish(false));
   }
 
-  // ---- Receive: the selection, a single-use link per file; a folder arrives as its files
+  // ---- Receive: the selection, a single-use link per file. A folder keeps its structure where
+  // the browser can write folders (Chrome, Edge: the user picks where); elsewhere it arrives as its files.
   async function fsReceive(ents = FS.view.filter((e) => FS.sel.has(e.name))) {
+    let into = null;
+    if (window.showDirectoryPicker && ents.some((e) => e.type === 'd')) {
+      try { into = await window.showDirectoryPicker({ id: 'darpan-receive', mode: 'readwrite' }); } catch { return; }   // cancelled
+    }
     for (const e of ents) {
       const p = joinPath(FS.path, e.name), el = xferUI('down', e.name, false);
       el.querySelector('.x').remove();
       if (e.type !== 'f' && e.type !== 'd') { finished(el, 'fail', FS_MSG.notfile); continue; }
+      if (e.type === 'd' && into) { await fsReceiveTree(el, p, e.name, into); continue; }
       try {
         let files = [p];
         if (e.type === 'd') {
@@ -1042,6 +1049,33 @@
         finished(el, 'done', e.type === 'd' ? `${files.length} file${files.length === 1 ? '' : 's'} to your downloads, without the folders` : 'to your downloads');
       } catch (err) { finished(el, 'fail', err.message); }
     }
+  }
+  // Names come from the Linux computer: each part must be a plain name, so nothing lands outside `into`.
+  const safePart = (n) => !!n && n !== '.' && n !== '..' && !/[\\/\0]/.test(n);
+  async function fsReceiveTree(el, src, name, into) {
+    try {
+      const r = await fsFetch('GET', '/fs/list', { path: src, deep: 1 });
+      if (r.more) { finished(el, 'fail', 'Over 50,000 items: receive a smaller folder'); return; }
+      if (!safePart(name) || !r.entries.every((x) => x.name.split('/').every(safePart))) throw new FsError('unsafe');
+      let target = name;                           // never merge into a folder that's already there: keep both
+      for (let n = 1; await into.getDirectoryHandle(target).then(() => true, () => false); n++) target = `${name} (${n})`;
+      const root = await into.getDirectoryHandle(target, { create: true });
+      const dir = async (parts) => { let h = root; for (const q of parts) h = await h.getDirectoryHandle(q, { create: true }); return h; };
+      for (const x of r.entries) if (x.type === 'd') await dir(x.name.split('/'));
+      const files = r.entries.filter((x) => x.type === 'f');
+      const total = files.reduce((a, f) => a + f.size, 0) || 1;
+      let done = 0;
+      for (const f of files) {
+        const parts = f.name.split('/'), leaf = parts.pop();
+        const h = await (await dir(parts)).getFileHandle(leaf, { create: true });
+        const resp = await fetch('/fs/file?' + new URLSearchParams({ path: joinPath(src, f.name) }),
+                                 { cache: 'no-store', headers: { Authorization: 'Bearer ' + FS.token } });
+        if (!resp.ok) throw new FsError((await resp.json().catch(() => ({}))).e || 'failed');
+        const count = new TransformStream({ transform(chunk, c) { done += chunk.byteLength; progress(el, done / total); c.enqueue(chunk); } });
+        await resp.body.pipeThrough(count).pipeTo(await h.createWritable());   // written to a temporary file, kept when complete
+      }
+      finished(el, 'done', `${files.length} file${files.length === 1 ? '' : 's'} into ${into.name}/${target}`);
+    } catch (err) { finished(el, 'fail', err.message); }
   }
   $('fsReceive').addEventListener('click', () => fsReceive());
 

@@ -242,6 +242,19 @@ try {
     document.getElementById('fsReceive').click(); })()`);
   ok('receive downloads the selection', (await waitFile(join(downloads, 'a.txt'), 8000)) === 'hello from linux\n');
 
+  // a folder keeps its structure where the browser can write folders; the origin-private file system
+  // stands in for the folder the user would pick
+  await ev(`window.showDirectoryPicker = async () => navigator.storage.getDirectory()`);
+  const receiveSub = `(() => { const row = [...document.querySelectorAll('#fsList .file')].find(r => r.textContent.startsWith('sub')); row.click();
+    document.getElementById('fsReceive').click(); })()`;
+  const opfs = (expr) => `(async () => { const r = await navigator.storage.getDirectory(); try { ${expr} } catch { return ''; } })()`;
+  await ev(receiveSub);
+  const tree = await until(opfs(`const d = await r.getDirectoryHandle('sub'); return await (await (await d.getFileHandle('b.txt')).getFile()).text();`), 8000);
+  ok('receive a folder: keeps its structure', tree === 'b\n', JSON.stringify(tree));
+  await ev(receiveSub);
+  const both = await until(opfs(`await r.getDirectoryHandle('sub (1)'); return 'yes';`), 8000);
+  ok('receive it again: keeps both', both === 'yes', JSON.stringify(both));
+
   await ev(`(() => { const dt = new DataTransfer(); dt.items.add(new File(['into the folder'], 'dropped-here.txt'));
     document.getElementById('fsList').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); })()`);
   ok('drop on the window: into its folder', (await waitFile(join(xdir, 'dropped-here.txt'))) === 'into the folder');
