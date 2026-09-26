@@ -2,7 +2,7 @@
 // No npm dependencies: speaks the Chrome DevTools Protocol over Node's built-in WebSocket.
 //   node tools/webclient_test.mjs
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,7 +35,8 @@ process.on('exit', cleanup);
 process.on('SIGINT', () => process.exit(2));
 
 // 1) host on a private display
-const host = spawn('python3', [join(ROOT, 'tools/test_host.py'), '--serve', '--port', '47491'], { stdio: ['ignore', 'pipe', 'inherit'] });
+const host = spawn('python3', [join(ROOT, 'tools/test_host.py'), '--serve', '--port', process.env.DARPAN_TEST_PORT || '47491'],
+  { stdio: ['ignore', 'pipe', 'inherit'] });
 procs.push(host);
 const env = await new Promise((resolve, reject) => {
   lines(host.stdout, (l) => { try { resolve(JSON.parse(l)); } catch {} });
@@ -199,6 +200,63 @@ try {
   const shot2 = await call('Page.captureScreenshot', { format: 'png' }, sid);
   writeFileSync(join(env.tmp, 'browser-toolbar.png'), Buffer.from(shot2.data, 'base64'));
   console.log('  screenshot:', join(env.tmp, 'browser-toolbar.png'));
+
+  // files (PROTOCOL.md §7.1): the transfer window lists the Linux side, sends, asks before replacing, receives
+  ok('no clipboard panel', await ev(`!document.getElementById('panel-clip') && !document.querySelector('[data-panel=clip]')`));
+  const until = async (expr, ms = 5000) => { let v; for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) if ((v = await ev(expr))) return v; return v; };
+  const waitFile = async (p, ms = 5000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) if (existsSync(p)) return readFileSync(p, 'utf8'); return null; };
+  const xdir = join(env.tmp, 'xfer');
+  mkdirSync(join(xdir, 'sub'), { recursive: true });
+  writeFileSync(join(xdir, 'a.txt'), 'hello from linux\n');
+  writeFileSync(join(xdir, 'sub', 'b.txt'), 'b\n');
+  // (the toolbar check above clicked where the pill was, which is where the Files button appears: it may be open already)
+  await ev(`document.getElementById('files').hidden && document.querySelector('[data-act=files]').click()`);
+  const home = await until(`window.__darpan.fs.path`);
+  const shown = await ev(`!document.getElementById('files').hidden`);
+  ok('files window opens on home', home === env.tmp && shown, JSON.stringify({ home, tmp: env.tmp, shown }));
+  await ev(`(() => { const p = document.getElementById('fsPath'); p.value = ${JSON.stringify(xdir)};
+    p.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()`);
+  const names = await until(`window.__darpan.fs.path === ${JSON.stringify(xdir)} && [...document.querySelectorAll('#fsList .file .name span')].map(s => s.textContent).join(',')`);
+  ok('lists a folder, folders first', names === 'sub,a.txt', names);
+  const shots = process.env.DARPAN_TEST_SHOTS || env.tmp;
+  writeFileSync(join(shots, 'browser-files.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' }, sid)).data, 'base64'));
+  console.log('  screenshot:', join(shots, 'browser-files.png'));
+
+  const local = join(profile, 'upload.txt');
+  writeFileSync(local, 'sent from the browser\n');
+  const { root } = await call('DOM.getDocument', {}, sid);
+  const input = (await call('DOM.querySelector', { nodeId: root.nodeId, selector: '#fsFiles' }, sid)).nodeId;
+  await call('DOM.setFileInputFiles', { nodeId: input, files: [local] }, sid);
+  ok('send a file into the folder shown', (await waitFile(join(xdir, 'upload.txt'))) === 'sent from the browser\n');
+  await until(`[...document.querySelectorAll('#fsList .file .name span')].some(s => s.textContent === 'upload.txt')`);
+  await call('DOM.setFileInputFiles', { nodeId: input, files: [local] }, sid);
+  const asked = await until(`!document.getElementById('fsAsk').hidden && document.getElementById('fsAskText').textContent`);
+  writeFileSync(join(shots, 'browser-files-ask.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' }, sid)).data, 'base64'));
+  await ev(`document.querySelector('[data-ask=rename]').click()`);
+  ok('asks before replacing; Keep both', /upload\.txt/.test(asked || '') && (await waitFile(join(xdir, 'upload (1).txt'))) === 'sent from the browser\n', asked);
+
+  const downloads = join(profile, 'downloads');
+  mkdirSync(downloads);
+  await call('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
+  await ev(`(() => { const row = [...document.querySelectorAll('#fsList .file')].find(r => r.textContent.startsWith('a.txt')); row.click();
+    document.getElementById('fsReceive').click(); })()`);
+  ok('receive downloads the selection', (await waitFile(join(downloads, 'a.txt'), 8000)) === 'hello from linux\n');
+
+  await ev(`(() => { const dt = new DataTransfer(); dt.items.add(new File(['into the folder'], 'dropped-here.txt'));
+    document.getElementById('fsList').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); })()`);
+  ok('drop on the window: into its folder', (await waitFile(join(xdir, 'dropped-here.txt'))) === 'into the folder');
+  await ev(`(() => { const dt = new DataTransfer(); dt.items.add(new File(['on the desktop'], 'dropped.txt'));
+    document.getElementById('stage').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); })()`);
+  ok('drop elsewhere: onto the desktop', (await waitFile(join(env.tmp, 'Desktop', 'dropped.txt'))) === 'on the desktop');
+  writeFileSync(join(shots, 'browser-drop-toast.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' }, sid)).data, 'base64'));
+  await ev(`document.querySelector('[data-fs=close]').click()`);
+  ok('files window closes', await ev(`document.getElementById('files').hidden`));
+  await ev(`(() => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'x.txt'));
+    window.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true, cancelable: true })); })()`);
+  const target = await ev(`!document.getElementById('drop').hidden`);
+  writeFileSync(join(shots, 'browser-drop-target.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' }, sid)).data, 'base64'));
+  await ev(`window.dispatchEvent(new DragEvent('dragleave', { bubbles: true }))`);
+  ok('a drag shows the drop target', target && await ev(`document.getElementById('drop').hidden`));
 
   // hidden tab → host stops encoding; visible → resumes with a fresh key frame
   await call('Emulation.setFocusEmulationEnabled', { enabled: true }, sid).catch(() => {});
