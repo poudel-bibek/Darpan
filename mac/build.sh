@@ -105,6 +105,9 @@ echo "==> $DIST/$NAME.dmg"
 STAGE="$(mktemp -d)"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
+# The window: icon positions and the one-time "Open Anyway" steps (assets/dmg/make.py).
+cp "$MAC/assets/dmg/How to open Darpan.png" "$STAGE/"
+cp "$MAC/assets/dmg/DS_Store" "$STAGE/.DS_Store"
 hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DIST/$NAME.dmg" >/dev/null
 rm -rf "$STAGE"
 
