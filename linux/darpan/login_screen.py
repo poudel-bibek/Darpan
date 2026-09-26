@@ -8,6 +8,13 @@ DIR = "/etc/darpan/login-screen.d"
 SETUP = "/opt/darpan/login-screen-setup"
 
 
+def others():
+    """Other people's accounts on this computer (their logins would be visible to ours)."""
+    me = os.getuid()
+    return [p.pw_name for p in pwd.getpwall() if 1000 <= p.pw_uid < 60000 and p.pw_uid != me
+            and not p.pw_shell.endswith(("nologin", "false"))]
+
+
 def on():
     return os.path.exists(os.path.join(DIR, pwd.getpwuid(os.getuid()).pw_name))
 

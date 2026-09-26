@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import struct
 import threading
 import time
@@ -43,6 +44,21 @@ async def probe_nvenc(gpu=0):
     except Exception as e:
         log.info("NVENC probe failed: %s", e)
     return None
+
+
+NV_KERNEL, NV_LIB = "/proc/driver/nvidia/version", "/usr/lib/x86_64-linux-gnu/libcuda.so.1"
+
+
+def driver_restart_needed():
+    """True after an NVIDIA driver update, until a restart: the loaded kernel module and the
+    installed libraries differ, and NVENC can't open."""
+    try:
+        with open(NV_KERNEL) as f:
+            kernel = re.search(r"\s(\d+\.\d+(?:\.\d+)?)\s", f.readline())
+        lib = re.search(r"\.so\.(\d+\.\d+(?:\.\d+)?)$", os.path.realpath(NV_LIB))
+    except OSError:
+        return False
+    return bool(kernel and lib) and kernel.group(1) != lib.group(1)
 
 
 class _Source:

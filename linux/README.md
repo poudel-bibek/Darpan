@@ -54,8 +54,9 @@ lingering, so the user's services start at boot, and sets `WaylandEnable=false` 
    The host starts on the first connection. Until a screen exists it closes signed-in viewers with
    4004, and they retry.
 2. GDM's login screen runs `login-screen-access` from its autostart, as its own user. It grants each
-   marked user access with `xhost +SI:localuser:<user>`. The host finds that X server by its socket's
-   owner (`gdm`). The capture helper can't share memory with an X server run by another user, so it
+   marked user access with `xhost +SI:localuser:<user>`, which covers every process of that user.
+   The host finds that X server by its socket's owner (`gdm`) and accepts it only if the connection's
+   peer credentials say GDM's user runs it. The capture helper can't share memory with an X server run by another user, so it
    copies frames over the X connection.
 3. At login, `darpan-desktop.service` restarts the host, which then finds the desktop's `DISPLAY`.
    The socket and Tailscale are `StopWhenUnneeded=`: the login-screen target keeps them up past a

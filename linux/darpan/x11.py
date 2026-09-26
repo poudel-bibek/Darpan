@@ -10,6 +10,7 @@ import logging
 import os
 import pwd
 import re
+import socket
 import zlib
 import struct
 
@@ -169,24 +170,42 @@ def _owner(name):
         return None
 
 
-def _can_open(name):
+def _server_uid(name):
+    """Who runs the X server at `name`, from the connection's peer credentials: the socket file's
+    owner says nothing about who listens (libxcb tries the abstract socket first). None if it can't
+    be opened."""
     d = XOpenDisplay(name.encode())
-    if d:
+    if not d:
+        return None
+    try:
+        s = socket.fromfd(XConnectionNumber(d), socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            return struct.unpack("3i", s.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1]
+        finally:
+            s.close()
+    except OSError:
+        return None
+    finally:
         XCloseDisplay(d)
-    return bool(d)
 
 
 def find_display():
-    """(display, login_screen): the desktop session's display, else, for a user who turned it on,
-    the login screen's. None while there is neither, e.g. during boot."""
+    """(display, login_screen): the desktop session's display (an X server run by us or root), else,
+    for a user who turned it on, the login screen's (run by GDM's user). None while there is neither,
+    e.g. during boot."""
+    try:
+        login_uid = pwd.getpwnam(LOGIN_USER).pw_uid
+    except KeyError:
+        login_uid = None
     name = os.environ.get("DISPLAY")
-    if name and _owner(name) != LOGIN_USER and _can_open(name):
+    uid = _server_uid(name) if name else None
+    if uid is not None and uid != login_uid and uid in (os.getuid(), 0):
         return name, False
-    if not login_screen.on():
+    if login_uid is None or not login_screen.on():
         return None
     for sock in sorted(os.listdir(X11_SOCKETS)) if os.path.isdir(X11_SOCKETS) else ():
         name = ":" + sock[1:]
-        if sock[:1] == "X" and _owner(name) == LOGIN_USER and _can_open(name):
+        if sock[:1] == "X" and _owner(name) == LOGIN_USER and _server_uid(name) == login_uid:
             return name, True
     return None
 

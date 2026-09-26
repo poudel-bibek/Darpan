@@ -98,6 +98,9 @@ class Window(Adw.ApplicationWindow):
         self.login = Adw.SwitchRow(title="Show the login screen",
                                    subtitle="Log in from your other device, with nobody at this computer",
                                    active=login_screen.on())
+        if login_screen.others():
+            self.login.set_subtitle("Other people log in here too: your account would see what they type "
+                                    "at the login screen")
         self.login.connect("notify::active", self.on_login_screen)
         g.add(self.login)
         page.add(g)
@@ -182,7 +185,10 @@ class Window(Adw.ApplicationWindow):
                          "%d device%s connected" % (n, "" if n == 1 else "s") if n else "Waiting for a connection", None)
         if st:
             gpu = st.get("encoder")
-            self.enc.set_subtitle(("NVENC hardware · " + gpu) if gpu else "Software (x264)")
+            if st.get("restart_for_gpu"):
+                self.enc.set_subtitle("Restart to use the GPU after the NVIDIA driver update")
+            else:
+                self.enc.set_subtitle(("NVENC hardware · " + gpu) if gpu else "Software (x264)")
             self._sessions(st.get("sessions") or [])
         return False
 

@@ -111,6 +111,9 @@ Plus full screen, screen resolutions to match your window, and a toolbar that tu
   land on the Linux desktop. The browser has the same window, with the Linux side only.
 * **After a restart**, Darpan can show the Linux login screen, so you log in from your Mac with
   nobody at the Linux computer. Turn on *Show the login screen* in the Darpan window, once.
+* **Resolution**: pick one in the toolbar's display panel. The Linux computer remembers it, for the
+  Mac app and for each browser, and switches back to it the next time you connect; *Native* goes back
+  to normal.
 * **The toolbar** is the small capsule at the upper right of the window. Point at it for full screen,
   display and quality, keyboard, files, stats and sound. Drag it by its grip to put it anywhere.
 * **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
@@ -134,8 +137,9 @@ Plus full screen, screen resolutions to match your window, and a toolbar that tu
   without one, Darpan falls back to software encoding, which uses several CPU cores while you're
   connected.
 * **After a restart**, someone has to log in on the Linux computer before Darpan can show its screen,
-  unless *Show the login screen* is on. Turning it on switches the login screen to Xorg and lets your
-  account show it; on a computer other people log in to, that includes their login screen.
+  unless *Show the login screen* is on. Turning it on moves the login screen, and everyone's sessions,
+  to Xorg, and lets every program running as you see and control the login screen, including what
+  other people type there. On a computer other people use, leave it off.
 * **Staying signed in:** Tailscale signs devices out after 180 days. To avoid that, open the
   [Tailscale admin console](https://login.tailscale.com/admin/machines) and choose
   **Disable key expiry** for the Linux computer and for Darpan on your Mac.

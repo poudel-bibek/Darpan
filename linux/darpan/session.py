@@ -215,6 +215,8 @@ class Session:
             return
         hub.sessions.add(self)
         hub._active.set()
+        if len(hub.sessions) == 1:
+            self._task(hub.restore_resolution(self))
         try:
             self._welcome()
             while True:
@@ -785,6 +787,12 @@ class Session:
     }
 
 
+def _kind(session):
+    """The kind of client, e.g. "Darpan for Mac on macOS" or "Chrome on Windows": its name without
+    version numbers. Remembered choices are keyed by it, so no address is stored."""
+    return re.sub(r"\s*\d+(?:\.\d+)+", "", session.client).strip()
+
+
 class Hub:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -804,6 +812,7 @@ class Hub:
         self.cursor_cache = collections.OrderedDict()
         self.screen = None
         self.repeat_marker = os.path.join(config.state_dir(), "autorepeat-off")
+        self.res_file = os.path.join(config.state_dir(), "resolutions.json")   # each device's last choice
         self._repeat_off = False
         self._cursor_pending = False
         self.cursor_dirty = True       # shapes/clipboard are only read while someone is connected
@@ -1164,8 +1173,37 @@ class Hub:
                     await self.screen.restore()
                 else:
                     await self.screen.set_mode(int(m["w"]), int(m["h"]))
+            saved = self._saved_resolutions()
+            if m.get("native"):
+                saved.pop(_kind(session), None)
+            else:
+                saved[_kind(session)] = [int(m["w"]), int(m["h"])]
+            config.write_private(self.res_file, json.dumps(saved))
         except (ValueError, KeyError, RuntimeError) as e:
             session.ws.send_json({"t": "notice", "level": "error", "text": "resolution change failed: %s" % e})
+        await self.refresh_modes(broadcast=True)
+
+    def _saved_resolutions(self):
+        try:
+            with open(self.res_file) as f:
+                saved = json.load(f)
+            return saved if isinstance(saved, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    async def restore_resolution(self, session):
+        """A device gets back the resolution it chose last time, unless someone else is watching."""
+        mode = self._saved_resolutions().get(_kind(session))
+        if not mode or self.login_screen:
+            return
+        try:
+            async with self._screen:
+                if self.sessions != {session}:
+                    return
+                await self.screen.set_mode(int(mode[0]), int(mode[1]))
+        except (ValueError, TypeError, IndexError, RuntimeError) as e:    # e.g. another monitor now
+            log.info("last resolution of %s not restored: %s", _kind(session), e)
+            return
         await self.refresh_modes(broadcast=True)
 
     # ---------------------------------------------------------------- control API
@@ -1174,7 +1212,8 @@ class Hub:
                               "since": int(s.since), "streaming": bool(s.cap and s.paused_at is None),
                               "w": s.w, "h": s.h, "kbps": s.rc.kbps if s.rc else None,
                               "enc": s.cap.encoder if s.cap else None} for s in self.sessions],
-                "encoder": self.encoder, "url": self.url, "port": self.cfg["port"],
+                "encoder": self.encoder, "restart_for_gpu": self.cfg["encoder"] != "x264" and capture.driver_restart_needed(),
+                "url": self.url, "port": self.cfg["port"],
                 "password_set": self.auth.configured}
 
     def kick(self, sid=None, code=4003, reason="disconnected by host"):

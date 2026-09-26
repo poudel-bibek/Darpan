@@ -928,6 +928,24 @@ async def run(args, tmp, probe_log):
     await asyncio.sleep(3.3)
     ok("close aborts a stuck peer", stuck.aborted, "after 3 s")
 
+    # an NVIDIA driver update before a restart: the loaded module and the libraries differ
+    from darpan import capture as darpan_capture
+    nv_k, nv_l = os.path.join(tmp, "nvidia-version"), os.path.join(tmp, "libcuda.so.1")
+    with open(nv_k, "w") as f:
+        f.write("NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  595.91.07  Release Build  (b)  2026\n")
+    darpan_capture.NV_KERNEL, darpan_capture.NV_LIB = nv_k, nv_l
+    seen = []
+    for lib in ("libcuda.so.595.91.07", "libcuda.so.600.12"):
+        os.symlink(lib, nv_l)
+        seen.append(darpan_capture.driver_restart_needed())
+        os.remove(nv_l)
+    seen.append(darpan_capture.driver_restart_needed())     # no NVIDIA libraries
+    darpan_capture.NV_KERNEL = os.path.join(tmp, "no-nvidia-module")
+    os.symlink("libcuda.so.600.12", nv_l)
+    seen.append(darpan_capture.driver_restart_needed())     # no NVIDIA kernel module
+    os.remove(nv_l)
+    ok("GPU: restart note after a driver update", seen == [False, True, False, False], seen)
+
     # at most 4 connections per source may wait unauthenticated; a 5th is told "busy"
     waiting = []
     for _ in range(4):
@@ -976,7 +994,7 @@ async def run(args, tmp, probe_log):
     os.makedirs(socks)
     os.makedirs(marks)
     os.symlink("/tmp/.X11-unix/X" + args.display[1:], os.path.join(socks, "X" + args.display[1:]))
-    saved = darpan_x11.X11_SOCKETS, darpan_x11.LOGIN_USER, darpan_login.DIR, os.environ.get("DISPLAY")
+    saved = darpan_x11.X11_SOCKETS, darpan_x11.LOGIN_USER, darpan_login.DIR, os.environ.get("DISPLAY"), darpan_x11._owner
     darpan_x11.X11_SOCKETS, darpan_login.DIR = socks, marks
     try:
         os.environ["DISPLAY"] = args.display
@@ -988,11 +1006,15 @@ async def run(args, tmp, probe_log):
         seen.append(darpan_x11.find_display())               # turned on: the login screen
         os.environ["DISPLAY"] = args.display                 # a stale DISPLAY now the login screen's
         seen.append(darpan_x11.find_display())
+        os.environ["DISPLAY"] = ":%d" % free[0]
+        darpan_x11.LOGIN_USER, darpan_x11._owner = "root", lambda n: "root"
+        seen.append(darpan_x11.find_display())               # the socket file says root, the server isn't
     finally:
         darpan_x11.X11_SOCKETS, darpan_x11.LOGIN_USER, darpan_login.DIR = saved[:3]
+        darpan_x11._owner = saved[4]
         os.environ.pop("DISPLAY", None) if saved[3] is None else os.environ.update(DISPLAY=saved[3])
     ok("screen: the desktop, else the login screen if on", seen == [(args.display, False), None, (args.display, True),
-                                                                    (args.display, True)], seen)
+                                                                    (args.display, True), None], seen)
 
     # no screen yet (the computer is starting up): a signed-in viewer hears 4004 and retries, then gets it
     port2 = args.port + 7
@@ -1072,6 +1094,30 @@ async def run(args, tmp, probe_log):
        and not os.path.exists(lss.DIR) and all(edits) and calls == [["enable-linger", "darpan-test-a"],
        ["enable-linger", "darpan-test-b"], ["disable-linger", "darpan-test-a"], ["disable-linger", "darpan-test-b"]],
        "%s %s" % (edits, calls))
+    # each kind of client gets back the resolution it chose last time; Native forgets it. The test display
+    # offers only 1920×1080, so count the host's switches to it.
+    pw = open(os.path.join(tmp, "config", "darpan", "password.txt")).read().strip()
+    res_file = os.path.join(tmp, "state", "darpan", "resolutions.json")
+
+    def switches():
+        return open(os.path.join(tmp, "host.log")).read().count("switching screen to 1920x1080")
+
+    async def visit(msg=None):
+        c = await WS.connect("127.0.0.1", args.port)
+        _, h = await c.recv()
+        c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py"})
+        await pump(c, 1.0)
+        if msg:
+            c.send(msg)
+            await pump(c, 1.0)
+        c.w.close()
+        await asyncio.sleep(1.0)          # nobody connected: the host goes back to native
+        return switches() - base, json.load(open(res_file)) if os.path.exists(res_file) else None
+    base = switches()
+    seen = [await visit({"t": "res", "w": 1920, "h": 1080}), await visit(), await visit({"t": "res", "native": True}),
+            await visit()]
+    ok("each client gets its last resolution back", seen == [(1, {"test_host.py": [1920, 1080]}),
+       (2, {"test_host.py": [1920, 1080]}), (3, {}), (3, {})], seen)
     return all(r for _, r in results), results
 
 
