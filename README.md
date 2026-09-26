@@ -13,7 +13,7 @@ Use your Linux computer from your Mac or any browser. It feels local, stays priv
 |---|---|---|
 | **Linux**: the computer you connect **to** | [darpan_amd64.deb](../../releases/latest/download/darpan_amd64.deb) | Ubuntu 24.04 or similar |
 | **Mac**: the computer you connect **from** | [Darpan.dmg](../../releases/latest/download/Darpan.dmg) | macOS 14 or later, Apple silicon or Intel |
-| **Any browser** | nothing to install | Chrome, Safari, Edge or Firefox |
+| **Any browser** | no Darpan app; [Tailscale](https://tailscale.com/download) on that device | Chrome, Safari, Edge or Firefox |
 
 All versions: [Releases](../../releases).
 
@@ -35,8 +35,8 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 
 **3. Connect.** Enter the address and password, and click **Connect**. That's it.
 
-> **From a browser instead:** on any device signed in to the same Tailscale account, open the
-> address. In Chrome, *Install Darpan* turns it into its own window.
+> **From a browser instead:** install [Tailscale](https://tailscale.com/download) on that device,
+> sign in with the same account, and open the address. In Chrome, *Install Darpan* turns it into its own window.
 
 ## Why Darpan
 
