@@ -20,7 +20,7 @@ Leave out passwords, addresses and anything else private.
 ## How the code is laid out
 
 ```text
-linux/darpan/      host: Python daemon (standard library only)
+linux/darpan/      host: Python daemon (standard library; PyGObject for its window and the software encoder)
 linux/native/      capture and NVENC encoder (C)
 linux/web/         browser client, served by the host
 linux/packaging/   the .deb and its systemd units
