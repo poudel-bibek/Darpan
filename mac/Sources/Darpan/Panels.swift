@@ -99,6 +99,12 @@ struct DisplayPanel: View {
                 }
                 .pickerStyle(.segmented).labelsHidden()
             }
+            PanelSection(title: "Encoding") {
+                Toggle("Full GPU on the Linux computer", isOn: $settings.fullGPU)
+                    .toggleStyle(.switch).controlSize(.small).font(.system(size: 12))
+                Text("Sharpest and fastest video, using about 250 MB of the Linux computer’s GPU memory while you’re connected. Off: about 40 MB.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(14)
         .frame(width: 320)

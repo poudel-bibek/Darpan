@@ -216,6 +216,7 @@ public final class Client {
     private var wantVideo = false
     private var streaming = false
     private var fps = 60
+    private var fullGPU = false
     private var bitrate = 0
     private var stream: StreamInfo?
     private var decoder: H264Decoder!
@@ -318,15 +319,17 @@ public final class Client {
         }
     }
 
-    /// Maximum frame rate and bitrate (kbit/s, 0 = adaptive).
-    public func setVideo(fps: Int, bitrate: Int) {
+    /// Maximum frame rate, bitrate ceiling (kbit/s), and whether the host may use its full GPU.
+    public func setVideo(fps: Int, bitrate: Int, fullGPU: Bool = false) {
         queue.async {
             let f = max(1, min(120, fps)), b = max(0, bitrate)
-            let changedFps = f != self.fps, changedBitrate = b != self.bitrate
+            let changedFps = f != self.fps, changedBitrate = b != self.bitrate, changedGPU = fullGPU != self.fullGPU
             self.fps = f
             self.bitrate = b
-            if self.streaming && (changedFps || changedBitrate) {
-                self.socket?.send(text: Msg.cfg(fps: changedFps ? f : nil, bitrate: changedBitrate ? b : nil))
+            self.fullGPU = fullGPU
+            if self.streaming && (changedFps || changedBitrate || changedGPU) {
+                self.socket?.send(text: Msg.cfg(fps: changedFps ? f : nil, bitrate: changedBitrate ? b : nil,
+                                                fullGPU: changedGPU ? fullGPU : nil))
             }
         }
     }
@@ -752,7 +755,7 @@ public final class Client {
 
     private func sendStart() {
         streaming = true
-        socket?.send(text: Msg.start(fps: fps, bitrate: bitrate))
+        socket?.send(text: Msg.start(fps: fps, bitrate: bitrate, fullGPU: fullGPU))
     }
 
     private func onStream(_ m: Incoming) {
