@@ -20,7 +20,7 @@ func protocolTests() {
         check((try? Auth.deriveKey(password: "", salt: salt, iterations: 100_000)) != nil, "empty password derives")
 
         let name = Auth.clientName()
-        check(name.hasPrefix("Darpan for Mac 1.0.0 on macOS "), "client name: \(name)")
+        check(name.hasPrefix("Darpan for Mac \(DarpanVersion.string) on macOS "), "client name: \(name)")
     }
 
     section("messages are valid JSON") {

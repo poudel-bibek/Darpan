@@ -178,6 +178,8 @@ public final class Client {
     }
 
     public let address: HostAddress
+    /// Set: every connection attempt goes through this proxy (the built-in tailnet node).
+    public let proxy: SOCKSProxy?
     public weak var delegate: ClientDelegate?
     /// Main-thread view of the state.
     public private(set) var state: State = .idle
@@ -225,8 +227,9 @@ public final class Client {
 
     private let uploads: Uploader
 
-    public init(address: HostAddress, sink: VideoSink) {
+    public init(address: HostAddress, sink: VideoSink, proxy: SOCKSProxy? = nil) {
         self.address = address
+        self.proxy = proxy
         self.sink = sink
         uploads = Uploader()
         decoder = H264Decoder { [weak self] frame, image, status in
@@ -371,7 +374,7 @@ public final class Client {
         helloSeen = false
         deniedWith = nil
         byeReason = nil
-        let ws = WebSocket(url: address.webSocketURL, userAgent: Self.userAgent, queue: queue) { [weak self] e in
+        let ws = WebSocket(url: address.webSocketURL, userAgent: Self.userAgent, proxy: proxy, queue: queue) { [weak self] e in
             guard let self, self.generation == gen else { return }
             self.handle(e)
         }

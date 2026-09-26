@@ -94,23 +94,14 @@ final class VideoView: NSView, VideoSink {
             CFDictionarySetValue(dict, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
                                  Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
         }
-        if #available(macOS 14.0, *) {
-            let r = displayLayer.sampleBufferRenderer
-            if r.status == .failed { r.flush() }
-            r.enqueue(sample)
-        } else {
-            if displayLayer.status == .failed { displayLayer.flush() }
-            displayLayer.enqueue(sample)
-        }
+        let r = displayLayer.sampleBufferRenderer
+        if r.status == .failed { r.flush() }
+        r.enqueue(sample)
     }
 
     /// Blank the picture (session over).
     func clear() {
-        if #available(macOS 14.0, *) {
-            displayLayer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
-        } else {
-            displayLayer.flushAndRemoveImage()
-        }
+        displayLayer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
         cursorImages.removeAll()
         cursors.removeAll()
         cursorId = -1

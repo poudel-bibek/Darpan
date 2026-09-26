@@ -18,7 +18,8 @@ final class Session: NSObject {
     private(set) var wasConnected = false
 
     private weak var owner: SessionOwner?
-    private let remember: Bool
+    /// nil: leave the Keychain as it is (test runs with DARPAN_PASSWORD).
+    private let remember: Bool?
     private let settings = Settings.shared
     private let content = ViewerContentView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800))
     private var video: VideoView { content.video }
@@ -35,14 +36,14 @@ final class Session: NSObject {
     private var uploadToasts: [String: ToastStack.Toast] = [:]
     private let logStats = ProcessInfo.processInfo.environment["DARPAN_LOG_STATS"] != nil
 
-    init(address: HostAddress, remember: Bool, owner: SessionOwner) {
+    init(address: HostAddress, proxy: SOCKSProxy?, remember: Bool?, owner: SessionOwner) {
         self.address = address
         self.remember = remember
         self.owner = owner
         window = NSWindow(contentRect: content.frame, styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: true)
         super.init()
-        client = Client(address: address, sink: video)
+        client = Client(address: address, sink: video, proxy: proxy)
         client.delegate = self
         keyboard = KeyboardCapture(video: video)
         clipboard = ClipboardSync { [weak self] text in self?.client.send(Msg.clip(text)) }
@@ -236,6 +237,11 @@ final class Session: NSObject {
         guard settings.showStats || logStats else { return }
         let s = client.takeStats()
         if settings.showStats { content.stats.text = Self.statsText(s) }
+        if logStats && ticks % 20 == 0, client.proxy != nil {
+            Tailnet.shared.path(to: address.host) { p in
+                FileHandle.standardError.write(Data("tailnet path: \(p ?? "unknown")\n".utf8))
+            }
+        }
         if logStats && ticks % 4 == 0 {
             FileHandle.standardError.write(Data((Self.statsText(s).replacingOccurrences(of: "\n", with: " | ") + "\n").utf8))
         }
@@ -453,7 +459,7 @@ extension Session: ClientDelegate {
             if !wasConnected {
                 wasConnected = true
                 // Remember unticked: forget a sign-in saved earlier, even if it was just used.
-                if !remember { Keychain.delete(address.origin) }
+                if remember == false { Keychain.delete(address.origin) }
                 showWindow()
                 owner?.sessionDidConnect(self)
             }
@@ -492,7 +498,7 @@ extension Session: ClientDelegate {
         case .upload(let u):
             uploadEvent(u)
         case .authenticated(let key):
-            if remember { Keychain.save(key, for: address.origin) } else { Keychain.delete(address.origin) }
+            if remember == true { Keychain.save(key, for: address.origin) } else if remember == false { Keychain.delete(address.origin) }
         case .forgetKey:
             Keychain.delete(address.origin)
         }

@@ -1,6 +1,19 @@
 import Foundation
 import Network
 
+/// A SOCKS5 proxy with username/password authentication (the built-in tailnet node's loopback
+/// server). The host name is handed to the proxy unresolved, so tailnet names resolve there.
+public struct SOCKSProxy: Equatable {
+    public let host: String
+    public let port: UInt16
+    public let username: String
+    public let password: String
+
+    public init(host: String, port: UInt16, username: String, password: String) {
+        self.host = host; self.port = port; self.username = username; self.password = password
+    }
+}
+
 /// One WebSocket to the host (Network.framework): TLS with the system's default certificate
 /// validation, TCP_NODELAY, no Origin header, pings answered automatically.
 ///
@@ -27,7 +40,10 @@ public final class WebSocket {
     private let lock = NSLock()
     private var finished = false        // guarded by lock
 
-    public init(url: URL, userAgent: String, queue: DispatchQueue, handler: @escaping (Event) -> Void) {
+    /// `proxy`: route this connection (and only it) through a SOCKS5 proxy. TLS still ends here,
+    /// with the system's certificate validation; there's no fallback to a direct connection.
+    public init(url: URL, userAgent: String, proxy: SOCKSProxy? = nil, queue: DispatchQueue,
+                handler: @escaping (Event) -> Void) {
         self.queue = queue
         self.handler = handler
         let ws = NWProtocolWebSocket.Options(.version13)
@@ -39,8 +55,17 @@ public final class WebSocket {
         let secure = url.scheme?.lowercased() == "wss"
         let params = NWParameters(tls: secure ? NWProtocolTLS.Options() : nil, tcp: tcp)
         params.defaultProtocolStack.applicationProtocols.insert(ws, at: 0)
-        params.preferNoProxies = true               // tailnet addresses are only reachable directly
         params.serviceClass = .interactiveVideo
+        if let proxy, let port = NWEndpoint.Port(rawValue: proxy.port) {
+            var config = ProxyConfiguration(socksv5Proxy: .hostPort(host: NWEndpoint.Host(proxy.host), port: port))
+            config.applyCredential(username: proxy.username, password: proxy.password)
+            config.allowFailover = false
+            let context = NWParameters.PrivacyContext(description: "Darpan tailnet")
+            context.proxyConfigurations = [config]
+            params.setPrivacyContext(context)
+        } else {
+            params.preferNoProxies = true           // tailnet addresses are only reachable directly
+        }
         connection = NWConnection(to: .url(url), using: params)
     }
 

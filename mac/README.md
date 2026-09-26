@@ -1,13 +1,18 @@
 # Darpan for Mac
 
-Native macOS client for Darpan (Swift, AppKit + SwiftUI, VideoToolbox, Network.framework; no
-dependencies). It speaks [`../PROTOCOL.md`](../PROTOCOL.md) and mirrors the browser client
-[`../linux/web/app.js`](../linux/web/app.js). macOS 13 or later, Apple silicon or Intel.
+Native macOS client for Darpan (Swift, AppKit + SwiftUI, VideoToolbox, Network.framework, and
+libtailscale for the built-in tailnet connection). It speaks [`../PROTOCOL.md`](../PROTOCOL.md) and mirrors the browser client
+[`../linux/web/app.js`](../linux/web/app.js). macOS 14 or later, Apple silicon or Intel.
 
 Install and first launch: see *Mac app* in the [main README](../README.md#mac-app).
 
 ## Using it
 
+* **Private network**: Darpan has Tailscale built in (libtailscale), so the Tailscale app isn't
+  needed. Sign in once from the *Private network* row; the device appears as `darpan-<Mac name>`.
+  Turn off its key expiry in the admin console. Only Darpan's own connection uses it: no VPN, no
+  DNS changes. The node's keys are in `~/Library/Application Support/Darpan/tailscale`; delete
+  that folder to sign out. *This Mac's* uses the system network instead, e.g. the Tailscale app.
 * **Connect window**: the computer's address (`https://<machine>.<tailnet>.ts.net`), the password,
   *Remember on this Mac*. The clock button lists recent computers. A remembered computer
   connects at launch.
@@ -36,11 +41,15 @@ Install and first launch: see *Mac app* in the [main README](../README.md#mac-ap
 bash mac/build.sh        # self-tests, universal release build, dist/Darpan.app + dist/Darpan.dmg
 ```
 
-Only the Command Line Tools are needed. Set `DARPAN_SIGN_ID` to a *Developer ID Application*
+Needs the Command Line Tools and Go 1.25.5 or later (on PATH, or in `~/.local/go`), which builds
+libtailscale at a pinned commit (`tailscale/build-libtailscale.sh`). The first build downloads Go
+modules. Plain `swift build` needs that script run once first. Set `DARPAN_SIGN_ID` to a *Developer ID Application*
 identity to sign with it; otherwise the app is signed ad hoc.
 
 ```
 Sources/DarpanCore/   protocol, auth, Annex-B → AVCC, VideoToolbox decoder, key map, client
+Sources/CTailscale/   module map for libtailscale's C API (built into .build/libtailscale)
+tailscale/            build-libtailscale.sh (pinned commit, universal c-archive)
 Sources/Darpan/       the app: windows, video view, input, clipboard, toolbar, menus
 Sources/SelfTest/     `swift run SelfTest` (XCTest isn't part of the Command Line Tools)
 tools/FakeHost/       a stand-in host on this Mac, for testing without a tailnet

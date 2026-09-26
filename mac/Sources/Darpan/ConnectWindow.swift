@@ -3,7 +3,7 @@ import DarpanCore
 import SwiftUI
 
 protocol ConnectHandler: AnyObject {
-    func connect(to address: HostAddress, password: String?, saved: SavedKey?, remember: Bool)
+    func connect(to address: HostAddress, proxy: SOCKSProxy?, password: String?, saved: SavedKey?, remember: Bool?)
     func cancelConnect()
 }
 
@@ -25,6 +25,10 @@ final class ConnectModel: ObservableObject {
     private let settings = Settings.shared
     private var failure: Client.Failure?
     private var timer: Timer?
+    /// Identifies the current connect attempt, so a late tailnet callback from a cancelled one is ignored.
+    private var attempt = 0
+    /// The current attempt got as far as creating a session (only then does Cancel end one).
+    private var launched = false
 
     init() {
         address = settings.hosts.first ?? ""
@@ -38,14 +42,15 @@ final class ConnectModel: ObservableObject {
             address = url
             if let pw = env["DARPAN_PASSWORD"], !pw.isEmpty {
                 password = pw
-                connect(remember: false)
+                connect(remember: nil, keychain: false)     // a test run: leave saved sign-ins alone
                 return
             }
         }
         if hasSavedKey { connect() }
     }
 
-    func connect(remember: Bool? = nil) {
+    /// `keychain` false: neither save nor delete a sign-in (environment-driven test runs).
+    func connect(remember: Bool? = nil, keychain: Bool = true) {
         guard !connecting, countdown == 0 else { return }
         let a: HostAddress
         do {
@@ -62,22 +67,77 @@ final class ConnectModel: ObservableObject {
             focusPassword += 1
             return
         }
+        let keep: Bool? = keychain ? (remember ?? settings.remember) : nil
+        #if DEBUG
+        // DARPAN_DEBUG_SOCKS=host:port:user:password tests the proxy path without a tailnet.
+        if let spec = ProcessInfo.processInfo.environment["DARPAN_DEBUG_SOCKS"]?.split(separator: ":").map(String.init),
+           spec.count == 4, let port = UInt16(spec[1]) {
+            begin(a, proxy: SOCKSProxy(host: spec[0], port: port, username: spec[2], password: spec[3]),
+                  password: pw, saved: saved, remember: keep)
+            return
+        }
+        #endif
+        guard settings.network == .builtIn, !HostAddress.isLoopback(a.host) else {
+            begin(a, proxy: nil, password: pw, saved: saved, remember: keep)
+            return
+        }
+        // Built-in network: the node has to be up and signed in first.
+        let net = Tailnet.shared
+        attempt += 1
+        let mine = attempt
+        connecting = true
+        show("Joining your private network…", error: false)
+        net.start { [weak self] proxy in
+            guard let self, self.connecting, self.attempt == mine else { return }
+            guard let proxy else {
+                self.connecting = false
+                if case .failed(let m) = net.phase { self.show(m, error: true) }
+                return
+            }
+            net.settle { phase in
+                guard self.connecting, self.attempt == mine else { return }
+                switch phase {
+                case .running:
+                    self.begin(a, proxy: proxy, password: pw, saved: saved, remember: keep)
+                case .needsLogin:
+                    self.connecting = false
+                    self.show("Sign in to your private network first (above).", error: true)
+                case .failed(let m):
+                    self.connecting = false
+                    self.show(m, error: true)
+                case .starting, .off:
+                    self.connecting = false
+                    self.show("Your private network isn’t ready yet. Check this Mac’s internet connection, then try again.", error: true)
+                }
+            }
+        }
+    }
+
+    private func begin(_ a: HostAddress, proxy: SOCKSProxy?, password pw: String?, saved: SavedKey?, remember: Bool?) {
         password = ""
         address = a.origin
         connecting = true
         showTailscaleHint = false
         failure = nil
         show("Connecting to \(a.shortName)…", error: false)
-        handler?.connect(to: a, password: pw, saved: saved, remember: remember ?? settings.remember)
+        launched = true
+        handler?.connect(to: a, proxy: proxy, password: pw, saved: saved, remember: remember)
     }
 
     func cancel() {
-        handler?.cancelConnect()
+        attempt += 1
+        connecting = false
+        show("", error: false)
+        // Still in the private-network preflight: nothing to cancel yet, and a session that
+        // is already open (New Connection… while connected) must keep running.
+        if launched { handler?.cancelConnect() }
+        launched = false
     }
 
     /// The session ended (or never started). `failure` nil: the user disconnected or cancelled.
     func ended(_ failure: Client.Failure?, wasConnected: Bool) {
         connecting = false
+        launched = false
         refreshSavedKey()
         guard let failure else {
             show(wasConnected ? "Disconnected." : "", error: false)
@@ -101,6 +161,7 @@ final class ConnectModel: ObservableObject {
 
     func connected() {
         connecting = false
+        launched = false
         show("", error: false)
     }
 
@@ -123,6 +184,9 @@ final class ConnectModel: ObservableObject {
             show(countdown > 0 ? "Too many attempts. Try again in \(countdown) s." : "You can try again now.", error: countdown > 0)
         case .wrongPassword(let r) where r > 0:
             show(countdown > 0 ? "Wrong password. Locked for \(countdown) s." : "Wrong password.", error: true)
+        case .unreachable(let detail) where settings.network == .builtIn:
+            show("Could not reach the remote computer over your private network. Is it on, with Darpan running?"
+                 + (detail.map { "\n(\($0))" } ?? ""), error: true)
         case .kicked(let reason?) where !reason.isEmpty && reason != "disconnected by host":
             show("\(f.description): \(reason)", error: true)
         default:
@@ -155,6 +219,7 @@ struct ConnectView: View {
             Text("Your Linux desktop, on this Mac").foregroundStyle(.secondary).padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 12) {
+                PrivateNetworkRow(net: Tailnet.shared, settings: settings)
                 labeled("Address") {
                     HStack(spacing: 6) {
                         TextField("machine.tailnet.ts.net", text: $model.address)
@@ -198,12 +263,12 @@ struct ConnectView: View {
                 .frame(minHeight: 32)
                 .padding(.top, 10)
 
-            if model.showTailscaleHint { tailscaleHint.padding(.top, 4) }
+            if model.showTailscaleHint && settings.network == .system { tailscaleHint.padding(.top, 4) }
         }
         .padding(28)
         .frame(width: 360)
         .onAppear { focus = model.address.isEmpty ? .address : .password }
-        .onChange(of: model.focusPassword) { _ in focus = .password }
+        .onChange(of: model.focusPassword) { focus = .password }
     }
 
     private func labeled<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
@@ -269,7 +334,91 @@ final class ConnectWindowController: NSWindowController {
         w.tabbingMode = .disallowed
         super.init(window: w)
         w.center()
+        // Tailnet status is polled only while this window is on screen.
+        NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: w,
+                                               queue: .main) { [weak self] _ in self?.visibilityChanged() }
+    }
+
+    private var watching = false
+
+    private func visibilityChanged() {
+        let visible = window?.occlusionState.contains(.visible) ?? false
+        guard visible != watching else { return }
+        watching = visible
+        if visible {
+            if Settings.shared.network == .builtIn { Tailnet.shared.start() }
+            Tailnet.shared.watch()
+        } else {
+            Tailnet.shared.unwatch()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+}
+
+/// Status of the built-in tailnet node, with sign-in; or the switch to the Mac's own network.
+struct PrivateNetworkRow: View {
+    @ObservedObject var net: Tailnet
+    @ObservedObject var settings: Settings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Private network").font(.system(size: 12)).foregroundStyle(.secondary)
+                Spacer()
+                Picker("Network", selection: $settings.network) {
+                    Text("Built-in").tag(NetworkMode.builtIn)
+                    Text("This Mac’s").tag(NetworkMode.system)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .help("Built-in: Darpan joins your tailnet itself. This Mac’s: use the Tailscale app or another network.")
+            }
+            if settings.network == .builtIn {
+                HStack(spacing: 8) {
+                    Circle().fill(dot).frame(width: 8, height: 8)
+                    Text(status).font(.system(size: 12)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    action
+                }
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.05)))
+                if case .needsLogin = net.phase {
+                    Text("After signing in, turn off key expiry for this device at login.tailscale.com/admin/machines, so it stays connected.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var dot: Color {
+        switch net.phase {
+        case .running: return .green
+        case .starting: return .yellow
+        case .needsLogin: return .orange
+        case .failed: return .red
+        case .off: return .gray
+        }
+    }
+
+    private var status: String {
+        switch net.phase {
+        case .off: return "Not connected"
+        case .starting: return "Connecting…"
+        case .needsLogin(_, let again): return again ? "Signed out — sign in again" : "Sign in to your tailnet"
+        case .running: return "Connected" + (net.account.map { " as \($0)" } ?? "")
+        case .failed(let m): return m
+        }
+    }
+
+    @ViewBuilder private var action: some View {
+        switch net.phase {
+        case .off, .failed:
+            Button("Connect") { net.start() }.controlSize(.small)
+        case .needsLogin(let url, let again):
+            Button(again ? "Sign in again" : "Sign in") { if let url { NSWorkspace.shared.open(url) } }
+                .controlSize(.small).disabled(url == nil)
+        case .starting, .running:
+            EmptyView()
+        }
+    }
 }

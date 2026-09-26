@@ -91,9 +91,7 @@ enum MainMenu {
         window.addItem(item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))))
         NSApp.windowsMenu = window
 
-        let help = submenu(main, "Help")
-        help.addItem(item("\(name) Help", #selector(AppDelegate.showHelp(_:))))
-        NSApp.helpMenu = help
+        NSApp.helpMenu = submenu(main, "Help")
 
         return (main, resolution)
     }
