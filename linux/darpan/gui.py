@@ -52,7 +52,15 @@ class Window(Adw.ApplicationWindow):
         _bg(update.available, self._update_found)
         GLib.timeout_add_seconds(3600, self._check_update)     # the system refreshes APT's lists daily
         page = Adw.PreferencesPage()
-        view.set_content(page)
+        # First run: a few friendly steps instead of the settings (which stay one "Done" away).
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
+        self.stack.add_named(Gtk.Box(), "blank")            # until the first refresh knows which
+        self.stack.add_named(page, "main")
+        self._build_onboarding()
+        self.onboarding = None               # decided on the first refresh: already set up or not
+        self.signing_in = False
+        self.publish_at = 0.0
+        view.set_content(self.stack)
         self.toasts.set_child(view)
         self.set_content(self.toasts)
 
@@ -128,6 +136,151 @@ class Window(Adw.ApplicationWindow):
         self.refresh()
         GLib.timeout_add_seconds(2, self.refresh)
 
+    # ---------------------------------------------------------------- onboarding
+    def _step(self, name, icon, title, description, *children):
+        sp = Adw.StatusPage(icon_name=icon, title=title, description=description)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, halign=Gtk.Align.CENTER)
+        for c in children:
+            box.append(c)
+        sp.set_child(box)
+        self.stack.add_named(sp, name)
+        return sp
+
+    @staticmethod
+    def _pill(label, cb):
+        b = Gtk.Button(label=label, halign=Gtk.Align.CENTER)
+        b.add_css_class("pill")
+        b.add_css_class("suggested-action")
+        b.connect("clicked", cb)
+        return b
+
+    @staticmethod
+    def _note(markup):
+        lb = Gtk.Label(wrap=True, justify=Gtk.Justification.CENTER, max_width_chars=46, use_markup=True)
+        lb.set_markup(markup)
+        lb.add_css_class("dim-label")
+        return lb
+
+    def _build_onboarding(self):
+        self._step("welcome", "darpan", "Welcome to Darpan",
+                   "Use this computer from your Mac or any browser.\nPrivate, and free.",
+                   self._pill("Get started", self.on_get_started),
+                   self._note("No account with us. You sign in with Google, Apple, GitHub or Microsoft through "
+                              "Tailscale, which links your devices privately."))
+        spinner = Gtk.Spinner(spinning=True, width_request=32, height_request=32)
+        again = Gtk.Button(label="Open the sign-in page again", halign=Gtk.Align.CENTER)
+        again.add_css_class("flat")
+        again.connect("clicked", lambda *_: self.on_get_started(None))
+        self._step("signin", "web-browser-symbolic", "Finish in your browser",
+                   "Tailscale's sign-in page is open in your browser. Darpan carries on by itself when you're done.",
+                   spinner, again)
+        self._step("working", "network-workgroup-symbolic", "Almost there",
+                   "Making this computer's secure address on your private network…",
+                   Gtk.Spinner(spinning=True, width_request=32, height_request=32))
+        self.https_url = None
+        self.https_step = self._step("https", "channel-secure-symbolic", "One last click",
+                                     "Tailscale asks once to allow secure addresses for your devices. Turn it on in "
+                                     "the page that opens; Darpan finishes by itself.",
+                                     self._pill("Open the page", lambda *_: self.https_url and _open(self.https_url)))
+        self.ready_pw = Gtk.Label(selectable=True)
+        self.ready_pw.add_css_class("title-1")
+        self.ready_pw.add_css_class("monospace")
+        pw_row = Gtk.Box(spacing=6, halign=Gtk.Align.CENTER)
+        pw_row.append(self.ready_pw)
+        pw_row.append(self._icon_button("edit-copy-symbolic", "Copy password", self.on_copy_password))
+        self.ready_mac = self._note("")
+        self.ready_addr = Gtk.Label(selectable=True, wrap=True, max_width_chars=46)
+        self.ready_addr.add_css_class("dim-label")
+        addr_row = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
+        addr_row.append(self.ready_addr)
+        addr_row.append(self._icon_button("edit-copy-symbolic", "Copy address", lambda *_: self._copy(self.serve_url)))
+        browser = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        browser.append(self._note("From a browser on another device:"))
+        browser.append(addr_row)
+        self._step("ready", "emblem-ok-symbolic", "You're set",
+                   "Open Darpan on your Mac and sign in with the same account. Then click this computer and "
+                   "enter this password:",
+                   pw_row, self.ready_mac, browser, self._pill("Done", self.on_onboarding_done))
+
+    @staticmethod
+    def _mac_download():
+        """The Mac app on the same GitHub releases this package updates from (its APT source)."""
+        try:
+            for line in open("/etc/apt/sources.list.d/darpan.sources"):
+                if line.startswith("URIs:"):
+                    return line.split(":", 1)[1].strip().rstrip("/") + "/Darpan.dmg"
+        except OSError:
+            pass
+        return None
+
+    def _onboard(self, st, ts, served):
+        """Which step to show while setting up; publishes by itself once signed in."""
+        state = ts.get("state")
+        if state == "Running" and served:
+            store = auth.AuthStore()
+            self.ready_pw.set_label(store.visible_password() or "your own password")
+            dmg = self._mac_download()
+            self.ready_mac.set_markup('No Darpan on the Mac yet? <a href="%s">Download it</a>.'
+                                      % GLib.markup_escape_text(dmg) if dmg else "")
+            self.ready_mac.set_visible(bool(dmg))
+            self.ready_addr.set_label(self.serve_url or "")
+            self.stack.set_visible_child_name("ready")
+        elif state == "Running":
+            now = time.monotonic()
+            if now >= self.publish_at:           # at most every 4 s, while Tailscale waits for the user
+                self.publish_at = now + 4
+                _bg(lambda: tailscale.serve(control.host_port(self.cfg["port"])), self._published)
+            if self.stack.get_visible_child_name() != "https":
+                self.stack.set_visible_child_name("working")
+        elif self.signing_in:
+            self.stack.set_visible_child_name("signin")
+        else:
+            self.stack.set_visible_child_name("welcome")
+
+    def _published(self, res):
+        if isinstance(res, Exception) or not self.onboarding:
+            return False
+        ok, msg = res
+        if ok:
+            self.refresh()
+        elif msg.startswith("https://"):
+            if self.https_url != msg:
+                _open(msg)                       # once; the button opens it again
+            self.https_url = msg
+            self.stack.set_visible_child_name("https")
+        else:
+            self.https_step.set_description(msg)
+            self.stack.set_visible_child_name("https")
+        return False
+
+    def on_get_started(self, _btn):
+        self.signing_in = True
+        self.stack.set_visible_child_name("signin")
+
+        def start():
+            if subprocess.run(["systemctl", "--user", "is-active", "--quiet", "darpan-net.service"]).returncode:
+                subprocess.run(["systemctl", "--user", "start", "darpan-net.service", "darpan.service"])
+                for _ in range(40):                  # the network's daemon takes a moment to answer
+                    if tailscale.status() is not None:
+                        break
+                    time.sleep(0.25)
+            return tailscale.login(config.hostname().lower())
+
+        def opened(url):
+            if isinstance(url, Exception):
+                self.signing_in = False
+                self.stack.set_visible_child_name("welcome")
+                self._toast("Couldn't start signing in: %s" % url)
+            elif url:
+                _open(url)
+            self.refresh()
+            return False
+        _bg(start, opened)
+
+    def on_onboarding_done(self, _btn):
+        self.onboarding = False
+        self.stack.set_visible_child_name("main")
+
     # ---------------------------------------------------------------- helpers
     def _icon_button(self, icon, tip, cb):
         b = Gtk.Button(icon_name=icon, valign=Gtk.Align.CENTER, tooltip_text=tip)
@@ -161,6 +314,10 @@ class Window(Adw.ApplicationWindow):
             return False
         st, ts, served = res
         self.last = res
+        if self.onboarding is None:
+            self.onboarding = not (ts.get("state") == "Running" and served)
+            if not self.onboarding:
+                self.stack.set_visible_child_name("main")
         store = auth.AuthStore()
         visible = store.visible_password()
         self.pw.set_subtitle((visible if self.reveal else "•" * 12) if visible else
@@ -196,6 +353,8 @@ class Window(Adw.ApplicationWindow):
             else:
                 self.enc.set_subtitle(("NVENC hardware · " + gpu) if gpu else "Software (x264)")
             self._sessions(st.get("sessions") or [])
+        if self.onboarding:
+            self._onboard(st, ts, served)
         return False
 
     def _status(self, icon, title, sub, action):
