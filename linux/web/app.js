@@ -554,7 +554,9 @@
   // ------------------------------------------------------------ keyboard
   const pressed = new Map();          // physical code → code sent to the host
   let metaDown = false;
-  function sendKey(c, d) { send({ t: 'key', c, d }); }
+  function sendKey(c, d, cmd) { send(cmd ? { t: 'key', c, d, cmd: true } : { t: 'key', c, d }); }
+  // ⌘+letter while ⌘ acts as Ctrl: the host makes it Ctrl+Shift+letter in terminals (PROTOCOL.md §5)
+  const viaCmd = (code) => IS_MAC && settings.cmd === 'ctrl' && metaDown && /^Key[A-Z]$/.test(code);
   function mapCode(code) {
     if (IS_MAC && settings.cmd === 'ctrl') {
       if (code === 'MetaLeft') return 'ControlLeft';
@@ -578,7 +580,7 @@
       // Let the browser raise a `paste` event: its clipboard text reaches the host first,
       // then the key goes through, so the remote app pastes what's on *this* device.
       pressed.set(code, mapped);
-      paste.waiting = true; paste.mapped = mapped; paste.early = false;
+      paste.waiting = true; paste.mapped = mapped; paste.early = false; paste.cmd = viaCmd(code);
       paste.timer = setTimeout(() => finishPaste(null), 150);
       return;
     }
@@ -586,7 +588,7 @@
     e.preventDefault();
     if (IS_MAC && metaDown && !MODS.has(code)) {
       // macOS never delivers key-up for keys pressed while ⌘ is held: send a full tap.
-      sendKey(mapped, true); sendKey(mapped, false);
+      sendKey(mapped, true, viaCmd(code)); sendKey(mapped, false);
       return;
     }
     pressed.set(code, mapped);
@@ -617,8 +619,9 @@
     paste.waiting = false;
     // Compare with what the host holds now (it may have changed since we last sent anything).
     if (text && text !== S.remoteClip) { S.lastSentClip = S.remoteClip = text; send({ t: 'clip', text }); }
-    sendKey(paste.mapped, true);
-    if (paste.early || (IS_MAC && metaDown)) { sendKey(paste.mapped, false); pressed.delete('KeyV'); }
+    sendKey(paste.mapped, true, paste.cmd);
+    // ⌘ already let go (its key-up released V before this down went out): release V now too
+    if (paste.early || (IS_MAC && metaDown) || !pressed.has('KeyV')) { sendKey(paste.mapped, false); pressed.delete('KeyV'); }
   }
   sink.addEventListener('compositionend', (e) => { if (e.data) send({ t: 'txt', s: e.data }); sink.value = ''; });
   sink.addEventListener('beforeinput', (e) => {       // soft keyboards that don't emit key codes

@@ -56,6 +56,7 @@ win = x.XCreateSimpleWindow(d, x.XRootWindow(d, s), 0, 0, W, H, 0, 0, 0x202020)
 x.XSelectInput.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_long]
 x.XSelectInput(d, win, (1<<0)|(1<<1)|(1<<2)|(1<<3)|(1<<6)|(1<<15)|(1<<17))
 x.XMapWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]; x.XMapWindow(d, win)
+print("WIN %d" % win, flush=True)
 x.XDefaultGC.restype = ctypes.c_void_p; x.XDefaultGC.argtypes = [ctypes.c_void_p, ctypes.c_int]
 gc = x.XDefaultGC(d, s)
 x.XSetForeground.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
@@ -88,7 +89,8 @@ while True:
         k = x.XLookupString(ctypes.byref(ev), buf, 16, None, None)
         kc = ctypes.cast(ctypes.byref(ev), ctypes.POINTER(ctypes.c_uint * 22)).contents[21]
         n += 1; paint(colors[n % 2])
-        print("KEY press keycode=%d text=%r" % (kc, buf.raw[:k].decode("latin-1")), flush=True)
+        st = ctypes.cast(ctypes.byref(ev), ctypes.POINTER(ctypes.c_uint * 22)).contents[20]
+        print("KEY press keycode=%d state=%d text=%r" % (kc, st, buf.raw[:k].decode("latin-1")), flush=True)
     elif t == 3:
         kc = ctypes.cast(ctypes.byref(ev), ctypes.POINTER(ctypes.c_uint * 22)).contents[21]
         print("KEY release keycode=%d" % kc, flush=True)
@@ -549,6 +551,63 @@ async def run(args, tmp, probe_log):
     await asyncio.sleep(1.0)
     left = subprocess.run(["pgrep", "-f", os.path.join(tmp, "bin", "pw-record")], capture_output=True, text=True).stdout.split()
     ok("capture stops when nobody listens", not left, "pids %s" % left)
+    # ⌘ shortcuts: a flagged ⌘+letter becomes Ctrl+Shift+letter in a terminal window only; ⌃ stays Ctrl
+    sys.path.insert(0, args.root)
+    from darpan import keymap as darpan_keymap
+    kc_c, kc_a = darpan_keymap.x_keycode("KeyC"), darpan_keymap.x_keycode("KeyA")
+    win_id = next(int(l.split()[1]) for l in open(probe_log) if l.startswith("WIN "))
+
+    class XClassHint(ctypes.Structure):
+        _fields_ = [("res_name", ctypes.c_char_p), ("res_class", ctypes.c_char_p)]
+
+    xl = ctypes.CDLL("libX11.so.6")
+    xl.XOpenDisplay.restype = ctypes.c_void_p
+    xl.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    xl.XSetClassHint.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(XClassHint)]
+    xl.XFlush.argtypes = xl.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    xd = xl.XOpenDisplay(args.display.encode())
+
+    def set_class(name, cls):
+        xl.XSetClassHint(xd, win_id, ctypes.byref(XClassHint(name, cls)))
+        xl.XFlush(xd)
+
+    async def press_state(code, kc, ctrl, cmd):
+        mark = len(open(probe_log).readlines())
+        if ctrl:
+            ws.send({"t": "key", "c": "ControlLeft", "d": True})
+        ws.send(dict({"t": "key", "c": code, "d": True}, **({"cmd": True} if cmd else {})))
+        ws.send({"t": "key", "c": code, "d": False})
+        if ctrl:
+            ws.send({"t": "key", "c": "ControlLeft", "d": False})
+        await pump(ws, 0.4)
+        return [int(l.split("state=")[1].split()[0]) for l in open(probe_log).readlines()[mark:]
+                if l.startswith("KEY press keycode=%d " % kc)]
+
+    set_class(b"probe", b"Probe")
+    plain = await press_state("KeyC", kc_c, True, True)
+    set_class(b"xterm", b"XTerm")
+    term = await press_state("KeyC", kc_c, True, True)
+    ctrl = await press_state("KeyC", kc_c, True, False)
+    # two overlapping ⌘ letters in a terminal: Shift stays down until the last one is released
+    mark = len(open(probe_log).readlines())
+    ws.send({"t": "key", "c": "ControlLeft", "d": True})
+    ws.send({"t": "key", "c": "KeyC", "d": True, "cmd": True})
+    ws.send({"t": "key", "c": "KeyA", "d": True, "cmd": True})
+    ws.send({"t": "key", "c": "KeyC", "d": False})
+    ws.send({"t": "key", "c": "KeyA", "d": True, "cmd": True})     # a repeat of the key still held
+    ws.send({"t": "key", "c": "KeyA", "d": False})
+    ws.send({"t": "key", "c": "ControlLeft", "d": False})
+    await pump(ws, 0.4)
+    overlap = [int(l.split("state=")[1].split()[0]) for l in open(probe_log).readlines()[mark:]
+               if l.startswith("KEY press keycode=%d " % kc_a)]
+    after = await press_state("KeyA", kc_a, False, False)
+    set_class(b"probe", b"Probe")
+    xl.XCloseDisplay(xd)
+    ok("⌘C outside terminals: Ctrl+C", plain == [4], "state %s" % plain)
+    ok("⌘C in a terminal: Ctrl+Shift+C", term == [5], "state %s" % term)
+    ok("⌃C in a terminal stays Ctrl+C", ctrl == [4], "state %s" % ctrl)
+    ok("overlapping ⌘ letters keep Shift", overlap == [5, 5], "states %s" % overlap)
+    ok("no Shift left behind", after == [0], "state %s" % after)
 
     # liveness: a peer that stops answering pings is dropped; one that answers is kept, even idle
     async def session(answer=True):

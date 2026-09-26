@@ -190,7 +190,7 @@ Coordinates are integers in the **current stream's pixel space** (0 … w−1, 0
 | `{"t":"mm","x":812,"y":400}` | pointer moved (absolute). Coalesce: send at most one per display frame, but never delay it. |
 | `{"t":"mb","b":0,"d":true}` | button down (`d:false` = up). `b` uses DOM numbering: 0 left, 1 middle, 2 right, 3 back, 4 forward. Send an `mm` first if the position changed (or include `"x"`,`"y"`). |
 | `{"t":"wh","dx":0,"dy":120}` | wheel. Units of **1/120 notch** (120 = one wheel click). `dy>0` scrolls **down** (content moves up), `dx>0` scrolls right. The host accumulates and emits discrete notches. |
-| `{"t":"key","c":"KeyA","d":true}` | physical key down/up. `c` = W3C `KeyboardEvent.code` (list in §8). Auto-repeat: send additional `d:true` events while the key is held (the host disables its own auto-repeat while a client is in control). |
+| `{"t":"key","c":"KeyA","d":true}` | physical key down/up. `c` = W3C `KeyboardEvent.code` (list in §10). Auto-repeat: send additional `d:true` events while the key is held (the host disables its own auto-repeat while a client is in control). Optional `"cmd":true` on the down of `KeyA`–`KeyZ` pressed while ⌘ is held and sent as Ctrl: in a terminal window the host adds Shift until that key goes up (Ctrl+Shift+C copies there); elsewhere it's ignored. |
 | `{"t":"rel"}` | release every key and button the host believes is pressed. Send on focus loss. |
 | `{"t":"txt","s":"héllo ✓"}` | type Unicode text (best effort; for IME output and "type clipboard"). |
 
