@@ -24,12 +24,18 @@ final class Discovery: ObservableObject {
     private var timer: Timer?
     private var session: URLSession?
     private var phaseWatch: AnyCancellable?
+    private var hostsWatch: AnyCancellable?
+    private var lastPeers: [Tailnet.Status.Peer] = []
 
     func start() {
         guard timer == nil else { return }
         // Scan as soon as the node is up (it's usually still starting when the window appears).
         phaseWatch = net.$phase.removeDuplicates().sink { [weak self] p in
             if p == .running { DispatchQueue.main.async { self?.scan() } }
+        }
+        // A computer removed from the list disappears at once.
+        hostsWatch = settings.$hosts.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { if let self { self.publish(peers: self.lastPeers) } }
         }
         scan()
         let t = Timer(timeInterval: 20, repeats: true) { [weak self] _ in self?.scan() }
@@ -42,6 +48,7 @@ final class Discovery: ObservableObject {
         timer?.invalidate()
         timer = nil
         phaseWatch = nil
+        hostsWatch = nil
     }
 
     private func scan() {
@@ -86,6 +93,7 @@ final class Discovery: ObservableObject {
 
     /// Found hosts first (online), then remembered ones; each origin once.
     private func publish(peers: [Tailnet.Status.Peer]) {
+        lastPeers = peers
         let online = Set(peers.filter(\.online).map { "https://" + $0.dnsName.trimmingCharacters(in: CharacterSet(charactersIn: ".")) })
         var list: [Computer] = []
         for (origin, name) in found.sorted(by: { $0.value < $1.value }) {

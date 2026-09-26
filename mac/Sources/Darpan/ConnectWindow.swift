@@ -178,7 +178,10 @@ final class ConnectModel: ObservableObject {
             }
         }
         showFailure()
-        if failure.wantsPassword { focusPassword += 1 }
+        if failure.wantsPassword {
+            selected = address                              // the list shows the password field for it
+            focusPassword += 1
+        }
     }
 
     func connected() {
@@ -268,6 +271,7 @@ struct ConnectView: View {
         .padding(24)
         .frame(width: 360)
         .onChange(of: model.focusPassword) { focus = .password }
+        .onChange(of: settings.network) { if settings.network == .builtIn { net.start() } }
     }
 
     // MARK: - not signed in to the private network
@@ -353,6 +357,9 @@ struct ConnectView: View {
         .buttonStyle(.plain)
         .disabled(model.connecting || model.countdown > 0)
         .help(c.origin)
+        .contextMenu {
+            Button("Remove from List") { model.removeFromList(c.origin) }
+        }
     }
 
     private var passwordEntry: some View {
