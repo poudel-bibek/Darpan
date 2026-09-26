@@ -87,9 +87,9 @@ final class ConnectModel: ObservableObject {
                 if case .failed(let m) = net.phase { self.show(m, error: true) }
                 return
             }
-            net.refresh { _ in
+            net.settle { phase in
                 guard self.connecting else { return }
-                guard net.phase == .running else {
+                guard phase == .running else {
                     self.connecting = false
                     self.show("Sign in to your private network first (above).", error: true)
                     return

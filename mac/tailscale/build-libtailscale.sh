@@ -10,7 +10,8 @@ MAC="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$MAC/.build/libtailscale"
 SRC="$OUT/src"
 
-if [ -f "$OUT/libtailscale.a" ] && [ "$(cat "$OUT/commit" 2>/dev/null)" = "$COMMIT" ]; then exit 0; fi
+STAMP="$COMMIT nologs"
+if [ -f "$OUT/libtailscale.a" ] && [ "$(cat "$OUT/commit" 2>/dev/null)" = "$STAMP" ]; then exit 0; fi
 
 GO="$(command -v go || true)"
 [ -z "$GO" ] && [ -x "$HOME/.local/go/bin/go" ] && GO="$HOME/.local/go/bin/go"
@@ -21,6 +22,19 @@ if [ ! -d "$SRC/.git" ]; then git clone -q https://github.com/tailscale/libtails
 git -C "$SRC" fetch -q origin "$COMMIT" 2>/dev/null || git -C "$SRC" fetch -q origin
 git -C "$SRC" checkout -q --detach "$COMMIT"
 
+# Never upload logs to Tailscale (the host runs tailscaled --no-logs-no-support too). This has to be
+# compiled in: the Go runtime copies the environment when the library loads, before the app runs.
+cat > "$SRC/darpan_nologs.go" <<'GO'
+package main
+
+import (
+	"tailscale.com/envknob"
+	"tailscale.com/logtail"
+)
+
+func init() { envknob.SetNoLogsNoSupport(); logtail.Disable() }
+GO
+
 export CGO_ENABLED=1 GOTOOLCHAIN=local MACOSX_DEPLOYMENT_TARGET=14.0
 for arch in arm64 amd64; do
     clangarch=$([ $arch = amd64 ] && echo x86_64 || echo arm64)
@@ -30,5 +44,5 @@ for arch in arm64 amd64; do
 done
 lipo -create "$OUT/libtailscale-arm64.a" "$OUT/libtailscale-amd64.a" -output "$OUT/libtailscale.a"
 cp "$SRC/tailscale.h" "$SRC/LICENSE" "$OUT/"
-echo "$COMMIT" > "$OUT/commit"
+echo "$STAMP" > "$OUT/commit"
 echo "libtailscale $COMMIT → $OUT/libtailscale.a"

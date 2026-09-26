@@ -62,7 +62,6 @@ final class Tailnet: ObservableObject {
                 switch result {
                 case .success(let p):
                     self.proxy = p
-                    if self.phase == .starting { self.phase = .needsLogin(url: nil, again: false) }
                     self.refresh()
                     done?(p)
                 case .failure(let e):
@@ -71,6 +70,28 @@ final class Tailnet: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Calls back once the backend has settled (NeedsLogin, Running or an error), polling every
+    /// 100 ms for up to `timeout`: right after starting, a node with saved keys is still Starting.
+    func settle(timeout: TimeInterval = 15, _ done: @escaping (Phase) -> Void) {
+        let deadline = Date().addingTimeInterval(timeout)
+        func check() {
+            refresh { [weak self] _ in
+                guard let self else { return }
+                switch self.phase {
+                case .starting, .off:
+                    if Date() < deadline {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: check)
+                    } else {
+                        done(self.phase)
+                    }
+                default:
+                    done(self.phase)
+                }
+            }
+        }
+        check()
     }
 
     /// On quit: leaves the tailnet cleanly (the device stays signed in).
@@ -202,7 +223,7 @@ final class Tailnet: ObservableObject {
         case "NeedsLogin", "NeedsMachineAuth":
             phase = .needsLogin(url: s.authURL, again: UserDefaults.standard.bool(forKey: "tailnetSignedIn"))
         case "Starting", "NoState", "":
-            if case .needsLogin = phase { phase = .needsLogin(url: s.authURL, again: false) } else if phase != .running { phase = .starting }
+            if phase != .running { phase = .starting }
         default:
             break
         }
