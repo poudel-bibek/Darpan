@@ -20,9 +20,8 @@ tools/        end-to-end tests and dev helpers
    VBV, 1 reference frame, infinite GOP, IDR on demand). That's about 40 MB of VRAM at 2560×1440.
    Without Vulkan Video, the segment is `cuMemHostRegister`-pinned, copied by DMA into a CUDA buffer
    and encoded by NVENC through CUDA, whose context alone takes about 200 MB. With a compositor most
-   damage is identical pixels, so a frame whose sampled
-   rows didn't change is first encoded as a non-reference P frame. If every macroblock of it is
-   P_Skip, it would decode to the picture the viewer already has, and nothing is sent.
+   damage is identical pixels, so the GPU compares each frame with the last first (in the shader,
+   or with a small CUDA kernel), and an identical one isn't encoded or sent.
 3. The access unit goes to the daemon over a pipe and out on the WebSocket with one
    scatter-gather write (TCP_NODELAY).
 4. The client decodes it (WebCodecs / VideoToolbox), draws it the moment it exists, and acks.

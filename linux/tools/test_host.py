@@ -821,12 +821,54 @@ async def run(args, tmp, probe_log):
                if l.startswith("KEY press keycode=%d " % kc_a)]
     after = await press_state("KeyA", kc_a, False, False)
     set_class(b"probe", b"Probe")
+    # A compositor repaints the whole screen whenever anything animates: identical repaints aren't
+    # sent, also right after a change, while the encoder still refines it (NVENC's two-pass rate
+    # control never encodes an unchanged picture as all P_Skip). Noise, below the probe window,
+    # gives it detail to refine for a long time; then the same pixels are put again and again.
+    xl.XDefaultScreen.argtypes = [ctypes.c_void_p]
+    xl.XRootWindow.restype = ctypes.c_ulong
+    xl.XRootWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    xl.XDefaultVisual.restype = ctypes.c_void_p
+    xl.XDefaultVisual.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    xl.XCreateGC.restype = ctypes.c_void_p
+    xl.XCreateGC.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_void_p]
+    xl.XCreateImage.restype = ctypes.c_void_p
+    xl.XCreateImage.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_int,
+                                ctypes.c_char_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_int]
+    xl.XPutImage.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_void_p] + [ctypes.c_int] * 4 + [ctypes.c_uint] * 2
+    xl.XClearArea.argtypes = [ctypes.c_void_p, ctypes.c_ulong] + [ctypes.c_int] * 2 + [ctypes.c_uint] * 2 + [ctypes.c_int]
+    scr = xl.XDefaultScreen(xd)
+    root = xl.XRootWindow(xd, scr)
+    noise = os.urandom(400 * 240 * 4)
+    img = xl.XCreateImage(xd, xl.XDefaultVisual(xd, scr), 24, 2, 0, noise, 400, 240, 32, 400 * 4)
+    gc = xl.XCreateGC(xd, root, 0, None)
+
+    def put_noise():
+        xl.XPutImage(xd, root, gc, img, 0, 0, 1400, 780, 400, 240)
+        xl.XFlush(xd)
+    put_noise()
+    await pump(ws, 0.2)                                     # the change itself
+    changes = 0                                              # frames since that aren't refreshes
+    for _ in range(60):
+        put_noise()
+        end = time.monotonic() + 1 / 60
+        while (left := end - time.monotonic()) > 0:
+            try:
+                kind, m = await asyncio.wait_for(ws.recv(), left)
+            except asyncio.TimeoutError:
+                break
+            if kind == "binary":
+                _, flags, sid, seq, _ = struct.unpack(">BBHIQ", m[:16])
+                ws.send({"t": "ack", "id": sid, "n": seq})
+                changes += not flags & 2
+    xl.XClearArea(xd, root, 1400, 780, 400, 240, 0)
     xl.XCloseDisplay(xd)
     ok("⌘C outside terminals: Ctrl+C", plain == [4], "state %s" % plain)
     ok("⌘C in a terminal: Ctrl+Shift+C", term == [5], "state %s" % term)
     ok("⌃C in a terminal stays Ctrl+C", ctrl == [4], "state %s" % ctrl)
     ok("overlapping ⌘ letters keep Shift", overlap == [5, 5], "states %s" % overlap)
     ok("no Shift left behind", after == [0], "state %s" % after)
+    ok("identical repaints send nothing", changes == 0, "%d frames, besides refreshes, for 60 repaints" % changes)
 
     # PipeWire broken for good: after 3 quick failures the listener is closed (1011), and further
     # requests are refused for a while instead of starting pw-record again and again

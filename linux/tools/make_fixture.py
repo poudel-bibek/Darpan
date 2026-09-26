@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Dev tool: record what darpan-capture sends, for decoder tests on other machines (the Mac's
 SelfTest). On a private 640×360 Xvfb the whole screen is repainted at 60 Hz (like a compositor), a box
-moves for a second, rests for 1.5 s and moves again (reference frames with motion vectors), and
-a 10×2 line between the sampled rows toggles 5 times a second (non-reference probes). Writes
+moves for a second, rests for 1.5 s and moves again (frames with motion vectors), and a 10×2 line
+toggles 5 times a second (small changes; the identical repaints between them aren't sent). Writes
 <name>.h264 (Annex B), <name>.json (which pictures are IDR / non-reference, decode results) and
 <name>-last.png (FFmpeg's decode of the last picture, through GStreamer's avdec_h264).
 Usage: python3 linux/tools/make_fixture.py <out-dir> <name> [helper]"""
