@@ -130,6 +130,8 @@ enum DebugHooks {
             let m = s?.debugFiles
             say("files: remote \(m?.remote.path ?? "-") (\(m?.remote.entries.count ?? 0)) \(m?.remote.error ?? "")"
                 + " local \(m?.local.path ?? "-") | " + (m?.transfers.map { "\($0.name)=\($0.state) \($0.sent)/\($0.total)" }.joined(separator: ", ") ?? ""))
+        case "drophl": s?.debugContent.drop.isHidden = !(a.count > 1 && a[1] == "on")   // drop highlight on/off
+        case "toast": s?.debugContent.toasts.show(rest, ttl: 20)
         case "close": w?.performClose(nil)
         case "quit": NSApp.terminate(nil)
         default: say("unknown command: \(line)")
