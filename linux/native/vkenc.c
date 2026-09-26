@@ -113,7 +113,8 @@ struct VkEnc {
 
     RateControl cur, next;
     VkVideoEncodeQualityLevelInfoKHR quality;
-    int started, rc_pending, converting;
+    int started, rc_pending;
+    uint64_t converted_n;                // the timeline value the last conversion signals
 
     uint32_t ref_frame_num;              // frame_num of the last reference picture
     int32_t ref_poc;                     // its picture order count
@@ -345,7 +346,9 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
         {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, NULL, 0, e->cfam, 1, &prio},
         {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, NULL, 0, e->efam, 1, &prio},
     };
-    VkPhysicalDeviceVulkan13Features f13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    VkPhysicalDeviceVulkan12Features f12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    f12.timelineSemaphore = VK_TRUE;
+    VkPhysicalDeviceVulkan13Features f13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, &f12};
     f13.synchronization2 = VK_TRUE;
     VkDeviceCreateInfo dci = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, &f13, 0, e->cfam == e->efam ? 1 : 2, qci, 0, NULL,
                               sizeof exts / sizeof exts[0], exts, NULL};
@@ -536,7 +539,10 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     VK(vkAllocateCommandBuffers(e->dev, &cbai, &e->ccb));
     cbai.commandPool = e->epool;
     VK(vkAllocateCommandBuffers(e->dev, &cbai, &e->ecb));
-    VkSemaphoreCreateInfo sei = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    // A timeline: each conversion signals the next value and every encode waits for the latest, so a
+    // conversion that isn't encoded (the picture didn't change) leaves nothing pending.
+    VkSemaphoreTypeCreateInfo sti = {VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO, NULL, VK_SEMAPHORE_TYPE_TIMELINE, 0};
+    VkSemaphoreCreateInfo sei = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &sti};
     VK(vkCreateSemaphore(e->dev, &sei, NULL, &e->converted));
     VkFenceCreateInfo fci = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     VK(vkCreateFence(e->dev, &fci, NULL, &e->done));
@@ -557,7 +563,6 @@ static const VkCommandBufferBeginInfo once = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_B
                                               VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
 int vkenc_convert(VkEnc *e) {
-    if (e->converting) { vlog("converted twice without an encode"); return -1; }
     *e->changed = 0;
     VK(vkBeginCommandBuffer(e->ccb, &once));
     VkImageMemoryBarrier2 to_copy = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, NULL, VK_PIPELINE_STAGE_2_NONE, 0,
@@ -598,27 +603,14 @@ int vkenc_convert(VkEnc *e) {
     vkCmdPipelineBarrier2(e->ccb, &dep);
     VK(vkEndCommandBuffer(e->ccb));
     VkCommandBufferSubmitInfo cbs = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, NULL, e->ccb, 0};
-    VkSemaphoreSubmitInfo sig = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, NULL, e->converted, 0,
+    VkSemaphoreSubmitInfo sig = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, NULL, e->converted, e->converted_n + 1,
                                  VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0};
     VkSubmitInfo2 si = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2, NULL, 0, 0, NULL, 1, &cbs, 1, &sig};
     VK(vkQueueSubmit2(e->cq, 1, &si, e->cdone));
-    e->converting = 1;
+    e->converted_n++;
     VK(vkWaitForFences(e->dev, 1, &e->cdone, VK_TRUE, 1000000000ull));
     VK(vkResetFences(e->dev, 1, &e->cdone));
     return *e->changed ? 1 : 0;
-fail:
-    return -1;
-}
-
-int vkenc_skip(VkEnc *e) {
-    if (!e->converting) return 0;
-    // Nothing to encode: take the semaphore on the encode queue, where it orders what comes next.
-    VkSemaphoreSubmitInfo wait = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, NULL, e->converted, 0,
-                                  VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR, 0};
-    VkSubmitInfo2 si = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2, NULL, 0, 1, &wait, 0, NULL, 0, NULL};
-    VK(vkQueueSubmit2(e->eq, 1, &si, VK_NULL_HANDLE));
-    e->converting = 0;
-    return 0;
 fail:
     return -1;
 }
@@ -704,11 +696,10 @@ int vkenc_encode(VkEnc *e, int idr, const uint8_t **out, uint32_t *len) {
     VK(vkEndCommandBuffer(e->ecb));
 
     VkCommandBufferSubmitInfo cbs = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, NULL, e->ecb, 0};
-    VkSemaphoreSubmitInfo wait = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, NULL, e->converted, 0,
+    VkSemaphoreSubmitInfo wait = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, NULL, e->converted, e->converted_n,
                                   VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR, 0};
-    VkSubmitInfo2 si = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2, NULL, 0, e->converting ? 1 : 0, &wait, 1, &cbs, 0, NULL};
+    VkSubmitInfo2 si = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2, NULL, 0, e->converted_n ? 1 : 0, &wait, 1, &cbs, 0, NULL};
     VK(vkQueueSubmit2(e->eq, 1, &si, e->done));
-    e->converting = 0;
     VK(vkWaitForFences(e->dev, 1, &e->done, VK_TRUE, 1000000000ull));   // a frame takes milliseconds
     VK(vkResetFences(e->dev, 1, &e->done));
     struct { uint32_t offset, bytes; int32_t status; } fbk = {0};

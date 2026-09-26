@@ -19,6 +19,9 @@ APP="$DIST/$NAME.app"
 # The GitHub repository ("owner/name") whose releases the app updates from.
 REPO=${DARPAN_REPO:-$(git -C "$ROOT" remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')}
 [[ $REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "can't tell the GitHub repository (set DARPAN_REPO=owner/name)"; exit 1; }
+# The update page (GitHub Pages of that repository): where the app looks for new versions.
+OWNER=${REPO%%/*}
+UPDATES_URL=https://$(echo "$OWNER" | tr '[:upper:]' '[:lower:]').github.io/${REPO#*/}/
 
 cd "$MAC"
 
@@ -60,6 +63,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD</string>
     <key>DarpanRepository</key><string>$REPO</string>
+    <key>DarpanUpdatesURL</key><string>$UPDATES_URL</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
@@ -105,6 +109,9 @@ echo "==> $DIST/$NAME.dmg"
 STAGE="$(mktemp -d)"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
+# The window: icon positions and the one-time "Open Anyway" steps (assets/dmg/make.py).
+cp "$MAC/assets/dmg/How to open Darpan.png" "$STAGE/"
+cp "$MAC/assets/dmg/DS_Store" "$STAGE/.DS_Store"
 hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DIST/$NAME.dmg" >/dev/null
 rm -rf "$STAGE"
 

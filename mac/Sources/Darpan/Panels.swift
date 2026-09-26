@@ -181,3 +181,24 @@ private struct QualityPicker: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.08)))
     }
 }
+
+/// The first-connection tip: what the toolbar holds, and that it moves (the browser's words).
+struct ToolbarTip: View {
+    let done: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Your controls").font(.system(size: 13, weight: .semibold))
+            Text("Full screen, display, keyboard, files and sound are all here.")
+                .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+            Text("Drag the grip to move it anywhere.")
+                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button("Got it", action: done).controlSize(.small)
+            }
+        }
+        .padding(14)
+        .frame(width: 250)
+    }
+}
