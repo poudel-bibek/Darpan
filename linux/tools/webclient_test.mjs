@@ -28,9 +28,13 @@ function lines(stream, onLine) {
   stream.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { onLine(buf.slice(0, i)); buf = buf.slice(i + 1); } });
 }
 
-const procs = [];
-// Runs once: a second SIGINT would interrupt the host harness's own cleanup (leaking Xvfb).
-const cleanup = () => { for (const p of procs.splice(0).reverse()) { try { p.kill('SIGINT'); } catch {} } };
+const procs = [], dirs = [];
+// Runs once: a second SIGINT would interrupt the host harness's own cleanup (leaking Xvfb). Chrome
+// gets SIGKILL: headless, it can ignore SIGINT and outlive the test.
+const cleanup = () => {
+  for (const p of procs.splice(0).reverse()) { try { p.kill(p.signal || 'SIGINT'); } catch {} }
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+};
 process.on('exit', cleanup);
 process.on('SIGINT', () => process.exit(2));
 
@@ -46,12 +50,14 @@ console.log(`host ready on ${env.display}, port ${env.port}`);
 
 // 2) Chrome
 const profile = mkdtempSync(join(tmpdir(), 'darpan-chrome-'));
+dirs.push(profile);
 // --no-sandbox: Ubuntu 24.04 blocks the user namespaces Chrome's sandbox needs; this test
 // browser only ever loads our own page on 127.0.0.1.
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
   '--no-default-browser-check', '--window-size=1400,860', '--disable-background-timer-throttling',
   '--autoplay-policy=no-user-gesture-required', 'about:blank'],   // sound starts without a real click
   { stdio: ['ignore', 'ignore', 'pipe'] });
+chrome.signal = 'SIGKILL';
 procs.push(chrome);
 const wsUrl = await new Promise((resolve, reject) => {
   lines(chrome.stderr, (l) => { const m = l.match(/DevTools listening on (ws:\/\/\S+)/); if (m) resolve(m[1]); });
