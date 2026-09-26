@@ -88,6 +88,9 @@ final class Updater: ObservableObject {
         state = .checking
         let base = updates.appendingPathComponent("mac/")
         fetch(base.appendingPathComponent("darpan-mac.json")) { json in
+            guard json != nil else {                          // no manifest: don't wait for its signature too
+                return DispatchQueue.main.async { self.checked(json: nil, sig: nil, repo: repo, manual: manual) }
+            }
             self.fetch(base.appendingPathComponent("darpan-mac.json.sig")) { sig in
                 DispatchQueue.main.async { self.checked(json: json, sig: sig, repo: repo, manual: manual) }
             }
