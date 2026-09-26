@@ -3,7 +3,8 @@ import DarpanCore
 import Security
 
 /// Updates from the GitHub releases: at most once a day, and only while the app runs, fetch the
-/// signed manifest (`releases/latest/download/darpan-mac.json` and `.sig`). A newer version is
+/// signed manifest (`darpan-mac.json` and `.sig`, from the project's update page on GitHub Pages,
+/// or the latest release's downloads if that page can't be reached). A newer version is
 /// offered in the connect window; installing downloads the DMG, checks its SHA-256 against the
 /// manifest, checks the new app's code signature, replaces this bundle and relaunches. When the
 /// bundle can't be replaced (not writable, or run from a translocated copy), the verified DMG is
@@ -29,6 +30,9 @@ final class Updater: ObservableObject {
 
     /// "owner/name", written into Info.plist by build.sh; nil in development builds (no updates).
     private let repo = Bundle.main.object(forInfoDictionaryKey: "DarpanRepository") as? String
+    /// The update page (GitHub Pages), written into Info.plist by build.sh.
+    private let updatesURL = (Bundle.main.object(forInfoDictionaryKey: "DarpanUpdatesURL") as? String)
+        .flatMap(URL.init(string:)).flatMap { $0.scheme == "https" && ($0.host ?? "").hasSuffix(".github.io") ? $0 : nil }
     private let settings = Settings.shared
     private var timer: Timer?
     private let session: URLSession = {
@@ -82,10 +86,21 @@ final class Updater: ObservableObject {
         }
         if case .installing = state { return }
         state = .checking
-        let base = URL(string: "https://github.com/\(repo)/releases/latest/download/")!
+        // The update page first; the release downloads if it can't be reached (and for builds
+        // from before the page existed, which only know those).
+        let sources = [updatesURL?.appendingPathComponent("mac/"), URL(string: "https://github.com/\(repo)/releases/latest/download/")]
+        fetchManifest(from: sources.compactMap { $0 }) { json, sig in
+            DispatchQueue.main.async { self.checked(json: json, sig: sig, repo: repo, manual: manual) }
+        }
+    }
+
+    /// The manifest and its signature from the first source that has both.
+    private func fetchManifest(from sources: [URL], _ done: @escaping (Data?, Data?) -> Void) {
+        guard let base = sources.first else { return done(nil, nil) }
         fetch(base.appendingPathComponent("darpan-mac.json")) { json in
             self.fetch(base.appendingPathComponent("darpan-mac.json.sig")) { sig in
-                DispatchQueue.main.async { self.checked(json: json, sig: sig, repo: repo, manual: manual) }
+                if let json, let sig { return done(json, sig) }
+                self.fetchManifest(from: Array(sources.dropFirst()), done)
             }
         }
     }
