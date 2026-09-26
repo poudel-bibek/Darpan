@@ -82,7 +82,7 @@ final class ViewerContentView: NSView {
 /// Panels open as popovers below it. Drag it sideways to move it out of the way.
 final class ToolbarView: NSView {
     enum Item: Int, CaseIterable {
-        case fullScreen, display, keys, clipboard, upload, stats, disconnect
+        case fullScreen, display, keys, clipboard, upload, sound, stats, disconnect
 
         var symbol: String {
             switch self {
@@ -91,6 +91,7 @@ final class ToolbarView: NSView {
             case .keys: return "keyboard"
             case .clipboard: return "doc.on.clipboard"
             case .upload: return "square.and.arrow.up"
+            case .sound: return "speaker.wave.2"
             case .stats: return "chart.bar"
             case .disconnect: return "power"
             }
@@ -103,6 +104,7 @@ final class ToolbarView: NSView {
             case .keys: return "Keyboard"
             case .clipboard: return "Clipboard"
             case .upload: return "Send files to the remote computer"
+            case .sound: return "Sound"
             case .stats: return "Connection stats"
             case .disconnect: return "Disconnect (⌃⌥⌘D)"
             }
@@ -123,6 +125,13 @@ final class ToolbarView: NSView {
         }
     }
     var statsOn = false { didSet { buttons[.stats]?.state = statsOn ? .on : .off } }
+    var soundOn = true {
+        didSet {
+            let b = buttons[.sound]
+            b?.image = NSImage(systemSymbolName: soundOn ? "speaker.wave.2" : "speaker.slash", accessibilityDescription: "Sound")
+            b?.toolTip = soundOn ? "Sound on (click to mute)" : "Sound off"
+        }
+    }
     var isFullScreen = false {
         didSet {
             let name = isFullScreen ? "arrow.down.right.and.arrow.up.left" : Item.fullScreen.symbol

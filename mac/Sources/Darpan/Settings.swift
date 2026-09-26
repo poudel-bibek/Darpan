@@ -36,6 +36,8 @@ final class Settings: ObservableObject {
     /// Horizontal position of the toolbar pill, as a fraction of the window width.
     @Published var pillX: Double { didSet { d.set(pillX, forKey: "pillX") } }
     @Published var remember: Bool { didSet { d.set(remember, forKey: "remember") } }
+    /// Play the remote computer's sound.
+    @Published var sound: Bool { didSet { d.set(sound, forKey: "sound") } }
     /// How to reach the tailnet: the node built into the app, or whatever this Mac provides
     /// (the Tailscale app, another VPN, a LAN).
     @Published var network: NetworkMode { didSet { d.set(network.rawValue, forKey: "network") } }
@@ -43,7 +45,7 @@ final class Settings: ObservableObject {
     @Published private(set) var hosts: [String] { didSet { d.set(hosts, forKey: "hosts") } }
 
     private init() {
-        d.register(defaults: ["quality": 0, "fps": 60, "scrollSpeed": 1.0, "pillX": 0.5, "remember": true])
+        d.register(defaults: ["quality": 0, "fps": 60, "scrollSpeed": 1.0, "pillX": 0.5, "remember": true, "sound": true])
         scale = ScaleMode(rawValue: d.string(forKey: "scale") ?? "") ?? .fit
         let q = d.integer(forKey: "quality")
         quality = Self.qualities.contains { $0.kbps == q } ? q : 0
@@ -56,6 +58,7 @@ final class Settings: ObservableObject {
         captureSystemKeys = d.bool(forKey: "captureSystemKeys")
         pillX = min(0.95, max(0.05, d.double(forKey: "pillX")))
         remember = d.bool(forKey: "remember")
+        sound = d.bool(forKey: "sound")
         network = NetworkMode(rawValue: d.string(forKey: "network") ?? "") ?? .builtIn
         hosts = (d.stringArray(forKey: "hosts") ?? []).filter { (try? HostAddress(parsing: $0)) != nil }
     }

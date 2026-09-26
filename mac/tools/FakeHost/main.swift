@@ -7,6 +7,7 @@
 //
 // Commands on stdin: clip <text> · notice <text> · error <text> · kick · restart · drop ·
 // stall (8 s of silence) · lock (30 s lockout) · quit
+import AVFoundation
 import DarpanCore
 import Foundation
 import Network
@@ -52,6 +53,35 @@ var failures = 0
 var lockedUntil = 0.0
 var hostClip = "FakeHost clipboard ✓"
 var silentUntil = 0.0
+var audioTokens = Set<String>()
+
+/// One second of a 440 Hz tone as 10 ms Opus packets (a whole number of cycles, so it loops cleanly).
+let tone: [Data] = {
+    let pcm = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 2, interleaved: false)!
+    var d = AudioStreamBasicDescription(mSampleRate: 48000, mFormatID: kAudioFormatOpus, mFormatFlags: 0, mBytesPerPacket: 0,
+                                        mFramesPerPacket: 480, mBytesPerFrame: 0, mChannelsPerFrame: 2, mBitsPerChannel: 0, mReserved: 0)
+    let opus = AVAudioFormat(streamDescription: &d)!
+    guard let enc = AVAudioConverter(from: pcm, to: opus) else { return [] }
+    enc.bitRate = 128_000
+    let src = AVAudioPCMBuffer(pcmFormat: pcm, frameCapacity: 48000)!
+    src.frameLength = 48000
+    for c in 0..<2 { for i in 0..<48000 { src.floatChannelData![c][i] = Float(0.3 * sin(2 * .pi * 440 * Double(i) / 48000)) } }
+    var out: [Data] = [], fed = false
+    while true {
+        let b = AVAudioCompressedBuffer(format: opus, packetCapacity: 8, maximumPacketSize: 1500)
+        var err: NSError?
+        let st = enc.convert(to: b, error: &err) { _, s in
+            if fed { s.pointee = .endOfStream; return nil }
+            fed = true; s.pointee = .haveData; return src
+        }
+        for i in 0..<Int(b.packetCount) {
+            let p = b.packetDescriptions![i]
+            out.append(Data(bytes: b.data + Int(p.mStartOffset), count: Int(p.mDataByteSize)))
+        }
+        if st != .haveData || b.packetCount == 0 { break }
+    }
+    return out
+}()
 
 func modesMessage() -> String {
     json(["t": "modes", "output": "FAKE-1", "current": [size.0, size.1], "native": [native.0, native.1],
@@ -80,6 +110,7 @@ final class Session {
     var lastKeyRequest = 0.0
     var frames = 0, bytes = 0, encMs = 0.0, rtt = 0.0
     var statsTimer: DispatchSourceTimer?
+    var toneTimer: DispatchSourceTimer?
 
     // uploads
     var uploads: [UInt32: (handle: FileHandle, url: URL, size: Int, n: Int)] = [:]
@@ -234,6 +265,16 @@ final class Session {
             }
         case "modes":
             sendText(modesMessage())
+        case "audio":
+            if m["on"] as? Bool == true {
+                let t = Data((0..<32).map { _ in UInt8.random(in: 0...255) }).base64EncodedString()
+                audioTokens.insert(t)
+                queue.asyncAfter(deadline: .now() + 10) { audioTokens.remove(t) }
+                log("audio on")
+                sendText(json(["t": "audio", "token": t, "codec": "opus", "rate": 48000, "channels": 2, "frame_ms": 10, "pre_skip": 120]))
+            } else {
+                log("audio off")
+            }
         case "fput":
             startUpload(m)
         case "fabort":
@@ -246,7 +287,34 @@ final class Session {
         }
     }
 
+    /// The sound socket: 3 s of tone, 1 s of nothing (the slot keeps counting), repeat.
+    func startTone() {
+        var slot: UInt32 = 0, first = true
+        let t = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
+        t.schedule(deadline: .now(), repeating: .milliseconds(10), leeway: .microseconds(500))
+        t.setEventHandler { [weak self] in
+            guard let self, !self.closed else { t.cancel(); return }
+            slot &+= 1
+            let phase = Int(slot % 400)
+            guard phase < 300, !tone.isEmpty else { first = true; return }
+            var msg = AudioHeader(flags: first ? AudioHeader.flagAfterSilence : 0, seq: slot,
+                                  captureUs: UInt64(Clock.nowMs() * 1000)).bytes
+            msg.append(tone[phase % tone.count])
+            first = false
+            self.sendBinary(msg)
+        }
+        t.resume()
+        toneTimer = t
+    }
+
     func authenticate(_ m: [String: Any]) {
+        if let token = m["token"] as? String {
+            guard audioTokens.remove(token) != nil else { return close(4001) }
+            authed = true
+            log("audio socket \(sid) signed in")
+            sendText(json(["t": "ok"]))
+            return startTone()
+        }
         let now = Clock.nowMs()
         if lockedUntil > now {
             sendText(json(["t": "denied", "reason": "locked", "retry": Int(((lockedUntil - now) / 1000).rounded(.up))]))
@@ -270,7 +338,7 @@ final class Session {
         sessions.append(self)
         log("session \(sid): \(m["client"] as? String ?? "?") ver \(m["ver"] as? String ?? "?")")
         sendText(json(["t": "ok", "sid": sid, "screen": ["w": size.0, "h": size.1], "codecs": ["h264"],
-                       "caps": ["clip", "files", "text", "cursor", "res"], "url": "http://localhost:\(port)",
+                       "caps": ["clip", "files", "text", "cursor", "res", "audio"], "url": "http://localhost:\(port)",
                        "enc": "videotoolbox", "gpu": "Apple"]))
         sendText(modesMessage())
         updateCursor(force: true)
