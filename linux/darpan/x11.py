@@ -42,6 +42,16 @@ XSync = _sig(_x11, "XSync", ctypes.c_int, _DP, ctypes.c_int)
 XFree = _sig(_x11, "XFree", ctypes.c_int, ctypes.c_void_p)
 XInternAtom = _sig(_x11, "XInternAtom", _Atom, _DP, ctypes.c_char_p, ctypes.c_int)
 XSelectInput = _sig(_x11, "XSelectInput", ctypes.c_int, _DP, _Window, ctypes.c_long)
+
+
+class _XClassHint(ctypes.Structure):
+    _fields_ = [("res_name", ctypes.c_void_p), ("res_class", ctypes.c_void_p)]   # freed with XFree
+
+
+XGetInputFocus = _sig(_x11, "XGetInputFocus", ctypes.c_int, _DP, ctypes.POINTER(_Window), _int_p)
+XGetClassHint = _sig(_x11, "XGetClassHint", ctypes.c_int, _DP, _Window, ctypes.POINTER(_XClassHint))
+XQueryTree = _sig(_x11, "XQueryTree", ctypes.c_int, _DP, _Window, ctypes.POINTER(_Window), ctypes.POINTER(_Window),
+                  ctypes.POINTER(ctypes.POINTER(_Window)), ctypes.POINTER(ctypes.c_uint))
 XGetGeometry = _sig(_x11, "XGetGeometry", ctypes.c_int, _DP, _Window, ctypes.POINTER(_Window),
                     _int_p, _int_p, ctypes.POINTER(ctypes.c_uint), ctypes.POINTER(ctypes.c_uint),
                     ctypes.POINTER(ctypes.c_uint), ctypes.POINTER(ctypes.c_uint))
@@ -263,6 +273,30 @@ class X11:
     def button(self, xbutton, down):
         XTestFakeButtonEvent(self.dpy, xbutton, 1 if down else 0, 0)
         XFlush(self.dpy)
+
+    def focused_class(self):
+        """(res_name, res_class) of the window with the keyboard focus, lower-cased; () if none. Walks
+        up from the focus window to the first one with WM_CLASS (the client window under any WM)."""
+        w, revert = _Window(), ctypes.c_int()
+        XGetInputFocus(self.dpy, ctypes.byref(w), ctypes.byref(revert))
+        win = w.value
+        for _ in range(8):
+            if win in (0, 1, self.root):             # None, PointerRoot
+                return ()
+            hint = _XClassHint()
+            if XGetClassHint(self.dpy, win, ctypes.byref(hint)):
+                names = tuple(ctypes.string_at(p).decode("latin-1").lower() for p in (hint.res_name, hint.res_class) if p)
+                for p in (hint.res_name, hint.res_class):
+                    if p:
+                        XFree(p)
+                return names
+            root, parent, children, n = _Window(), _Window(), ctypes.POINTER(_Window)(), ctypes.c_uint()
+            if not XQueryTree(self.dpy, win, ctypes.byref(root), ctypes.byref(parent), ctypes.byref(children), ctypes.byref(n)):
+                return ()
+            if children:
+                XFree(children)
+            win = parent.value
+        return ()
 
     def key(self, keycode, down):
         XTestFakeKeyEvent(self.dpy, keycode, 1 if down else 0, 0)

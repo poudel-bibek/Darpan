@@ -27,6 +27,11 @@ AUTH_TIMEOUT = 10               # s to sign in; clients connect only once they h
 UNAUTHED_MAX = 32               # connections not yet signed in, in total and per source
 UNAUTHED_PER_SOURCE = 4
 SHIFT_KC = keymap.x_keycode("ShiftLeft")
+# WM_CLASS names of terminal emulators: there ⌘+letter means Ctrl+Shift+letter (copy, paste, tabs)
+TERMINALS = {"gnome-terminal-server", "gnome-terminal", "org.gnome.terminal", "org.gnome.ptyxis", "ptyxis", "kgx",
+             "org.gnome.console", "kitty", "alacritty", "org.wezfurlong.wezterm", "xterm", "uxterm", "konsole",
+             "tilix", "com.gexperts.tilix", "terminator", "xfce4-terminal", "foot", "st-256color", "urxvt",
+             "terminology", "guake", "com.mitchellh.ghostty"}
 
 
 def _b64(b):
@@ -164,6 +169,7 @@ class Session:
         self.last_stats = time.monotonic()
         # input
         self.keys = set()
+        self.cmd_shift = set()           # keys pressed with a Shift we added (⌘ in a terminal)
         self.buttons = set()
         self.wacc = [0, 0]
         self.cursors_sent = set()
@@ -588,8 +594,17 @@ class Session:
             # Client-driven auto-repeat. With host auto-repeat off the X server ignores a
             # press of a key that is already down, so each repeat is sent as up+down.
             x.key(kc, False)
+        elif (down and m.get("cmd") and str(m.get("c")).startswith("Key") and SHIFT_KC not in self.keys
+              and any(n in TERMINALS for n in x.focused_class())):
+            # ⌘+letter (sent as Ctrl) in a terminal is the terminal's shortcut, Ctrl+Shift+letter;
+            # ⌃ stays the shell's Ctrl. The Shift lasts until this key goes up.
+            x.key(SHIFT_KC, True)
+            self.cmd_shift.add(kc)
         (self.keys.add if down else self.keys.discard)(kc)
         x.key(kc, down)
+        if not down and kc in self.cmd_shift:
+            self.cmd_shift.discard(kc)
+            x.key(SHIFT_KC, False)
 
     def on_rel(self, m):
         self._release_all()
@@ -598,6 +613,9 @@ class Session:
         x = self.hub.x
         for kc in self.keys:
             x.key(kc, False)
+        if self.cmd_shift:
+            x.key(SHIFT_KC, False)
+            self.cmd_shift.clear()
         for b in self.buttons:
             x.button(b, False)
         self.keys.clear()
