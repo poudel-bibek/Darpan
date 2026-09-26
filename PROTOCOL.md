@@ -171,6 +171,8 @@ itself, using the real shape from the host:
 * First time an `id` is used the message contains the image; afterwards the host may
   send just `{"t":"cur","id":7}` to switch back to a cached shape.
 * `{"t":"cur","id":0}` means the pointer is hidden.
+* The host sends each image to a session at most once: clients must cache images by id for the
+  whole session.
 * Image and hotspot are in **host screen pixels**; scale them by the same factor used to
   display the video.
 

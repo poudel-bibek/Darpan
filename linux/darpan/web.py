@@ -195,6 +195,16 @@ class Server:
         self.srv = None
 
     async def start(self):
+        # Installed, systemd (darpan.socket) owns the listening socket for the whole login and
+        # hands it over (sd_listen_fds): no other local user can take the port while we restart,
+        # and Tailscale (BindsTo=darpan.socket) never forwards to a port we don't hold.
+        if os.environ.get("LISTEN_PID") == str(os.getpid()) and os.environ.get("LISTEN_FDS") == "1":
+            sock = socket.socket(fileno=3)
+            for k in ("LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"):
+                os.environ.pop(k, None)          # don't leak them to children
+            self.srv = await asyncio.start_server(self._conn, sock=sock, limit=MAX_HEADER)
+            log.info("listening on %s:%d (socket from systemd)", *sock.getsockname()[:2])
+            return
         self.srv = await asyncio.start_server(self._conn, self.cfg["bind"], self.cfg["port"],
                                               limit=MAX_HEADER, reuse_address=True, backlog=64)
         log.info("listening on http://%s:%d", self.cfg["bind"], self.cfg["port"])

@@ -37,7 +37,7 @@ small, fast and private. Self-hosted remote desktop for a Linux workstation, use
 ## Install on the Linux computer (the one you want to reach)
 
 ```bash
-sudo apt install ./dist/darpan_1.0.0_amd64.deb
+sudo apt install ./dist/darpan_1.0.1_amd64.deb
 ```
 
 The package is self-contained (Tailscale is inside); apt pulls in the few standard Ubuntu

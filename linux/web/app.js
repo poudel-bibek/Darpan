@@ -140,7 +140,7 @@
         showLogin('The password on the remote computer changed — enter it again.');
         return;
       }
-      send({ t: 'auth', proof: await makeProof(S.key, m.nonce), client: clientName(), ver: '1.0.0' });
+      send({ t: 'auth', proof: await makeProof(S.key, m.nonce), client: clientName(), ver: '1.0.1' });
     } catch (e) {
       showLogin('Could not sign in: ' + e.message, true);
     }
@@ -154,6 +154,7 @@
     showViewer();
     startStream();
     ping();
+    pump();                           // resume uploads queued before a reconnect
   };
   H.denied = (m) => {
     S.want = false;
@@ -185,6 +186,12 @@
     const was = S.connected;
     S.connected = false; S.ws = null;
     resetDecoder(true);
+    if (up) {                         // the host discarded the partial file: send it again later
+      up.el.remove();
+      queue.unshift(up.f);
+      up = null;
+      toast('Upload interrupted — it will restart after reconnecting');
+    }
     if (ev.code === 4001 || ev.code === 4005) return;          // `denied` already explained it
     if (ev.code === 4003) { S.want = false; toast('Disconnected by the remote computer'); showLogin(''); return; }
     if (!S.want) { showLogin(''); return; }
@@ -323,6 +330,7 @@
     canvas.style.width = cw + 'px';
     canvas.style.height = ch + 'px';
     S.cssScale = cw / st.w;
+    applyCursor();
   }
   new ResizeObserver(layout).observe(stage);
   stage.addEventListener('scroll', () => { rect = null; }, { passive: true });
@@ -341,12 +349,53 @@
   }
 
   // ------------------------------------------------------------ cursor (drawn locally → zero lag)
-  const cursors = new Map();
+  const cursors = new Map();     // id → { w, h, hx, hy, img }   (the host sends each image once)
+  const cursorCss = new Map();   // id@scale → CSS value
   H.cur = (m) => {
-    if (m.png) cursors.set(m.id, `url(data:image/png;base64,${m.png}) ${m.hx} ${m.hy}, default`);
+    if (m.png && !cursors.has(m.id)) {
+      const c = { w: m.w, h: m.h, hx: m.hx, hy: m.hy, img: new Image() };
+      c.img.onload = () => { if (S.cursorId === m.id) applyCursor(); };
+      c.img.src = 'data:image/png;base64,' + m.png;
+      cursors.set(m.id, c);
+    }
     S.cursorId = m.id;
-    canvas.style.cursor = m.id === 0 ? 'none' : (cursors.get(m.id) || 'default');
+    applyCursor();
   };
+  function cursorUrl(c, w, h) {
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const g = cv.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(c.img, 0, 0, w, h);
+    return cv.toDataURL('image/png');
+  }
+  function applyCursor() {
+    const id = S.cursorId;
+    if (id == null) return;
+    if (id === 0) { canvas.style.cursor = 'none'; return; }
+    const c = cursors.get(id);
+    if (!c || !c.img.complete || !c.img.naturalWidth) { canvas.style.cursor = 'default'; return; }
+    // Scaled like the video (PROTOCOL §4), but never under 12 CSS px tall so it stays usable.
+    const s = Math.max(S.cssScale || 1, 12 / c.h);
+    const dpr = window.devicePixelRatio || 1;
+    const key = id + '@' + s.toFixed(3) + '@' + dpr;
+    let css = cursorCss.get(key);
+    if (!css) {
+      const w = Math.max(1, Math.round(c.w * s)), h = Math.max(1, Math.round(c.h * s));
+      const hx = Math.min(w - 1, Math.round(c.hx * s)), hy = Math.min(h - 1, Math.round(c.hy * s));
+      const plain = `url("${cursorUrl(c, w, h)}") ${hx} ${hy}, default`;
+      css = plain;
+      if (dpr > 1) {          // sharp on Retina where image-set() cursors are supported
+        const hi = `image-set(url("${cursorUrl(c, Math.round(w * dpr), Math.round(h * dpr))}") ${dpr}x) ${hx} ${hy}, default`;
+        canvas.style.cursor = '';
+        canvas.style.cursor = hi;
+        if (canvas.style.cursor) css = hi;
+      }
+      if (cursorCss.size > 256) cursorCss.clear();
+      cursorCss.set(key, css);
+    }
+    canvas.style.cursor = css;
+  }
 
   // ------------------------------------------------------------ mouse / touch
   let lastX = -1, lastY = -1;
@@ -503,7 +552,8 @@
   });
 
   function releaseAll() {
-    if (pressed.size || metaDown) send({ t: 'rel' });
+    // Unconditional: also frees a mouse button held by a drag that left the window.
+    if (S.connected) send({ t: 'rel' });
     pressed.clear();
     metaDown = false;
   }

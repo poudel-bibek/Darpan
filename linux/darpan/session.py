@@ -198,7 +198,9 @@ class Session:
                         m = json.loads(msg[1])
                         h = self.HANDLERS.get(m.get("t")) if isinstance(m, dict) else None
                         if h:
-                            h(self, m)
+                            r = h(self, m)
+                            if r is not None:   # ordering matters (e.g. clip before the paste key)
+                                await r
                     except (ValueError, TypeError, KeyError) as e:
                         log.debug("bad message from %s: %s", self.sid, e)
                     except Exception:
@@ -242,6 +244,7 @@ class Session:
 
     def _welcome(self):
         hub = self.hub
+        hub._refresh_url()
         w, h = hub.x.size
         self.ws.send_json({"t": "ok", "sid": self.sid, "screen": {"w": w, "h": h}, "codecs": ["h264"],
                            "caps": ["clip", "files", "text", "cursor", "res"], "url": hub.url,
@@ -420,6 +423,10 @@ class Session:
                 log.warning("session %s: NVENC keeps failing, switching to x264", self.sid)
                 self.force_x264 = True
             delay = min(5, len(self.errors))
+        if self.paused_at is not None:
+            # The viewer is hidden: leave the encoder down until it sends `start` again.
+            self.cap = None
+            return
 
         async def later():
             await asyncio.sleep(delay)
@@ -526,9 +533,11 @@ class Session:
             self.hub.type_text(s)
 
     def on_clip(self, m):
+        # Awaited by the receive loop: the host clipboard holds the new text before the next
+        # message (typically the paste shortcut) is injected.
         text = m.get("text")
         if isinstance(text, str) and len(text) <= 1 << 20:
-            self._task(self.hub.set_clipboard(text, self))
+            return self.hub.set_clipboard(text, self)
 
     def on_ping(self, m):
         self.ws.send_json({"t": "pong", "c": m.get("c"), "s": int(time.monotonic() * 1e6)})
@@ -665,7 +674,7 @@ class Hub:
     def _refresh_url(self):
         """Lazily (at most once a minute, off the event loop) learn our https://…ts.net address."""
         now = time.monotonic()
-        if now - self._url_at < 60:
+        if now - self._url_at < (60 if self.url else 5):   # retry fast until Tailscale is up
             return
         self._url_at = now
 

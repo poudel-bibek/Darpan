@@ -19,7 +19,8 @@ function lines(stream, onLine) {
 }
 
 const procs = [];
-const cleanup = () => { for (const p of procs.reverse()) { try { p.kill('SIGINT'); } catch {} } };
+// Runs once: a second SIGINT would interrupt the host harness's own cleanup (leaking Xvfb).
+const cleanup = () => { for (const p of procs.splice(0).reverse()) { try { p.kill('SIGINT'); } catch {} } };
 process.on('exit', cleanup);
 process.on('SIGINT', () => process.exit(2));
 
@@ -133,6 +134,20 @@ try {
   }
   lat.sort((a, b) => a - b);
   ok('key → decoded frame in browser', lat[4] < 60, `median ${lat[4]} ms incl. CDP polling overhead (min ${lat[0]})`);
+
+  // a drag interrupted by losing focus must not leave the button held on the host
+  await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: cx, y: cy, button: 'left', buttons: 1, clickCount: 1 }, sid);
+  await sleep(150);
+  const presses = probeLog().filter((l) => l === 'BUTTON press 1').length;
+  await ev(`window.dispatchEvent(new Event('blur')); 1`);
+  await sleep(400);
+  log = probeLog();
+  ok('blur mid-drag releases the button', log.filter((l) => l === 'BUTTON release 1').length >= presses,
+     `${presses} presses, ${log.filter((l) => l === 'BUTTON release 1').length} releases`);
+  await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: cx, y: cy, button: 'left', buttons: 0, clickCount: 1 }, sid);
+
+  const cur = await ev(`({css: document.getElementById('screen').style.cursor, scale: window.__darpan.cssScale})`);
+  ok('pointer drawn at display scale', /^(url|image-set)\(/.test(cur.css) && cur.scale < 1, `scale ${cur.scale.toFixed(2)}, ${cur.css.slice(0, 40)}…`);
 
   const st = await ev(`({fps: window.__darpan.fps, lat: window.__darpan.latency, dec: window.__darpan.decodeMs, rtt: window.__darpan.rtt, enc: window.__darpan.stream.enc})`);
   ok('stats populated', st.rtt != null, JSON.stringify(st));

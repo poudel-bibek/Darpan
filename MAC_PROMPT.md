@@ -206,10 +206,10 @@ Everything must work with only the Command Line Tools installed.
 
 ```bash
 bash mac/build.sh
-gh release view v1.0.0 >/dev/null 2>&1 || gh release create v1.0.0 --title "Darpan 1.0.0" --notes ""
-gh release upload v1.0.0 dist/Darpan.dmg --clobber
-gh release view v1.0.0 --json body -q .body > /tmp/notes.md   # then append the Mac section:
-gh release edit v1.0.0 --notes-file /tmp/notes.md
+TAG=$(gh release view --json tagName -q .tagName)            # the latest release
+gh release upload "$TAG" dist/Darpan.dmg --clobber
+gh release view "$TAG" --json body -q .body > /tmp/notes.md   # then append the Mac section:
+gh release edit "$TAG" --notes-file /tmp/notes.md
 ```
 The appended Mac section: install (open the DMG, drag Darpan to Applications), first launch of a
 downloaded copy (System Settings → Privacy & Security → *Open Anyway*, or
@@ -223,7 +223,7 @@ shortcut capture, and the DMG's SHA-256. Put the same install notes in the READM
       couldn't be run and why)
 - [ ] `README.md` Mac section + `mac/README.md` written
 - [ ] all work committed and pushed to `main`; working tree clean; no secrets committed
-- [ ] DMG uploaded to release v1.0.0 and the release notes updated
+- [ ] DMG uploaded to the latest release and its notes updated
 - [ ] the owner has the app: offer to copy `dist/Darpan.app` to `/Applications`
 
 ## 11. Final report to the owner

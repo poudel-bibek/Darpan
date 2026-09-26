@@ -316,6 +316,14 @@ async def run(args, tmp, probe_log):
                          capture_output=True, text=True, timeout=3).stdout
     ok("clipboard client→host", out == "hello from test ✓", repr(out))
 
+    # paste ordering: a clip must be applied before any later message (e.g. the paste key)
+    ws.send({"t": "clip", "text": "ordered paste 7"})
+    ws.send({"t": "ping", "c": 1})
+    _, pong2 = await pump(ws, 3, want="pong")
+    out2 = subprocess.run(["xclip", "-o", "-selection", "clipboard"], env=dict(os.environ, DISPLAY=args.display),
+                          capture_output=True, text=True, timeout=3).stdout
+    ok("clip applied before next message", pong2 is not None and out2 == "ordered paste 7", repr(out2))
+
     # clipboard host → client
     subprocess.run(["xclip", "-i", "-selection", "clipboard"], input="from host 42", text=True,
                    env=dict(os.environ, DISPLAY=args.display), timeout=3)
@@ -344,6 +352,33 @@ async def run(args, tmp, probe_log):
     n, _ = await pump(ws, 1.5)
     ok("static screen sends nothing", n == 0, "%d frames in 1.5 s" % n)
 
+    def capture_pids():
+        r = subprocess.run(["pgrep", "-f", "darpan-capture .*--display %s" % args.display], capture_output=True, text=True)
+        return [int(p) for p in r.stdout.split()]
+
+    ws.send({"t": "stop"})
+    await pump(ws, 0.5)
+    for p in capture_pids():
+        os.kill(p, 9)                     # encoder dies while the viewer is hidden
+    await pump(ws, 3)
+    ok("paused viewer: encoder stays down", not capture_pids(), "pids %s" % capture_pids())
+    ws.send({"t": "start", "codec": "h264", "fps": 60, "bitrate": 0})
+    got_stream, frames2 = None, 0
+    end = time.monotonic() + 4
+    while time.monotonic() < end and not frames2:
+        try:
+            kind, m = await asyncio.wait_for(ws.recv(), 0.5)
+        except asyncio.TimeoutError:
+            continue
+        if kind == "text" and m["t"] == "stream":
+            got_stream = m
+        elif kind == "binary":
+            _, flags, sid, seq, _ = struct.unpack(">BBHIQ", m[:16])
+            ws.send({"t": "ack", "id": sid, "n": seq})
+            frames2 += flags & 1
+    ok("start after pause brings it back", got_stream is not None and frames2 >= 1 and len(capture_pids()) == 1,
+       "stream %s, key frames %d" % (got_stream and got_stream["id"], frames2))
+
     ws.send({"t": "stop"})
     await asyncio.sleep(0.2)
     ws.w.close()
@@ -357,6 +392,7 @@ def main():
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--root", default=ROOT, help="tree to test (e.g. an extracted .deb's opt/darpan)")
     ap.add_argument("--serve", action="store_true", help="set everything up, print JSON, wait (for browser tests)")
+    ap.add_argument("--socket-activate", action="store_true", help="hand the host its socket like systemd does")
     args = ap.parse_args()
     args.probe_w, args.probe_h = 1280, 720
     tmp = tempfile.mkdtemp(prefix="darpan-test-")
@@ -382,9 +418,22 @@ def main():
                                  stdout=open(probe_log, "w"), stderr=subprocess.STDOUT)
         procs.append(probe)
         host_log = open(os.path.join(tmp, "host.log"), "w")
-        host = subprocess.Popen([sys.executable, "-m", "darpan", "serve", "--port", str(args.port), "-v"], env=env,
+        cmd = [sys.executable, "-m", "darpan", "serve", "--port", str(args.port), "-v"]
+        if args.socket_activate:   # exercise the sd_listen_fds path (darpan.socket in production)
+            keep = ["DISPLAY", "HOME", "PATH", "PYTHONPATH", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME",
+                    "XDG_RUNTIME_DIR"]            # it starts children with a clean environment
+            cmd = ["systemd-socket-activate", "-l", "127.0.0.1:%d" % args.port] + [a for k in keep for a in ("-E", k)] + cmd
+        host = subprocess.Popen(cmd, env=env,
                                 stdout=host_log, stderr=subprocess.STDOUT, cwd=args.root)
         procs.append(host)
+        if args.socket_activate:   # the socket exists before the host: the first connection starts it
+            import socket as _s
+            for _ in range(50):
+                try:
+                    _s.create_connection(("127.0.0.1", args.port), 0.5).close()
+                    break
+                except OSError:
+                    time.sleep(0.1)
         for _ in range(50):
             time.sleep(0.2)
             if os.path.exists(os.path.join(tmp, "config", "darpan", "password.txt")):
@@ -407,6 +456,8 @@ def main():
         print("\nRESULT:", "ALL PASS" if good else "FAILURES")
         return 0 if good else 1
     finally:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)     # a repeated Ctrl-C must not cut cleanup short
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         for p in reversed(procs):
             p.terminate()
             try:
