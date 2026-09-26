@@ -3,7 +3,14 @@
 <h1 align="center">Darpan</h1>
 
 <p align="center"><b>Stop paying for remote desktop.</b><br>
-Use your Linux computer from your Mac or any browser. It feels local, stays private, and costs nothing.</p>
+Darpan is a free, open-source remote desktop for your Linux computer. Use it from your Mac or any
+browser: it feels local and stays private.</p>
+
+<p align="center">
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT license"></a>
+<img src="https://img.shields.io/badge/host-Linux-555" alt="Host: Linux">
+<img src="https://img.shields.io/badge/clients-macOS%20%C2%B7%20browser-555" alt="Clients: macOS and browser">
+</p>
 
 <p align="center"><img src="docs/demo.svg" width="880" alt="Connecting from the Darpan Mac app, starting a training run on the Linux desktop, and switching to full screen"></p>
 
@@ -63,14 +70,16 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 </table>
 
 Plus full screen, screen resolutions to match your window, and a toolbar that tucks away.
-**Free:** open source (MIT), no subscription, and no account with us.
+**Free and open source** (MIT): no subscription, and no account with us.
 
 ## Everyday use
 
 * **Copy and paste** with ⌘C and ⌘V. The clipboard syncs both ways. In Linux terminals (with ⌘ as Ctrl, the default), ⌘ acts on the terminal
   (⌘C copies, ⌘V pastes, ⌘T opens a tab) and ⌃ goes to the shell (⌃C interrupts, ⌃R searches).
+* **Dictation** apps work in the Darpan window. With Wispr Flow, for example, you talk and the text
+  lands at the Linux cursor, as if you had typed it.
 * **Sound** from the Linux computer plays on your Mac, or in the browser. The speaker button in the toolbar mutes it.
-* **Send files** by dropping them on the window. They land in `~/Downloads/Darpan` on the Linux computer.
+* **Send files** by dropping them on the window. They land on the Linux computer's desktop.
 * **The toolbar** is the small tab at the top of the window. Hover over it for full screen, display and
   quality, keyboard, clipboard, files and sound. Drag it sideways if it's in the way.
 * **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
@@ -141,23 +150,12 @@ The wire protocol is documented in [PROTOCOL.md](PROTOCOL.md).
 
 </details>
 
-<details>
-<summary><b>For developers</b></summary>
+## Contributing
 
-```text
-linux/             host: Python daemon, C capture/NVENC encoder, browser client, packaging, tests
-mac/               native macOS client (Swift)
-PROTOCOL.md        wire protocol: the contract every client implements
-MAC_PROMPT.md      design brief for the macOS client
-dev-messageboard/  asynchronous coordination between contributors
-scripts/           repository maintenance
-```
-
-Build and test notes: [linux/README.md](linux/README.md), [mac/README.md](mac/README.md). Every change
-goes through a pull request and a review. Before publishing a release, run
-`scripts/check-private-data.sh`.
-
-</details>
+Darpan is open source, and contributions are welcome: bug reports, fixes, new clients and ideas.
+[CONTRIBUTING.md](CONTRIBUTING.md) explains how to build it, run the tests and send a pull request.
+Every client speaks the same documented [protocol](PROTOCOL.md), so a Windows or iPad client only
+has to implement that.
 
 ## License
 
