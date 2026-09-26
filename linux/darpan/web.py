@@ -13,6 +13,7 @@ import logging
 import os
 import socket
 import struct
+import time
 from urllib.parse import urlsplit
 
 from . import config
@@ -82,6 +83,7 @@ class WebSocket:
         self.w = writer
         self.transport = writer.transport
         self.closed = False
+        self.last_rx = time.monotonic()   # any frame (pongs too) proves the peer is alive
 
     @property
     def buffered(self):
@@ -93,6 +95,7 @@ class WebSocket:
         try:
             while True:
                 b0, b1 = await self.r.readexactly(2)
+                self.last_rx = time.monotonic()
                 fin, op, n = b0 & 0x80, b0 & 0x0F, b1 & 0x7F
                 if b0 & 0x70 or not b1 & 0x80:          # RSV bits set / client frame not masked
                     return self._fail(1002)
@@ -158,6 +161,9 @@ class WebSocket:
     def send_binary(self, *parts):
         self._frame(2, *parts)
 
+    def ping(self):
+        self._frame(9, b"")
+
     def close(self, code=1000, reason=""):
         if self.closed:
             return
@@ -165,6 +171,13 @@ class WebSocket:
         self.closed = True
         loop = asyncio.get_running_loop()
         loop.call_later(0.5, self.w.close)
+        # close() waits for the send buffer to drain, which a dead peer never lets happen
+        loop.call_later(3, self.transport.abort)
+
+    def abort(self):
+        """Drop the connection now, without a closing handshake (the peer stopped answering)."""
+        self.closed = True
+        self.transport.abort()
 
 
 def _host_allowed(host):

@@ -151,6 +151,9 @@ class Session:
         self.x264_until = 0.0            # NVENC failed (e.g. VRAM full): software until then, then retry
         self.x264_backoff = 60.0
         self.last_kf = 0.0
+        self.wd_after = 3.0              # ack watchdog: 3 s, doubling while acks stay away
+        self.last_ping = 0.0
+        self.busy = False                # awaiting a slow handler (typing a long text)
         self._kf_pending = False
         self._cap_lock = asyncio.Lock()  # start/stop/restart never overlap (no orphaned encoders)
         self.stats = [0, 0, 0, 0]   # frames, bytes, cap_us, enc_us  (this second)
@@ -207,7 +210,12 @@ class Session:
                         if h:
                             r = h(self, m)
                             if r is not None:   # ordering matters (e.g. clip before the paste key)
-                                await r
+                                self.busy = True    # frames from the peer wait unread meanwhile
+                                try:
+                                    await r
+                                finally:
+                                    self.busy = False
+                                    ws.last_rx = time.monotonic()
                     except (ValueError, TypeError, KeyError) as e:
                         log.debug("bad message from %s: %s", self.sid, e)
                     except Exception:
@@ -354,6 +362,7 @@ class Session:
         for s in [s for s in self.inflight if s < n]:   # frames the client skipped
             del self.inflight[s]
             give += 1
+        self.wd_after = 3.0
         self.rc.on_ack(now, now - ent[0], ent[1])
         self._credit(give)
 
@@ -385,6 +394,7 @@ class Session:
         self.stream_id = (self.stream_id % 0xFFFF) + 1
         self.seq = 0
         self.inflight.clear()
+        self.wd_after = 3.0
         self.paused_at = None
         self.cap = cls(hub.display, fps, self.rc.kbps, self.window, on_start=self._cap_started,
                        on_frame=self._cap_frame, on_exit=self._cap_exit, **kw)
@@ -410,6 +420,7 @@ class Session:
         self.stream_id = (self.stream_id % 0xFFFF) + 1
         self.seq = 0
         self.inflight.clear()
+        self.wd_after = 3.0
         self.ws.send_json({"t": "stream", "id": self.stream_id, "codec": "h264", "w": self.w, "h": self.h,
                            "fps": self.params["fps"], "enc": self.cap.encoder})
         self.cap.keyframe()
@@ -470,7 +481,17 @@ class Session:
         self.x264_backoff = min(900.0, self.x264_backoff * 2)
 
     def tick(self, now):
-        """Once a second: stats, congestion control, watchdog, idle encoder teardown."""
+        """Once a second: liveness, stats, congestion control, watchdog, idle encoder teardown."""
+        cfg = self.hub.cfg
+        if not self.busy and now - self.ws.last_rx > cfg["silent_limit"]:
+            # Every WebSocket client answers pings, so silence this long means the peer is gone
+            # (e.g. a killed process whose connection never closed). Free its encoder now.
+            log.info("session %s: no reply for %d s, closing", self.sid, cfg["silent_limit"])
+            self.ws.abort()
+            return
+        if now - self.last_ping >= cfg["ping_every"]:
+            self.last_ping = now
+            self.ws.ping()
         if not self.cap:
             return
         if (self.cap.encoder == "x264" and self.hub.encoder and self.x264_until and now >= self.x264_until
@@ -495,12 +516,13 @@ class Session:
             oldest = min(t for t, _ in self.inflight.values())
             # Acks stopped: resync from a key frame so we never deadlock — unless the socket itself
             # is backed up (link stalled): queueing more frames would only add latency.
-            if now - oldest > 3 and self.ws.buffered < 256 * 1024:
-                log.info("session %s: ack watchdog, resyncing", self.sid)
+            if now - oldest > self.wd_after and self.ws.buffered < 256 * 1024:
+                log.info("session %s: ack watchdog, resyncing (next after %d s)", self.sid, min(30, self.wd_after * 2))
                 k = len(self.inflight)
                 self.inflight.clear()
                 self._credit(k)
                 self.cap.keyframe()
+                self.wd_after = min(30.0, self.wd_after * 2)   # a peer that never acks gets fewer key frames
         f, b, c, e = self.stats
         dt = now - self.last_stats
         self.last_stats = now

@@ -21,6 +21,8 @@ DEFAULTS = {
     "fps": 60,
     "start_kbps": 12000,
     "max_kbps": 40000,
+    "ping_every": 10,        # s between WebSocket pings to each viewer
+    "silent_limit": 30,      # s without any frame from a viewer before its session is dropped
     "preset": 3,             # NVENC P3: best latency/size trade-off measured on this GPU
     "gpu": 0,
     "encoder": "auto",       # auto | nvenc | x264
