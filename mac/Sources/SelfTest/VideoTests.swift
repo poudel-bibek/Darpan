@@ -251,28 +251,31 @@ func videoTests() {
         let bad = decode([videoMessage(Data([0, 0, 1, 0x65, 0xFF]), key: true, stream: 1, seq: 3)], into: dec)
         eq(bad, [.skipped], "key frame without SPS/PPS is skipped")
     }
-    section("VideoToolbox decode of non-reference P frames (host fixture, 640×360)") {
-        // Recorded from the host's encoder: the pictures it sends when a probe changed something
-        // (PR #36) are non-reference P frames (nal_ref_idc 0). All must decode, and the last
-        // picture must match FFmpeg's decode of the same bytes.
-        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../../linux/tools/fixtures").standardized
-        let stream = try Data(contentsOf: dir.appendingPathComponent("nonref-thin-line-640x360.h264"))
-        let aus = pictures(stream)
-        eq(aus.count, 139, "pictures in the fixture")
-        let nonRef = aus.filter { au in AnnexB.split(au).contains { au[$0.lowerBound] & 0x1F == 1 && au[$0.lowerBound] & 0x60 == 0 } }.count
-        eq(nonRef, 68, "non-reference pictures")
-        let c = Collector()
-        let dec = H264Decoder { c.add($0, $1, $2) }
-        let msgs = aus.enumerated().map { videoMessage($0.element, key: $0.offset == 0, stream: 2, seq: UInt32($0.offset)) }
-        let results = decode(msgs, into: dec)
-        check(results.allSatisfy { $0 == .submitted }, "all submitted")
-        dec.invalidate()
-        eq(c.frames.count, 139, "one output per picture")
-        eq(c.frames.filter { $0.2 != noErr || $0.1 == nil }.count, 0, "no decode errors")
-        guard let last = c.frames.last?.1 else { return }
-        let psnr = lumaPSNR(last, png: dir.appendingPathComponent("nonref-thin-line-640x360-last.png"))
-        check(psnr > 30, "last picture matches FFmpeg's decode (luma PSNR \(String(format: "%.1f", psnr)) dB)")
+    // Streams recorded from the host's encoders (linux/tools/fixtures): every picture must decode,
+    // and the last one must match FFmpeg's decode of the same bytes (`<name>-last.png`). The
+    // `.json` next to each gives the picture and non-reference counts.
+    let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("../../../linux/tools/fixtures").standardized
+    for name in ["nonref-thin-line-640x360", "vulkan-640x360"] {
+        section("VideoToolbox decode of the host fixture \(name)") {
+            let stream = try Data(contentsOf: fixtures.appendingPathComponent("\(name).h264"))
+            let info = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtures.appendingPathComponent("\(name).json"))) as? [String: Any]
+            let aus = pictures(stream)
+            eq(aus.count, info?["frames"] as? Int ?? -1, "pictures in the fixture")
+            let nonRef = aus.filter { au in AnnexB.split(au).contains { au[$0.lowerBound] & 0x1F == 1 && au[$0.lowerBound] & 0x60 == 0 } }.count
+            eq(nonRef, (info?["nonref"] as? [Any])?.count ?? -1, "non-reference pictures")
+            let c = Collector()
+            let dec = H264Decoder { c.add($0, $1, $2) }
+            let msgs = aus.enumerated().map { videoMessage($0.element, key: $0.offset == 0, stream: 2, seq: UInt32($0.offset)) }
+            let results = decode(msgs, into: dec)
+            check(results.allSatisfy { $0 == .submitted }, "all submitted")
+            dec.invalidate()
+            eq(c.frames.count, aus.count, "one output per picture")
+            eq(c.frames.filter { $0.2 != noErr || $0.1 == nil }.count, 0, "no decode errors")
+            guard let last = c.frames.last?.1 else { return }
+            let psnr = lumaPSNR(last, png: fixtures.appendingPathComponent("\(name)-last.png"))
+            check(psnr > 30, "last picture matches FFmpeg's decode (luma PSNR \(String(format: "%.1f", psnr)) dB)")
+        }
     }
 }
 
