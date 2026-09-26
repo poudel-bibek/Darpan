@@ -44,13 +44,15 @@ python3 tools/apt_test.py             # the release's APT index, as installed ho
 
 Installed hosts update through the system's updater. The package ships
 `/etc/apt/sources.list.d/darpan.sources`, pointing at `releases/latest/download/` of this repository, and
-the public keyring `/usr/share/keyrings/darpan-archive-keyring.gpg`. So each release carries, next to
+the public keyring `/etc/apt/keyrings/darpan-archive-keyring.gpg` (both conffiles: `apt remove` keeps
+them, `purge` removes them). So each release carries, next to
 `darpan_amd64.deb`, a flat APT index made by
 
 ```bash
 GNUPGHOME=~/.config/darpan-release/gnupg bash packaging/apt-index.sh ../dist/darpan_<ver>_amd64.deb <dir>
 ```
 
-Upload `Packages` and `InRelease` from `<dir>` with the .deb. The private key stays on the release
+Upload `Packages` and `InRelease` from `<dir>` with the .deb to the **draft** release, then publish it,
+so `latest` switches to all three at once. The private key stays on the release
 machine: keep a backup of `~/.config/darpan-release`, because with a new key existing installs stop
 trusting new releases until the package is reinstalled by hand.

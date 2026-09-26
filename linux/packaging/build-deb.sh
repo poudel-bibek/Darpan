@@ -24,7 +24,7 @@ R=$STAGE/root
 install -d -m 0755 "$R/DEBIAN" "$R/opt/darpan/darpan" "$R/opt/darpan/native" "$R/opt/darpan/web" \
     "$R/opt/darpan/tailscale" "$R/usr/bin" "$R/usr/lib/systemd/user" "$R/usr/share/applications" \
     "$R/usr/share/icons/hicolor/scalable/apps" "$R/usr/share/doc/darpan" "$R/etc/apt/sources.list.d" \
-    "$R/usr/share/keyrings"
+    "$R/etc/apt/keyrings"
 install -m 0644 darpan/*.py "$R/opt/darpan/darpan/"
 install -m 0755 native/darpan-capture "$R/opt/darpan/native/"
 install -m 0644 web/index.html web/app.js web/audio-worklet.js web/style.css web/favicon.svg web/manifest.webmanifest "$R/opt/darpan/web/"
@@ -44,10 +44,12 @@ install -m 0755 packaging/debian/postinst packaging/debian/prerm packaging/debia
 # (packaging/apt-index.sh), and "latest" always points at the newest one.
 REPO=${DARPAN_REPO:-$(git -C .. remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')}
 [[ $REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "can't tell the GitHub repository (set DARPAN_REPO=owner/name)"; exit 1; }
-install -m 0644 packaging/darpan-archive-keyring.gpg "$R/usr/share/keyrings/"
-printf 'Types: deb\nURIs: https://github.com/%s/releases/latest/download/\nSuites: ./\nSigned-By: /usr/share/keyrings/darpan-archive-keyring.gpg\n' \
+# Source and keyring are both conffiles: "apt remove" keeps them together (so apt update still
+# works), "purge" removes both.
+install -m 0644 packaging/darpan-archive-keyring.gpg "$R/etc/apt/keyrings/"
+printf 'Types: deb\nURIs: https://github.com/%s/releases/latest/download/\nSuites: ./\nSigned-By: /etc/apt/keyrings/darpan-archive-keyring.gpg\n' \
     "$REPO" > "$R/etc/apt/sources.list.d/darpan.sources"
-echo /etc/apt/sources.list.d/darpan.sources > "$R/DEBIAN/conffiles"
+printf '/etc/apt/sources.list.d/darpan.sources\n/etc/apt/keyrings/darpan-archive-keyring.gpg\n' > "$R/DEBIAN/conffiles"
 SIZE=$(du -sk --exclude=DEBIAN "$R" | cut -f1)
 sed -e "s/@VERSION@/$VERSION/" -e "s/@SIZE@/$SIZE/" packaging/debian/control.in > "$R/DEBIAN/control"
 find "$R/opt/darpan/darpan" -name __pycache__ -prune -exec rm -rf {} +
