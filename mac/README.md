@@ -36,6 +36,9 @@ Install and first launch: see *Mac app* in the [main README](../README.md#mac-ap
   managers mark as concealed are only sent when you paste them with ⌘V.
 * **Files**: drop files on the window (or use the toolbar). They land on the remote
   computer's desktop. Folders aren't sent; zip them first.
+* **Updates**: once a day while it's open, Darpan checks GitHub for a newer release, and asks before
+  installing it. It's the only request Darpan makes outside the tailnet. The ⚙︎ menu's *Check for
+  Updates Automatically* turns it off; *Darpan → Check for Updates…* checks at once.
 * **Sound**: the remote computer's sound plays on the Mac. It's on by default; the speaker button in
   the toolbar, or View → Play Sound, mutes it. It keeps playing while the viewer is hidden, and the
   Mac's audio device is used only while sound actually arrives (it's released after 2 s without any).
