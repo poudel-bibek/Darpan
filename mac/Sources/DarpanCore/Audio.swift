@@ -225,6 +225,10 @@ public protocol AudioSink: AnyObject {
 /// then decodes each AUDIO message into the sink. Its own connection and queue, so sound never
 /// waits behind video.
 final class AudioStream {
+    #if DEBUG
+    /// DARPAN_LOG_AUDIO: each packet's arrival time (ms) next to its capture timestamp.
+    static let logArrival = ProcessInfo.processInfo.environment["DARPAN_LOG_AUDIO"] != nil
+    #endif
     private let queue = DispatchQueue(label: "dev.darpan.Darpan.audio", qos: .userInteractive)
     private var socket: WebSocket?
     private let decoder: OpusDecoder?
@@ -250,8 +254,11 @@ final class AudioStream {
             case .binary(let d):
                 guard self.authed, let decoder = self.decoder else { return }
                 d.withUnsafeBytes { b in
-                    guard let h = AudioHeader(b),
-                          let samples = decoder.decode(UnsafeRawBufferPointer(rebasing: b[AudioHeader.size...])) else { return }
+                    guard let h = AudioHeader(b) else { return }
+                    #if DEBUG
+                    if Self.logArrival { print(String(format: "[audio] arr=%.3f cap=%llu seq=%u first=%d", Clock.nowMs(), h.captureUs, h.seq, h.afterSilence ? 1 : 0)) }
+                    #endif
+                    guard let samples = decoder.decode(UnsafeRawBufferPointer(rebasing: b[AudioHeader.size...])) else { return }
                     // A slot jump of n means n − 1 silent slots (at most 1 s is kept).
                     let skipped = self.lastSlot.map { Int(min(100, max(1, h.seq &- $0)) - 1) } ?? 0
                     self.lastSlot = h.seq
