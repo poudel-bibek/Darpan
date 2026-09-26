@@ -401,28 +401,51 @@ def clipboard():
 
 
 def files():
-    s = Scene(6.0)
+    """The Files window: this Mac and the Linux computer side by side, Send and Receive."""
+    s = Scene(7.0)
     backdrop(s)
     tower(s)
     link(s)
-    linux = ('<g class="landed">' + pdf(14, 16) + text(14, 29.5, "report.pdf", 5, "#fff", "middle", 600) + '</g>'
-             + '<g class="toast"><rect x="30" y="54" width="60" height="9" rx="4.5" fill="#000" fill-opacity=".55"/>'
-             + '<rect x="35" y="57.5" width="50" height="2" rx="1" fill="#fff" fill-opacity=".25"/>'
-             + '<rect class="tbar" x="35" y="57.5" width="50" height="2" rx="1" fill="#5aa0ff"/></g>'
-             + '<rect class="drop" x="1" y="1" width="118" height="65.5" fill="none" stroke="#5aa0ff" stroke-width="2"/>')
-    desktop = pdf(257, 58) + text(257, 74, "report.pdf", 5.5, "#fff", "middle", 600)
-    mac(s, viewer(s, 112, 26, 120, linux) + desktop,
-        '<g class="drag">' + pdf(0, 0, opacity=.8) + '</g>'
-        '<path class="ptr" d="M0 0v10.5l2.5-2.3 1.7 4 1.8-.8-1.7-3.9h3.4z" fill="#000" stroke="#fff" stroke-width=".8"/>')
-    s.move("ptr", [(0.3, 262, 60), (0.7, 262, 60), (1.6, 176, 64), (2.2, 176, 64)])
-    s.move("drag", [(0.7, 257, 58), (1.6, 171, 62), (1.95, 171, 62)])
-    s.show("drop", 1.35, 1.9, 0.1)
-    s.add(doc("d1"))
-    s.move("d1", [(1.9, LB, LINK_Y), (2.7, LA, LINK_Y)])
-    s.show("toast", 1.9, 2.9, 0.1)
-    grow(s, "tbar", [(0, 0), (1.9, 0), (2.8, 1), (6, 1)])
-    s.show("landed", 2.9, 5.6)
-    return s.svg("A file dragged from the Mac desktop onto Darpan's window lands on the Linux desktop")
+    wx, wy, ww, wh = 116, 25, 158, 86
+    lx, rx, py, pw, ph = 120, 197, 36, 73, 56
+
+    def row(x, i, name, folder, cls=""):
+        y = py + 10 + 8 * i
+        c = f' class="{cls}"' if cls else ""
+        icon = (f'<path d="M{x + 4} {y + 2}h2l1 1h3v4h-6z" fill="#5aa0ff"/>' if folder else
+                f'<rect x="{x + 4.5}" y="{y + 1.5}" width="4" height="5" rx=".6" fill="#fff" stroke="#8e8e93" stroke-width=".4"/>')
+        return f'<g{c}>{icon}' + text(x + 12, y + 5.8, name, 4.8, "#1d1d1f") + '</g>'
+
+    def pane(x, title, rows):
+        return (f'<rect x="{x}" y="{py}" width="{pw}" height="{ph}" rx="2" fill="#fff" stroke="#dcdce0" stroke-width=".5"/>'
+                + text(x + 4, py + 6.5, title, 5.2, "#1d1d1f", weight=700)
+                + f'<rect x="{x}" y="{py + 8.5}" width="{pw}" height=".4" fill="#e5e5ea"/>' + rows)
+
+    sel = lambda x, i, cls: f'<rect class="{cls}" x="{x + 1}" y="{py + 10 + 8 * i}" width="{pw - 2}" height="8" rx="1.5" fill="#cfe3ff"/>'
+    button = lambda x, label, cls: (f'<rect x="{x}" y="97" width="31" height="8.5" rx="2" fill="#fff" stroke="#c7c7cc" stroke-width=".5"/>'
+                                    f'<rect class="{cls}" x="{x}" y="97" width="31" height="8.5" rx="2" fill="#0a84ff"/>'
+                                    + text(x + 15.5, 102.8, label, 4.8, "#1d1d1f", "middle", 600))
+    window = (f'<rect x="{wx}" y="{wy}" width="{ww}" height="{wh}" rx="4" fill="#f5f5f7" filter="url(#sh)"/>'
+              f'<path d="M{wx} {wy + 8}v-4a4 4 0 0 1 4-4h{ww - 8}a4 4 0 0 1 4 4v4z" fill="#e8e8ec"/>'
+              + "".join(f'<circle cx="{wx + 5 + i * 4.5}" cy="{wy + 4}" r="1.4" fill="{c}"/>' for i, c in enumerate(("#ff5f57", "#febc2e", "#28c840")))
+              + text(wx + ww / 2, wy + 5.8, "Files", 5, "#3a3a3c", "middle", 600)
+              + pane(lx, "This Mac", sel(lx, 0, "selL") + row(lx, 0, "report.pdf", False) + row(lx, 1, "notes.md", False) + row(lx, 2, "photos", True)
+                     + row(lx, 3, "results.csv", False, "recvL"))
+              + pane(rx, "workstation", sel(rx, 1, "selR") + row(rx, 0, "data", True) + row(rx, 1, "results.csv", False) + row(rx, 2, "report.pdf", False, "sentR"))
+              + button(160, "← Receive", "btnR") + button(203, "Send →", "btnS"))
+    mac(s, window, '<path class="ptr" d="M0 0v10.5l2.5-2.3 1.7 4 1.8-.8-1.7-3.9h3.4z" fill="#000" stroke="#fff" stroke-width=".8"/>')
+    s.move("ptr", [(0.2, 150, 70), (0.6, 142, 49), (0.9, 142, 49), (1.3, 218, 100), (1.6, 218, 100), (2.8, 218, 100),
+                   (3.2, 222, 57), (3.5, 222, 57), (3.9, 176, 100), (4.2, 176, 100), (6.6, 176, 100)])
+    s.show("selL", 0.8, 6.5, 0.05)
+    s.anim("btnS", [(0, "opacity:0"), (1.45, "opacity:0"), (1.5, "opacity:.35"), (1.75, "opacity:0"), (7, "opacity:0")])
+    s.add(doc("d1"), doc("d2"))
+    s.move("d1", [(1.6, LB, LINK_Y), (2.4, LA, LINK_Y)])
+    s.show("sentR", 2.5, 6.5, 0.1)
+    s.show("selR", 3.4, 6.5, 0.05)
+    s.anim("btnR", [(0, "opacity:0"), (4.05, "opacity:0"), (4.1, "opacity:.35"), (4.35, "opacity:0"), (7, "opacity:0")])
+    s.move("d2", [(4.2, LA, LINK_Y), (5.0, LB, LINK_Y)])
+    s.show("recvL", 5.1, 6.5, 0.1)
+    return s.svg("Darpan's Files window: a file on the Mac is sent to the Linux computer, and a file there is received on the Mac")
 
 
 def dictation():

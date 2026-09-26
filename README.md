@@ -76,8 +76,8 @@ Darpan shows on it. That's it.
 <p><b>Copy and paste</b><br>⌘C and ⌘V work both ways,<br>in Linux terminals too.<br><sub>&nbsp;</sub></p>
 </td>
 <td valign="top">
-<p><img src="docs/feature-files.svg" width="100%" alt="A file dropped on Darpan's window lands on the Linux desktop"></p>
-<p><b>Files</b><br>Drop a file on the window:<br>it lands on the desktop.<br><sub>&nbsp;</sub></p>
+<p><img src="docs/feature-files.svg" width="100%" alt="The Files window: a file sent from the Mac to Linux, and one received back"></p>
+<p><b>Files</b><br>Send and receive files,<br>or drop them on the window.<br><sub>&nbsp;</sub></p>
 </td>
 </tr>
 <tr>
@@ -106,9 +106,9 @@ Plus full screen, screen resolutions to match your window, and a toolbar that tu
 * **Dictation** apps work in the Darpan window. With Wispr Flow, for example, you talk and the text
   lands at the Linux cursor, as if you had typed it.
 * **Sound** from the Linux computer plays on your Mac, or in the browser. The speaker button in the toolbar mutes it.
-* **Send files** by dropping them on the window. They land on the Linux computer's desktop. In the
-  browser, **Files** in the toolbar browses the Linux computer: send files and folders into any folder,
-  or select some and **Receive** them.
+* **Files**: **Files** in the toolbar opens two panes, this Mac and the Linux computer. Select files
+  or folders and **Send** or **Receive** them, or drag between the panes. Files dropped on the window
+  land on the Linux desktop. The browser has the same window, with the Linux side only.
 * **The toolbar** is the small capsule at the upper right of the window. Point at it for full screen,
   display and quality, keyboard, files, stats and sound. Drag it by its grip to put it anywhere.
 * **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
