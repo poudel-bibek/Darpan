@@ -34,7 +34,7 @@ static void vlog(const char *fmt, ...) {
 // ---------------------------------------------------------------------------------------
 // entry points (dlopen'ed: no link-time dependency on the Vulkan loader)
 
-#define VK_INSTANCE_FNS(X) X(vkDestroyInstance) X(vkEnumeratePhysicalDevices) X(vkGetPhysicalDeviceProperties) \
+#define VK_INSTANCE_FNS(X) X(vkDestroyInstance) X(vkEnumeratePhysicalDevices) X(vkGetPhysicalDeviceProperties2) \
     X(vkGetPhysicalDeviceQueueFamilyProperties) X(vkGetPhysicalDeviceMemoryProperties) X(vkCreateDevice) \
     X(vkGetDeviceProcAddr) X(vkEnumerateDeviceExtensionProperties) X(vkGetPhysicalDeviceVideoCapabilitiesKHR)
 #define VK_DEVICE_FNS(X) X(vkDestroyDevice) X(vkGetDeviceQueue) X(vkDeviceWaitIdle) X(vkCreateBuffer) \
@@ -175,17 +175,20 @@ static void rc_set(RateControl *r, uint32_t kbps, uint32_t fps, uint32_t vbv_fra
     rc_wire(r);
 }
 
-// The smallest level that fits the picture size and macroblock rate (H.264 table A-1).
-static StdVideoH264LevelIdc pick_level(uint32_t mbs, uint32_t fps, StdVideoH264LevelIdc max) {
-    static const struct { StdVideoH264LevelIdc level; uint32_t fs, mbps; } t[] = {
-        {STD_VIDEO_H264_LEVEL_IDC_3_1, 3600, 108000}, {STD_VIDEO_H264_LEVEL_IDC_3_2, 5120, 216000},
-        {STD_VIDEO_H264_LEVEL_IDC_4_0, 8192, 245760}, {STD_VIDEO_H264_LEVEL_IDC_4_2, 8704, 522240},
-        {STD_VIDEO_H264_LEVEL_IDC_5_0, 22080, 589824}, {STD_VIDEO_H264_LEVEL_IDC_5_1, 36864, 983040},
-        {STD_VIDEO_H264_LEVEL_IDC_5_2, 36864, 2073600}, {STD_VIDEO_H264_LEVEL_IDC_6_0, 139264, 4177920},
-        {STD_VIDEO_H264_LEVEL_IDC_6_1, 139264, 8355840}, {STD_VIDEO_H264_LEVEL_IDC_6_2, 139264, 16711680},
+// The smallest level that fits the picture size, the macroblock rate and the highest bitrate the
+// stream may reach (H.264 table A-1; High profile allows 1.25 × MaxBR).
+static StdVideoH264LevelIdc pick_level(uint32_t mbs, uint32_t fps, uint32_t kbps, StdVideoH264LevelIdc max) {
+    static const struct { StdVideoH264LevelIdc level; uint32_t fs, mbps, br; } t[] = {
+        {STD_VIDEO_H264_LEVEL_IDC_3_1, 3600, 108000, 14000}, {STD_VIDEO_H264_LEVEL_IDC_3_2, 5120, 216000, 20000},
+        {STD_VIDEO_H264_LEVEL_IDC_4_0, 8192, 245760, 20000}, {STD_VIDEO_H264_LEVEL_IDC_4_1, 8192, 245760, 50000},
+        {STD_VIDEO_H264_LEVEL_IDC_4_2, 8704, 522240, 50000}, {STD_VIDEO_H264_LEVEL_IDC_5_0, 22080, 589824, 135000},
+        {STD_VIDEO_H264_LEVEL_IDC_5_1, 36864, 983040, 240000}, {STD_VIDEO_H264_LEVEL_IDC_5_2, 36864, 2073600, 240000},
+        {STD_VIDEO_H264_LEVEL_IDC_6_0, 139264, 4177920, 240000}, {STD_VIDEO_H264_LEVEL_IDC_6_1, 139264, 8355840, 480000},
+        {STD_VIDEO_H264_LEVEL_IDC_6_2, 139264, 16711680, 800000},
     };
     for (size_t i = 0; i < sizeof t / sizeof t[0]; i++)
-        if (mbs <= t[i].fs && (uint64_t)mbs * fps <= t[i].mbps) return t[i].level < max ? t[i].level : max;
+        if (mbs <= t[i].fs && (uint64_t)mbs * fps <= t[i].mbps && (uint64_t)kbps * 4 <= (uint64_t)t[i].br * 5)
+            return t[i].level < max ? t[i].level : max;
     return max;
 }
 
@@ -267,20 +270,21 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
 #define LOAD_I(n) if (!(n = (PFN_##n)vkGetInstanceProcAddr(e->inst, #n))) { vlog("missing %s", #n); goto fail; }
     VK_INSTANCE_FNS(LOAD_I)
 
-    // the gpu-th NVIDIA device, with Vulkan 1.3
+    // the NVIDIA device with that UUID (else the first), with Vulkan 1.3
     VkPhysicalDevice pds[16];
-    uint32_t n = 16, seen = 0;
+    uint32_t n = 16;
     vkEnumeratePhysicalDevices(e->inst, &n, pds);
     for (uint32_t i = 0; i < n && !e->pd; i++) {
-        VkPhysicalDeviceProperties pp;
-        vkGetPhysicalDeviceProperties(pds[i], &pp);
-        if (pp.vendorID != 0x10DE || VK_API_VERSION_MINOR(pp.apiVersion) < 3) continue;
-        if ((int)seen++ == p->gpu) {
+        VkPhysicalDeviceIDProperties id = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+        VkPhysicalDeviceProperties2 pp = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &id};
+        vkGetPhysicalDeviceProperties2(pds[i], &pp);
+        if (pp.properties.vendorID != 0x10DE || VK_API_VERSION_MINOR(pp.properties.apiVersion) < 3) continue;
+        if (!p->uuid || !memcmp(id.deviceUUID, p->uuid, VK_UUID_SIZE)) {
             e->pd = pds[i];
-            snprintf(gpu_name, 128, "%.127s", pp.deviceName);
+            snprintf(gpu_name, 128, "%.127s", pp.properties.deviceName);
         }
     }
-    if (!e->pd) { vlog("no NVIDIA GPU with Vulkan 1.3"); goto fail; }
+    if (!e->pd) { vlog("no such NVIDIA GPU with Vulkan 1.3"); goto fail; }
     static const char *exts[] = {"VK_KHR_video_queue", "VK_KHR_video_encode_queue", "VK_KHR_video_encode_h264",
                                  "VK_EXT_external_memory_host"};
     for (size_t i = 0; i < sizeof exts / sizeof exts[0]; i++)
@@ -431,7 +435,7 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     sps.flags.vui_parameters_present_flag = 1;
     sps.flags.frame_cropping_flag = e->cw != e->w || e->ch != e->h;
     sps.profile_idc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
-    sps.level_idc = pick_level((e->cw / 16) * (e->ch / 16), p->fps, (StdVideoH264LevelIdc)level_max);
+    sps.level_idc = pick_level((e->cw / 16) * (e->ch / 16), p->fps, p->max_kbps, (StdVideoH264LevelIdc)level_max);
     sps.chroma_format_idc = STD_VIDEO_H264_CHROMA_FORMAT_IDC_420;
     sps.log2_max_frame_num_minus4 = 4;                 // frame_num 0..255
     sps.pic_order_cnt_type = STD_VIDEO_H264_POC_TYPE_0;

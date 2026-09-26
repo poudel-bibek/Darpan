@@ -6,9 +6,10 @@
 typedef struct VkEnc VkEnc;
 
 typedef struct {
-    int gpu;                        // which NVIDIA GPU (0 = the first)
+    const uint8_t *uuid;            // the GPU (16 bytes, as CUDA and Vulkan report it); NULL: the first NVIDIA one
     uint32_t w, h;                  // visible size, even
     uint32_t fps, kbps, vbv_frames;
+    uint32_t max_kbps;              // the highest bitrate it may be asked for (it sets the H.264 level)
     int preset;                     // NVENC-style 1..7, mapped to a quality level
     int matrix601;                  // BT.601 instead of BT.709
     void *src;                      // the frame buffer (BGRx), page-aligned, read by the GPU in place

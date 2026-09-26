@@ -132,6 +132,7 @@ static struct {
     tcuGetErrorName *GetErrorName;
     tcuCtxSetLimit_ *CtxSetLimit;
     tcuMemGetInfo_v2 *MemGetInfo;
+    tcuDeviceGetUuid *DeviceGetUuid;
 } cu;
 
 static const char *cu_err(CUresult r) {
@@ -159,6 +160,7 @@ static int cuda_load(void) {
     LOAD(GetErrorName, "cuGetErrorName");
     LOAD(CtxSetLimit, "cuCtxSetLimit");
     LOAD(MemGetInfo, "cuMemGetInfo_v2");
+    LOAD(DeviceGetUuid, "cuDeviceGetUuid");
 #undef LOAD
     return 0;
 }
@@ -490,12 +492,29 @@ static void parse_param_sets(Encoder *e, const uint8_t *ps, uint32_t ps_len) {
     if (!e->h264.ok) logf_("stream not understood; unchanged frames will be sent too");
 }
 
+#define MAX_KBPS 200000
+
 // src: the frame buffer (page-aligned, src_size a multiple of the page size), read by the GPU.
 static int encoder_open(Encoder *e, int gpu, int preset, int matrix601, void *src, size_t src_size,
                         uint32_t src_pitch) {
-    if (!getenv("DARPAN_NVENC_CUDA")) {
+    // --gpu and CUDA_VISIBLE_DEVICES speak CUDA's numbering, and Vulkan counts devices its own way:
+    // any GPU but the first is looked up by its UUID. That loads CUDA but creates no context.
+    uint8_t uuid[16];
+    const uint8_t *which = NULL;
+    int known = gpu == 0 && !getenv("CUDA_VISIBLE_DEVICES");
+    if (!known) {
+        CUdevice d;
+        CUuuid u;
+        if (!cuda_load() && cu.Init(0) == CUDA_SUCCESS && cu.DeviceGet(&d, gpu) == CUDA_SUCCESS &&
+            cu.DeviceGetUuid(&u, d) == CUDA_SUCCESS) {
+            memcpy(uuid, u.bytes, sizeof uuid);
+            which = uuid;
+            known = 1;
+        }
+    }
+    if (known && !getenv("DARPAN_NVENC_CUDA")) {
         memset(src, 0, src_size);      // the GPU can only import pages that exist
-        VkEncParams vp = {gpu, e->w, e->h, e->fps, e->kbps, e->vbv_frames, preset, matrix601,
+        VkEncParams vp = {which, e->w, e->h, e->fps, e->kbps, e->vbv_frames, MAX_KBPS, preset, matrix601,
                           src, src_size, src_pitch};
         const uint8_t *ps;
         uint32_t ps_len;
@@ -617,7 +636,7 @@ static int encoder_open(Encoder *e, int gpu, int preset, int matrix601, void *sr
 
 static int encoder_set_bitrate(Encoder *e, uint32_t kbps) {
     if (kbps < 100) kbps = 100;
-    if (kbps > 200000) kbps = 200000;
+    if (kbps > MAX_KBPS) kbps = MAX_KBPS;
     if (kbps == e->kbps) return 0;
     e->kbps = kbps;
     if (e->vk) return vkenc_set_bitrate(e->vk, kbps);

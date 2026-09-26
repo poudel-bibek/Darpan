@@ -77,7 +77,7 @@ for name, xargs, env, api in (("", [], None, "vulkan"),
                               (" (CUDA)", [], {"DARPAN_NVENC_CUDA": "1"}, "cuda")):
     ok_first, rc, took, err, au, info, mib = run(xargs, env)
     passed = ok_first and rc == 2 and took < 3 and any('"api":"%s"' % api in i for i in info)
-    passed = passed and (api != "vulkan" or (mib or 0) < 64)       # the point of Vulkan Video: no CUDA context
+    passed = passed and (api != "vulkan" or (mib is not None and mib < 64))   # the point: no CUDA context
     px = None
     if (xargs or env) and passed:
         with tempfile.TemporaryDirectory() as tmp:
