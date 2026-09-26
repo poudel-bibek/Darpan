@@ -27,6 +27,10 @@ final class FilePane: ObservableObject {
     }
 
     var title: String { side == .local ? "This Mac" : "Remote computer" }
+    /// The path, with the home folder as ~ as in the Finder and Terminal.
+    var displayPath: String {
+        path == home ? "~" : path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
+    }
     var selected: [FileEntry] { entries.filter { selection.contains($0.id) } }
     var localURL: URL { URL(fileURLWithPath: path, isDirectory: true) }
 
@@ -133,11 +137,18 @@ final class FilesModel: ObservableObject {
         engine?.cancelAll()
         let t = Transfers(remote: fs)
         var wasIdle = true
+        var pending = false
         t.onChange = { [weak self, weak t] in
             guard let self, let t else { return }
-            self.transfers = t.items
             if t.isIdle && !wasIdle { self.remote.refresh(); self.local.refresh() }
             wasIdle = t.isIdle
+            // Progress arrives many times a second: publish it at most 10 times a second.
+            guard !pending else { return }
+            pending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak t] in
+                pending = false
+                if let t { self?.transfers = t.items }
+            }
         }
         t.ask = { [weak self] name, isFolder, reply in self?.askConflict(name, isFolder: isFolder, reply) }
         engine = t
@@ -190,7 +201,7 @@ final class FilesModel: ObservableObject {
 // MARK: - views
 
 struct FilesView: View {
-    @ObservedObject var model: FilesModel
+    let model: FilesModel                  // only the transfer list follows its changes
 
     var body: some View {
         VStack(spacing: 0) {
@@ -207,7 +218,8 @@ struct FilesView: View {
 
 private struct PaneView: View {
     @ObservedObject var pane: FilePane
-    @ObservedObject var model: FilesModel
+    /// Not observed: transfer progress mustn't redraw the lists (and swallow clicks) many times a second.
+    let model: FilesModel
     @State private var dropTarget = false
 
     var body: some View {
@@ -222,16 +234,16 @@ private struct PaneView: View {
             }
             .buttonStyle(.borderless)
             .padding(.horizontal, 10).padding(.top, 8)
-            Text(pane.path).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+            Text(pane.displayPath).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.vertical, 4)
             table
             HStack {
                 Toggle("Hidden files", isOn: $pane.showHidden).toggleStyle(.checkbox).font(.system(size: 11))
                 Spacer()
                 if pane.side == .local {
-                    Button("Send") { model.send() }.disabled(!model.canSend).help("Send the selection to the folder on the right")
+                    Button("Send") { model.send() }.buttonStyle(.borderedProminent).disabled(pane.selection.isEmpty).help("Send the selection to the folder on the right")
                 } else {
-                    Button("Receive") { model.receive() }.disabled(!model.canReceive).help("Receive the selection into the folder on the left")
+                    Button("Receive") { model.receive() }.buttonStyle(.borderedProminent).disabled(pane.selection.isEmpty).help("Receive the selection into the folder on the left")
                 }
             }
             .padding(8)
@@ -239,15 +251,12 @@ private struct PaneView: View {
     }
 
     private var table: some View {
-        Table(pane.entries, selection: $pane.selection, sortOrder: $pane.sortOrder) {
+        Table(of: FileEntry.self, selection: $pane.selection, sortOrder: $pane.sortOrder) {
             TableColumn("Name", value: \.name, comparator: .localizedStandard) { e in
-                Label {
-                    Text(e.name).lineLimit(1)
-                } icon: {
-                    Image(systemName: e.isDirectory ? "folder.fill" : e.kind == .file ? "doc" : "questionmark.square.dashed")
-                        .foregroundStyle(e.isDirectory ? Color.accentColor : .secondary)
+                HStack(spacing: 6) {
+                    Image(nsImage: FileIcons.icon(for: e, in: pane)).resizable().frame(width: 16, height: 16)
+                    Text(e.name).lineLimit(1).truncationMode(.middle)
                 }
-                .onDrag { dragProvider(e) }
             }
             .width(min: 120, ideal: 180)
             TableColumn("Size", value: \.size) { e in
@@ -259,6 +268,11 @@ private struct PaneView: View {
                 Text(Self.date(e.modified)).foregroundStyle(.secondary)
             }
             .width(min: 70, ideal: 90)
+        } rows: {
+            // The drag lives on the row (not inside a cell), so clicks select as in the Finder.
+            ForEach(pane.entries) { e in
+                TableRow(e).itemProvider { dragProvider(e) }
+            }
         }
         .onChange(of: pane.sortOrder) { pane.resort() }
         .contextMenu(forSelectionType: FileEntry.ID.self) { _ in
@@ -274,10 +288,12 @@ private struct PaneView: View {
                 ProgressView().controlSize(.small)
             }
         }
+        .overlay {
+            RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: dropTarget ? 2 : 0).allowsHitTesting(false)
+        }
         .onDrop(of: [.fileURL, .utf8PlainText], isTargeted: $dropTarget) { providers in
             drop(providers)
         }
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.accentColor, lineWidth: dropTarget ? 2 : 0))
     }
 
     /// What a row drags: this Mac's files as file URLs (the Finder takes them too), or a list of
@@ -443,4 +459,19 @@ final class FilesWindowController: NSWindowController, NSWindowDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+}
+
+/// The Finder's own icons: the real file's on this Mac, the type's for the remote side.
+enum FileIcons {
+    private static var cache: [String: NSImage] = [:]
+
+    static func icon(for e: FileEntry, in pane: FilePane) -> NSImage {
+        if pane.side == .local { return NSWorkspace.shared.icon(forFile: pane.localURL.appendingPathComponent(e.name).path) }
+        let key = e.isDirectory ? "/dir" : e.kind == .other ? "/other" : (e.name as NSString).pathExtension.lowercased()
+        if let i = cache[key] { return i }
+        let type: UTType = e.isDirectory ? .folder : e.kind == .other ? .item : UTType(filenameExtension: key) ?? .data
+        let i = NSWorkspace.shared.icon(for: type)
+        cache[key] = i
+        return i
+    }
 }
