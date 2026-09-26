@@ -324,6 +324,27 @@ final class VideoView: NSView, VideoSink {
     }
 }
 
+// MARK: - accessibility: a text area, for dictation apps that paste only into text fields
+
+extension VideoView {
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .textArea }
+    override func accessibilityRoleDescription() -> String? { "remote screen" }
+    override func accessibilityValue() -> Any? { "" }
+    override func accessibilitySelectedText() -> String? { "" }
+    override func accessibilitySelectedTextRange() -> NSRange { NSRange(location: 0, length: 0) }
+    override func accessibilityNumberOfCharacters() -> Int { 0 }
+
+    /// Text set through accessibility (dictation tools that insert instead of pasting): type it remotely.
+    override func setAccessibilitySelectedText(_ text: String?) {
+        if let text, !text.isEmpty { delegate?.videoView(self, typed: text) }
+    }
+
+    override func setAccessibilityValue(_ value: Any?) {
+        if let text = value as? String, !text.isEmpty { delegate?.videoView(self, typed: text) }
+    }
+}
+
 // MARK: - NSTextInputClient (input methods, dictation, emoji picker)
 
 extension VideoView: NSTextInputClient {

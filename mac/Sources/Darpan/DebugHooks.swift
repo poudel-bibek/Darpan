@@ -140,6 +140,7 @@ enum DebugHooks {
             case "ctrl": raw |= ModifierBits.control | ModifierBits.leftControl
             case "opt": raw |= ModifierBits.option | ModifierBits.leftOption
             case "caps": raw |= ModifierBits.capsLock
+            case "cmdsynth": raw |= ModifierBits.command            // ⌘ bit only, as dictation apps post it
             default: break
             }
         }
