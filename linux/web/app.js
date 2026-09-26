@@ -12,7 +12,7 @@
   if (IS_MAC) document.documentElement.classList.add('mac');
 
   // ------------------------------------------------------------ settings (per viewer)
-  const DEFAULTS = { quality: '0', fps: '60', scale: 'fit', cmd: 'ctrl', scroll: 1, invert: false, stats: false, pillX: 0.5 };
+  const DEFAULTS = { quality: '0', fps: '60', scale: 'fit', cmd: 'ctrl', scroll: 1, invert: false, stats: false, pillX: 0.5, audio: true };
   const readJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
   const writeJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
   const forget = (k) => { try { localStorage.removeItem(k); } catch { /* ignore */ } };
@@ -146,7 +146,7 @@
     }
   };
   H.ok = (m) => {
-    S.connected = true; S.retry = 0; S.sid = m.sid; S.screen = m.screen; S.enc = m.enc;
+    S.connected = true; S.retry = 0; S.sid = m.sid; S.screen = m.screen; S.enc = m.enc; S.caps = m.caps || [];
     S.password = null; S.clipSeen = false;
     if (S.remember) writeJSON(KEY_SLOT, { salt: S.salt, iter: S.iter, key: b64enc(S.key) });
     else forget(KEY_SLOT);
@@ -155,6 +155,7 @@
     startStream();
     ping();
     pump();                           // resume uploads queued before a reconnect
+    startSound();
   };
   H.denied = (m) => {
     S.want = false;
@@ -183,10 +184,66 @@
   };
   function ping() { send({ t: 'ping', c: now() }); }
 
+  // ------------------------------------------------------------ sound (PROTOCOL.md §12)
+  // Its own WebSocket, so audio never waits behind a video frame; WebCodecs decodes the Opus, and an
+  // AudioWorklet (audio-worklet.js) plays it through a small jitter buffer.
+  const SND = S.sound = { ws: null, dec: null, ctx: null, node: null, packets: 0, depth: 0, target: 0 };
+  async function soundContext() {
+    if (!SND.ctx) {
+      const ctx = new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
+      await ctx.audioWorklet.addModule('audio-worklet.js');
+      SND.node = new AudioWorkletNode(ctx, 'darpan-sound', { numberOfInputs: 0, outputChannelCount: [2] });
+      SND.node.port.onmessage = (e) => { SND.depth = e.data.depth; SND.target = e.data.target; };
+      SND.node.connect(ctx.destination);
+      SND.ctx = ctx;
+    }
+    if (SND.ctx.state === 'suspended') SND.ctx.resume().catch(() => {});   // needs a click or key first
+  }
+  function startSound() {
+    if (S.connected && settings.audio && S.caps.includes('audio') && 'AudioDecoder' in window) send({ t: 'audio', on: true });
+  }
+  function stopSound() {
+    if (SND.ws) { SND.ws.close(); SND.ws = null; }
+    if (SND.dec && SND.dec.state !== 'closed') SND.dec.close();
+    SND.dec = null;
+  }
+  H.audio = async (m) => {
+    if (m.error || !settings.audio) return;
+    try { await soundContext(); } catch { return; }
+    stopSound();
+    const dec = SND.dec = new AudioDecoder({
+      output: (a) => {
+        const l = new Float32Array(a.numberOfFrames), r = new Float32Array(a.numberOfFrames);
+        a.copyTo(l, { planeIndex: 0, format: 'f32-planar' });
+        a.copyTo(r, { planeIndex: a.numberOfChannels > 1 ? 1 : 0, format: 'f32-planar' });
+        a.close();
+        SND.node.port.postMessage({ l, r }, [l.buffer, r.buffer]);
+      },
+      error: () => {},
+    });
+    dec.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 2 });
+    const ws = SND.ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/audio');
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => ws.send(JSON.stringify({ t: 'auth', token: m.token }));
+    ws.onmessage = (e) => {
+      if (typeof e.data === 'string' || dec.state !== 'configured') return;   // {"t":"ok"}
+      const d = new DataView(e.data);
+      if (d.getUint8(0) !== 3) return;
+      if (d.getUint8(1) & 1) SND.node.port.postMessage({ reset: true });      // after silence: re-prime
+      SND.packets++;
+      dec.decode(new EncodedAudioChunk({ type: 'key', timestamp: d.getUint32(2) * 10000, data: new Uint8Array(e.data, 14) }));
+    };
+    ws.onclose = () => { if (SND.ws === ws) SND.ws = null; };
+  };
+  for (const ev of ['pointerdown', 'keydown']) {
+    addEventListener(ev, () => { if (SND.ctx && SND.ctx.state === 'suspended') SND.ctx.resume().catch(() => {}); }, true);
+  }
+
   function onClosed(ev) {
     const was = S.connected;
     S.connected = false; S.ws = null;
     resetDecoder(true);
+    stopSound();
     if (up) {                         // the host discarded the partial file: send it again later
       up.el.remove();
       queue.unshift(up.f);
@@ -744,6 +801,10 @@
   bar.querySelector('[data-act=fullscreen]').addEventListener('click', toggleFullscreen);
   bar.querySelector('[data-act=upload]').addEventListener('click', () => $('fileInput').click());
   bar.querySelector('[data-act=stats]').addEventListener('click', () => { settings.stats = !settings.stats; saveSettings(); applySettings(); });
+  bar.querySelector('[data-act=audio]').addEventListener('click', () => {
+    settings.audio = !settings.audio; saveSettings(); applySettings();
+    if (settings.audio) { soundContext().catch(() => {}); startSound(); } else { send({ t: 'audio', on: false }); stopSound(); }
+  });
   bar.querySelector('[data-act=disconnect]').addEventListener('click', disconnect);
 
   for (const seg of document.querySelectorAll('.seg[data-setting]')) {
@@ -770,6 +831,7 @@
     invertEl.checked = !!settings.invert;
     $('stats').hidden = !settings.stats;
     bar.querySelector('[data-act=stats]').classList.toggle('on', !!settings.stats);
+    bar.querySelector('[data-act=audio]').classList.toggle('on', !!settings.audio);
     layout();
   }
 
@@ -813,6 +875,7 @@
     lines.push(`video ${S.mbps.toFixed(2)} Mbps` + (h ? `  target ${(h.br / 1000).toFixed(1)} Mbps` : ''));
     lines.push(`rtt ${rtt == null ? '–' : rtt.toFixed(1)} ms  e2e ${lat == null ? '–' : '~' + lat.toFixed(0)} ms`);
     lines.push(`decode ${S.decodeMs.toFixed(1)} ms` + (h ? `  host ${h.cap_ms}+${h.enc_ms} ms` : ''));
+    if (SND.ws) lines.push(`sound buffer ${(SND.depth / 48).toFixed(0)} ms (target ${(SND.target / 48).toFixed(0)})`);
     $('stats').textContent = lines.join('\n');
   }, 500);
   setInterval(() => { if (S.connected) ping(); }, 2000);

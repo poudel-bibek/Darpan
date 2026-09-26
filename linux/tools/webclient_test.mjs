@@ -48,7 +48,8 @@ const profile = mkdtempSync(join(tmpdir(), 'darpan-chrome-'));
 // --no-sandbox: Ubuntu 24.04 blocks the user namespaces Chrome's sandbox needs; this test
 // browser only ever loads our own page on 127.0.0.1.
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
-  '--no-default-browser-check', '--window-size=1400,860', '--disable-background-timer-throttling', 'about:blank'],
+  '--no-default-browser-check', '--window-size=1400,860', '--disable-background-timer-throttling',
+  '--autoplay-policy=no-user-gesture-required', 'about:blank'],   // sound starts without a real click
   { stdio: ['ignore', 'ignore', 'pipe'] });
 procs.push(chrome);
 const wsUrl = await new Promise((resolve, reject) => {
@@ -161,6 +162,15 @@ try {
 
   const st = await ev(`({fps: window.__darpan.fps, lat: window.__darpan.latency, dec: window.__darpan.decodeMs, rtt: window.__darpan.rtt, enc: window.__darpan.stream.enc})`);
   ok('stats populated', st.rtt != null, JSON.stringify(st));
+
+  // sound: the host's (stand-in) pw-record tone arrives on /audio, decodes, fills the worklet buffer
+  let snd = null;
+  for (let i = 0; i < 50; i++) {
+    snd = await ev(`({packets: window.__darpan.sound.packets, depth: window.__darpan.sound.depth, target: window.__darpan.sound.target, state: window.__darpan.sound.ctx && window.__darpan.sound.ctx.state})`);
+    if (snd.packets > 50 && snd.depth > 0) break;
+    await sleep(100);
+  }
+  ok('sound plays (Opus → worklet buffer)', snd.packets > 50 && snd.depth > 0 && snd.state === 'running', JSON.stringify(snd));
 
   // toolbar: collapsed by default, expands on click
   ok('toolbar collapsed by default', await ev(`document.getElementById('bar').classList.contains('collapsed')`));
