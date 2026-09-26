@@ -40,6 +40,7 @@ bash packaging/build-deb.sh           # → ../dist/darpan_<ver>_amd64.deb
 python3 tools/test_host.py            # 20 protocol/input/clipboard/upload/latency checks
 node tools/webclient_test.mjs         # 17 checks: headless Chrome ↔ real host
 python3 tools/apt_test.py             # the release's APT index, as installed hosts use it
+python3 tools/capture_exit_test.py    # darpan-capture exits at once when its X server goes away
 ```
 
 ## Updates
