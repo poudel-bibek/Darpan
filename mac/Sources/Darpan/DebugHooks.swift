@@ -90,7 +90,7 @@ enum DebugHooks {
                                                 replacementRange: NSRange(location: NSNotFound, length: 0))
         case "toolbar":                                   // toolbar <item>
             let items: [String: ToolbarView.Item] = ["fullscreen": .fullScreen, "display": .display, "keys": .keys,
-                                                      "clipboard": .clipboard, "upload": .upload, "stats": .stats,
+                                                      "upload": .upload, "stats": .stats,
                                                       "disconnect": .disconnect]
             if let item = items[a.count > 1 ? a[1] : ""] { s?.debugToolbar(item) } else { s?.debugContent.toolbar.expand() }
         case "menu":                                      // menu <exact item title>

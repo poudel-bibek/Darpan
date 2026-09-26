@@ -84,14 +84,13 @@ final class ViewerContentView: NSView {
 /// panels open as popovers below it. Drag it by its grip to put it anywhere.
 final class ToolbarView: NSView {
     enum Item: Int, CaseIterable {
-        case fullScreen, display, keys, clipboard, upload, sound, stats, disconnect
+        case fullScreen, display, keys, upload, sound, stats, disconnect
 
         var symbol: String {
             switch self {
             case .fullScreen: return "arrow.up.left.and.arrow.down.right"
             case .display: return "display"
             case .keys: return "keyboard"
-            case .clipboard: return "doc.on.clipboard"
             case .upload: return "square.and.arrow.up"
             case .sound: return "speaker.wave.2"
             case .stats: return "chart.bar"
@@ -104,7 +103,6 @@ final class ToolbarView: NSView {
             case .fullScreen: return "Full screen (⌃⌥⌘F)"
             case .display: return "Display & quality"
             case .keys: return "Keyboard"
-            case .clipboard: return "Clipboard"
             case .upload: return "Send files to the remote computer"
             case .sound: return "Sound"
             case .stats: return "Connection stats"
@@ -144,7 +142,7 @@ final class ToolbarView: NSView {
     /// The panel shown as a popover, if any: its button stays highlighted and the bar open.
     var openPanel: Item? {
         didSet {
-            for i in [Item.display, .keys, .clipboard] { buttons[i]?.state = openPanel == i ? .on : .off }
+            for i in [Item.display, .keys] { buttons[i]?.state = openPanel == i ? .on : .off }
             if openPanel == nil && !hovering { collapse(after: 0.6) }
         }
     }
@@ -258,7 +256,7 @@ final class ToolbarView: NSView {
         // Toggle-looking buttons show state only where it means something.
         switch item {
         case .stats: b.state = statsOn ? .on : .off
-        case .display, .keys, .clipboard: b.state = openPanel == item ? .on : .off
+        case .display, .keys: b.state = openPanel == item ? .on : .off
         default: b.state = .off
         }
         onAction?(item, b)
