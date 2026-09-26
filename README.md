@@ -3,8 +3,8 @@
 <h1 align="center">Darpan</h1>
 
 <p align="center"><b>Stop paying for remote desktop.</b><br>
-Darpan is a free, open-source remote desktop: a native Mac app for your Linux computer. It feels
-local and stays private.</p>
+Darpan is a free, open-source remote desktop: use your Linux computer from a native Mac app. It
+feels local and stays private.</p>
 
 <p align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT license"></a>

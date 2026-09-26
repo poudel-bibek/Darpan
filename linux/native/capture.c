@@ -18,7 +18,8 @@
 //   stdin : one command per line:  "c N" add N credits · "k" next frame is a key frame ·
 //           "b KBPS" bitrate · "f FPS" max frame rate · "r" encode now · "q" quit
 //
-// Exit codes: 0 normal, 2 error, 3 screen size changed (restart me), 4 NVENC unavailable.
+// Exit codes: 0 normal, 2 error (also: the X server went away), 3 screen size changed (restart me),
+// 4 NVENC unavailable.
 
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -685,6 +686,17 @@ static int on_x_error(Display *d, XErrorEvent *ev) {
     return 0;
 }
 
+// The X server is gone: nothing more can be captured, and the host restarts us. Leave at once.
+// exit() would run the CUDA/NVENC exit handlers, which can deadlock on locks their threads hold;
+// the kernel frees the GPU context, and the shm segment is already marked for removal.
+static int on_x_gone(Display *d) {
+    (void)d;
+    static const char msg[] = "darpan-capture: X connection lost\n";
+    ssize_t w = write(STDERR_FILENO, msg, sizeof msg - 1);
+    (void)w;
+    _exit(2);
+}
+
 typedef struct {
     Display *dpy;
     Window root;
@@ -700,6 +712,7 @@ typedef struct {
 
 static int capture_open(Capture *c, const char *display) {
     XSetErrorHandler(on_x_error);
+    XSetIOErrorHandler(on_x_gone);
     c->dpy = XOpenDisplay(display);
     if (!c->dpy) { logf_("cannot open X display %s", display ? display : "(DISPLAY)"); return -1; }
     int scr = DefaultScreen(c->dpy);
