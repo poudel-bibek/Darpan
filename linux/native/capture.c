@@ -876,7 +876,6 @@ int main(int argc, char **argv) {
             uint64_t t1 = now_us();
             // Damage isn't news by itself: with a compositor, most damaged frames are identical.
             if (!changed && !force && !want_idr && !bench) {   // the viewer has this picture: send nothing
-                if (enc.vk && vkenc_skip(enc.vk)) { vk_failed = 1; goto out; }
                 dirty = 0;
                 next_allowed = t0 + min_interval;
                 continue;
