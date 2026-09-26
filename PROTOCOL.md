@@ -256,10 +256,11 @@ The original upload, for clients without `"fs"`. New clients send dropped files 
    `[0x02][uint32 id, big-endian][up to 256 KiB of data]`.
 4. Host acks progress `{"t":"fack","id":1,"n":<total bytes received>}`. Keep at most
    1 MiB un-acked.
-5. When `size` bytes have arrived: `{"t":"fdone","id":1,"path":"/home/…/Downloads/Darpan/report.pdf"}`.
+5. When `size` bytes have arrived: `{"t":"fdone","id":1,"path":"/home/…/Desktop/report.pdf"}`.
    Client may abort with `{"t":"fabort","id":1}`.
 
-Files land in `~/Downloads/Darpan/` (name sanitised, never overwrites: ` (1)` suffix).
+Files land on the desktop itself (`XDG_DESKTOP_DIR`, normally `~/Desktop`). The name is sanitised and never
+overwrites anything: ` (1)` is added instead.
 
 ---
 
