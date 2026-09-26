@@ -9,6 +9,7 @@ private final class FolderRemote: RemoteFS {
     var puts: [(String, String)] = []       // (path, exists)
     var mkdirs: [String] = []
     var ranges: [String?] = []
+    var hostile: [FileEntry] = []           // extra entries a malicious host adds to a deep listing
     private let fm = FileManager.default
 
     init(root: URL) { self.root = root }
@@ -32,6 +33,7 @@ private final class FolderRemote: RemoteFS {
             guard let names = try? fm.contentsOfDirectory(atPath: base.path) else { return done(.failure(.host("notfound", status: 404))) }
             out = names.map { entry(base.appendingPathComponent($0), name: $0) }
         }
+        if deep { out += hostile }
         DispatchQueue.global().async { done(.success(.init(path: path, entries: out, more: false))) }
     }
 
@@ -111,6 +113,12 @@ func filesTests() {
         eq(FileNames.join("/", "x"), "/x", "join at the root")
         eq(FileNames.parent("/srv/u"), "/srv", "parent")
         eq(FileNames.parent("/srv"), "/", "parent of a top folder")
+        for bad in ["", "/etc/passwd", "..", ".", "../x", "a/../../x", "a//b", "a/./b", "a/"] {
+            check(!FileNames.isSafeRelative(bad, nested: true), "unsafe name refused: \(bad.debugDescription)")
+        }
+        check(FileNames.isSafeRelative("a/b c/..d.txt", nested: true), "nested name accepted")
+        check(!FileNames.isSafeRelative("a/b", nested: false), "a top-level name has no /")
+        check(FileNames.isSafeRelative("..hidden", nested: false), "a name starting with .. is fine")
     }
 
     section("listing JSON") {
@@ -204,6 +212,20 @@ func filesTests() {
         eq(remote.ranges.prefix(2).map { $0 ?? "-" }, ["-", "etag-1"], "the retry resumes with the ETag")
         check(!fm.fileExists(atPath: FSClient.partialFile(for: down.appendingPathComponent("big.bin")).path), "no partial file left")
         eq(try? String(contentsOf: down.appendingPathComponent("proj/src/deep/x.c")), "three", "folder tree received")
+
+        // A host naming entries outside the destination is refused, and nothing is written.
+        remote.hostile = [FileEntry(name: "../../escaped.txt", kind: .file, size: 3, modified: Date())]
+        let evil = tmp.appendingPathComponent("evil")
+        try fm.createDirectory(at: evil, withIntermediateDirectories: true)
+        t.receive([FileEntry(name: "proj", kind: .directory, size: 0, modified: Date()),
+                   FileEntry(name: "../up", kind: .file, size: 1, modified: Date()),
+                   FileEntry(name: "/etc/x", kind: .file, size: 1, modified: Date())], from: "/srv", to: evil)
+        waitIdle(t, "hostile names")
+        eq(t.items.last?.state, .failed("the remote computer sent an invalid name"), "a deep listing with ../ is refused")
+        eq(t.items.filter { $0.name == "../up" || $0.name == "/etc/x" }.count, 0, "unsafe top-level names aren't queued")
+        check(!fm.fileExists(atPath: tmp.appendingPathComponent("escaped.txt").path) && !fm.fileExists(atPath: evil.appendingPathComponent("proj").path),
+              "nothing written outside, nothing inside either")
+        remote.hostile = []
 
         t.ask = { _, _, reply in reply(.keepBoth, false) }
         t.receive([FileEntry(name: "big.bin", kind: .file, size: 100_000, modified: Date())], from: "/srv", to: down)

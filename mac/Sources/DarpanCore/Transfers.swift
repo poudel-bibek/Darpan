@@ -94,7 +94,7 @@ public final class Transfers {
 
     public func receive(_ entries: [FileEntry], from folder: String, to local: URL) {
         let b = Batch()
-        for e in entries where e.kind != .other {
+        for e in entries where e.kind != .other && FileNames.isSafeRelative(e.name, nested: false) {
             add(e.name, .receive, folder: e.isDirectory, .receive(e, folder: folder, to: local, batch: b))
         }
         pump()
@@ -349,6 +349,9 @@ public final class Transfers {
                 case .failure(let e): return self.end(id, .failed(e.message))
                 }
                 guard !l.more else { return self.end(id, .failed(FSError.tooMany.message)) }
+                guard l.entries.allSatisfy({ FileNames.isSafeRelative($0.name, nested: true) }) else {
+                    return self.end(id, .failed("the remote computer sent an invalid name"))
+                }
                 do {
                     try self.fm.createDirectory(at: dest, withIntermediateDirectories: true)
                     for d in l.entries where d.isDirectory {

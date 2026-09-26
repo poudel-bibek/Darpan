@@ -330,6 +330,15 @@ public enum FileNames {
         return name
     }
 
+    /// A name from the host that is safe to put under a local folder: relative, and no part of it
+    /// empty, `.` or `..` (a listing is data from the other computer; it mustn't write elsewhere).
+    public static func isSafeRelative(_ name: String, nested: Bool) -> Bool {
+        guard !name.isEmpty, !name.hasPrefix("/"), !name.contains("\0") else { return false }
+        let parts = name.split(separator: "/", omittingEmptySubsequences: false)
+        guard nested || parts.count == 1 else { return false }
+        return parts.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+    }
+
     /// Joins a remote folder and a relative name with `/`.
     public static func join(_ folder: String, _ name: String) -> String {
         folder.hasSuffix("/") ? folder + name : folder + "/" + name
