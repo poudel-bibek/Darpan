@@ -1,4 +1,6 @@
+import CoreGraphics
 import CoreMedia
+import ImageIO
 import CoreVideo
 import Foundation
 import DarpanCore
@@ -249,4 +251,67 @@ func videoTests() {
         let bad = decode([videoMessage(Data([0, 0, 1, 0x65, 0xFF]), key: true, stream: 1, seq: 3)], into: dec)
         eq(bad, [.skipped], "key frame without SPS/PPS is skipped")
     }
+    section("VideoToolbox decode of non-reference P frames (host fixture, 640×360)") {
+        // Recorded from the host's encoder: the pictures it sends when a probe changed something
+        // (PR #36) are non-reference P frames (nal_ref_idc 0). All must decode, and the last
+        // picture must match FFmpeg's decode of the same bytes.
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../linux/tools/fixtures").standardized
+        let stream = try Data(contentsOf: dir.appendingPathComponent("nonref-thin-line-640x360.h264"))
+        let aus = pictures(stream)
+        eq(aus.count, 139, "pictures in the fixture")
+        let nonRef = aus.filter { au in AnnexB.split(au).contains { au[$0.lowerBound] & 0x1F == 1 && au[$0.lowerBound] & 0x60 == 0 } }.count
+        eq(nonRef, 68, "non-reference pictures")
+        let c = Collector()
+        let dec = H264Decoder { c.add($0, $1, $2) }
+        let msgs = aus.enumerated().map { videoMessage($0.element, key: $0.offset == 0, stream: 2, seq: UInt32($0.offset)) }
+        let results = decode(msgs, into: dec)
+        check(results.allSatisfy { $0 == .submitted }, "all submitted")
+        dec.invalidate()
+        eq(c.frames.count, 139, "one output per picture")
+        eq(c.frames.filter { $0.2 != noErr || $0.1 == nil }.count, 0, "no decode errors")
+        guard let last = c.frames.last?.1 else { return }
+        let psnr = lumaPSNR(last, png: dir.appendingPathComponent("nonref-thin-line-640x360-last.png"))
+        check(psnr > 30, "last picture matches FFmpeg's decode (luma PSNR \(String(format: "%.1f", psnr)) dB)")
+    }
 }
+
+/// Annex-B stream without AUDs → one access unit per slice, parameter sets kept with the next slice.
+private func pictures(_ d: Data) -> [Data] {
+    var out: [Data] = []
+    var cur = Data()
+    for r in AnnexB.split(d) {
+        cur.append(contentsOf: [0, 0, 0, 1])
+        cur.append(d[r])
+        let t = d[r.lowerBound] & 0x1F
+        if t == 1 || t == 5 { out.append(cur); cur = Data() }
+    }
+    return out
+}
+
+/// Luma PSNR of a decoded 420v picture against an RGB PNG (converted with BT.709, video range).
+private func lumaPSNR(_ img: CVImageBuffer, png: URL) -> Double {
+    guard let src = CGImageSourceCreateWithURL(png as CFURL, nil), let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return 0 }
+    let w = CVPixelBufferGetWidth(img), h = CVPixelBufferGetHeight(img)
+    guard cg.width == w, cg.height == h else { return 0 }
+    var rgba = [UInt8](repeating: 0, count: w * h * 4)
+    let ctx = CGContext(data: &rgba, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+    CVPixelBufferLockBaseAddress(img, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(img, .readOnly) }
+    let y = CVPixelBufferGetBaseAddressOfPlane(img, 0)!.assumingMemoryBound(to: UInt8.self)
+    let stride = CVPixelBufferGetBytesPerRowOfPlane(img, 0)
+    var se = 0.0
+    for row in 0..<h {
+        for col in 0..<w {
+            let p = (row * w + col) * 4
+            let ref = 16 + 219 * (0.2126 * Double(rgba[p]) + 0.7152 * Double(rgba[p + 1]) + 0.0722 * Double(rgba[p + 2])) / 255
+            let d = Double(y[row * stride + col]) - ref
+            se += d * d
+        }
+    }
+    let mse = se / Double(w * h)
+    return mse == 0 ? 99 : 10 * log10(255 * 255 / mse)
+}
+
