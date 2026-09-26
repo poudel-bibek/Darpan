@@ -28,9 +28,3 @@ that's big enough.
 * **The work:** NVIDIA's MetaModes (`ViewPortIn`/`ViewPortOut`) or xrandr `--fb` with a transform,
   tested across monitors and drivers. The physical monitor shows pillarboxes meanwhile.
 * **Same rules:** nothing changes unless you choose it, and nothing runs while nobody is connected.
-
-## The version on Linux too
-
-The Mac app shows its version in *About Darpan*; the Linux window shows none (only `darpan version`
-in a terminal does). Show it in the window as well, e.g. an *About Darpan* entry in its menu, so
-both sides tell you what they run the same way.

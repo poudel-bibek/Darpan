@@ -4,7 +4,9 @@
 
 <p align="center"><b>Stop paying for remote desktop.</b><br>
 Darpan is a high-performance, lightweight remote desktop: use your Linux computer from a native
-Mac app. It feels local, stays private, and is free and open source.</p>
+Mac app. It feels local and stays private.</p>
+
+<p align="center"><b>Free and open source · No account with us · No subscription</b></p>
 
 <p align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT license"></a>
@@ -14,43 +16,27 @@ Mac app. It feels local, stays private, and is free and open source.</p>
 
 <p align="center"><img src="docs/demo.svg" width="880" alt="Connecting from the Darpan Mac app, starting a training run on the Linux desktop, and switching to full screen"></p>
 
-## Download
-
-**The only setup is a free [Tailscale](https://tailscale.com) account.** Darpan has it built in, so
-there's no port forwarding and nothing to change on your router.
-
-| Install on | Download | |
-|---|---|---|
-| **Linux**: the computer you connect **to** | [darpan_amd64.deb](../../releases/latest/download/darpan_amd64.deb) | Ubuntu 24.04 or similar |
-| **Mac**: the computer you connect **from** | [Darpan.dmg](../../releases/latest/download/Darpan.dmg) | macOS 14 or later, Apple silicon or Intel |
-| **Or a browser**, optional: on any other computer | no Darpan app; [Tailscale](https://tailscale.com/download) on that device | Chrome, Safari, Edge or Firefox |
-
-All versions: [Releases](../../releases).
-
 ## Get started
 
-**1. On the Linux computer**, install the package:
+You sign in with the Google, Apple, GitHub or Microsoft account you already have, through
+[Tailscale](https://tailscale.com)'s free private network, which is built in. There's no Darpan account,
+no port forwarding and nothing to change on your router.
 
-```bash
-sudo apt install ~/Downloads/darpan_amd64.deb
-```
+1. **On the Linux computer**, the one you connect to: download
+   [darpan_amd64.deb](../../releases/latest/download/darpan_amd64.deb) and double-click it to install
+   (or run `sudo apt install ~/Downloads/darpan_amd64.deb`). Open **Darpan** and click **Get started**.
+   It shows you a password.
+2. <a name="mac-app"></a>**On the Mac**, the one you connect from: download
+   [Darpan.dmg](../../releases/latest/download/Darpan.dmg), drag Darpan to Applications and open it.
+   The first time, macOS asks you to allow it under System Settings → Privacy & Security →
+   **Open Anyway**, because Darpan isn't notarized by Apple.
+3. **Connect:** sign in with the same account, click your Linux computer and enter its password.
 
-Open **Darpan** from your apps. Click **Sign in** (a free [Tailscale](https://tailscale.com) account
-with Google, GitHub, Microsoft or Apple), then **Publish**. Darpan shows you an **address** and a
-**password**.
+**From a browser instead**, on any other computer: install [Tailscale](https://tailscale.com/download),
+sign in with the same account, and open the address the Darpan window on Linux shows.
 
-<a name="mac-app"></a>**2. On the Mac**, open `Darpan.dmg` and drag **Darpan** to Applications. Open it. If macOS won't open
-it the first time, go to System Settings → Privacy & Security and click **Open Anyway**. Then click
-**Sign in** with the same account.
-
-**3. Connect.** Darpan lists your Linux computers. Click yours; the first time, enter the password
-Darpan shows on it. That's it.
-
-> **From a browser instead:** install [Tailscale](https://tailscale.com/download) on that device,
-> sign in with the same account, and open your Linux computer's address:
-> `https://<computer>.<tailnet>.ts.net`. Darpan shows it on the Linux computer, and it's also in the
-> [Tailscale admin console](https://login.tailscale.com/admin/machines). In Chrome, *Install Darpan*
-> turns it into its own window.
+<sub>Linux: Ubuntu 24.04 or similar, in an X11 session. Mac: macOS 14 or later. Browsers: Chrome, Safari,
+Edge or Firefox. All versions: [Releases](../../releases).</sub>
 
 ## Why Darpan
 
@@ -116,9 +102,9 @@ Wi-Fi (Darpan 1.4.0; its video path is the same in 1.4.1). CPU is a share of one
 A frame reaches the Mac's screen about 27 ms after the Linux computer captures it, over Wi-Fi. Of
 that, turning a change into a video frame takes the Linux computer 5 ms, and the Mac decodes it in
 hardware in about 4 ms.
-**Free and open source** (MIT): no subscription, and no account with us.
 
-## Everyday use
+<details>
+<summary><b>Everyday use</b></summary>
 
 * **Copy and paste** with ⌘C and ⌘V. The clipboard syncs both ways. In Linux terminals (with ⌘ as Ctrl, the default), ⌘ acts on the terminal
   (⌘C copies, ⌘V pastes, ⌘T opens a tab) and ⌃ goes to the shell (⌃C interrupts, ⌃R searches).
@@ -143,12 +129,18 @@ hardware in about 4 ms.
   (⌘Tab, ⌘Space, Mission Control) stay on the Mac unless you turn on *Send ⌘Tab, ⌘Space…* in the
   toolbar's keyboard panel and allow Darpan under System Settings → Privacy & Security → Accessibility.
 
-## Updates
 
-* **Linux:** new versions arrive through Software Updater, like any other package.
+</details>
+
+<details>
+<summary><b>Updates</b></summary>
+
+* **Linux:** new versions arrive through Software Updater, or with one click in the Darpan window.
 * **Mac:** Darpan checks for a new version once a day while it's open, and asks before installing. It's
   the only request Darpan makes outside your private network; turn it off with ⚙︎ → *Check for Updates
   Automatically*.
+
+</details>
 
 <details>
 <summary><b>Requirements and limitations</b></summary>
