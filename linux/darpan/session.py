@@ -14,7 +14,7 @@ import time
 import zlib
 
 from . import audio
-from . import auth, capture, config, keymap, tailscale
+from . import auth, capture, config, files, keymap, tailscale
 from .clipboard import Clipboard
 from .screen import Screen
 from .x11 import BUTTONS, X11, png_rgba
@@ -278,7 +278,7 @@ class Session:
         hub._refresh_url()
         w, h = hub.x.size
         self.ws.send_json({"t": "ok", "sid": self.sid, "screen": {"w": w, "h": h}, "codecs": ["h264"],
-                           "caps": ["clip", "files", "text", "cursor", "res"] + (["audio"] if hub.audio_ok else []),
+                           "caps": ["clip", "files", "text", "cursor", "res", "fs"] + (["audio"] if hub.audio_ok else []),
                            "url": hub.url,
                            "enc": "nvenc" if hub.encoder else "x264", "gpu": hub.encoder})
         if hub.modes:
@@ -293,6 +293,7 @@ class Session:
         hub.sessions.discard(self)
         for t in [t for t, (s, _) in hub.audio_tokens.items() if s is self]:
             del hub.audio_tokens[t]
+        hub.files.forget(self)             # its file token dies and its transfers stop
         for ws in list(self.sound):
             ws.close(4003, "session ended")
         writers = [u.task for u in self.uploads.values() if u.task]
@@ -686,6 +687,9 @@ class Session:
                            "channels": audio.CHANNELS, "frame_ms": 10, "pre_skip": hub.audio_pre_skip})
 
     # ------------------------------------------------------------------ uploads
+    def on_fs(self, m):
+        self.ws.send_json(self.hub.files.hello(self, _desktop_dir()))
+
     def on_fput(self, m):
         fid, size = int(m.get("id", 0)) & 0xFFFFFFFF, int(m.get("size", -1))
         if fid in self.uploads or not 0 <= size <= 64 << 30 or len(self.uploads) >= 8:
@@ -774,7 +778,7 @@ class Session:
         "start": on_start, "stop": on_stop, "cfg": on_cfg, "kf": on_kf, "ack": on_ack,
         "mm": on_mm, "mb": on_mb, "wh": on_wh, "key": on_key, "rel": on_rel, "txt": on_txt,
         "clip": on_clip, "ping": on_ping, "res": on_res, "modes": on_modes,
-        "fput": on_fput, "fabort": on_fabort, "audio": on_audio,
+        "fput": on_fput, "fabort": on_fabort, "audio": on_audio, "fs": on_fs,
     }
 
 
@@ -814,6 +818,7 @@ class Hub:
         self.sound = None                # audio.Capture while anyone listens
         self.audio_fails = 0
         self.audio_retry_at = 0.0
+        self.files = files.Files(self)    # /fs/ requests (PROTOCOL.md §7.1)
         self.loop = None
 
     async def start(self):

@@ -1,7 +1,8 @@
 """HTTP/1.1 + WebSocket (RFC 6455) server on asyncio — standard library only.
 
-Only three kinds of request exist: the web client's static files (held in memory,
-pre-gzipped), GET /api/info, and the /ws and /audio WebSockets. Everything else is refused early.
+Only four kinds of request exist: the web client's static files (held in memory,
+pre-gzipped), GET /api/info, the /ws and /audio WebSockets, and file requests under /fs/
+(files.py). Everything else is refused early.
 """
 import asyncio
 import base64
@@ -200,6 +201,16 @@ def _host_allowed(host):
     return ip.is_loopback or ip in _TS_V4 or ip in _TS_V6
 
 
+def _origin_allowed(headers):
+    """Browsers always send an Origin on these requests (native clients send none): it must be us."""
+    origin = headers.get("origin")
+    if origin is None:
+        return True
+    o = urlsplit(origin).netloc.lower()
+    allowed = {h for h in (headers.get("host", "").lower(), headers.get("x-forwarded-host", "").lower()) if h}
+    return bool(o) and o in allowed        # rejects "null" (sandboxed iframes, data: URLs) too
+
+
 class Server:
     def __init__(self, hub, cfg):
         self.hub = hub
@@ -242,13 +253,18 @@ class Server:
                 first = False
                 if req is None:
                     break
-                method, path, headers = req
+                method, path, query, headers = req
                 if not _host_allowed(headers.get("host")):
                     self._simple(writer, 421, "Misdirected Request")
                     break
                 if path in ("/ws", "/audio"):
                     await self._websocket(reader, writer, peer, headers, path)
                     return
+                if path.startswith("/fs/"):
+                    if not await self.hub.files.handle(reader, writer, method, path, query, headers,
+                                                       _origin_allowed(headers)):
+                        break
+                    continue
                 keep = self._respond(writer, method, path, headers)
                 await writer.drain()
                 if not keep:
@@ -282,7 +298,8 @@ class Server:
                 headers[k.strip().lower()] = v.strip()
         if len(headers) > 64:
             raise ValueError("too many headers")
-        return parts[0], parts[1].split("?", 1)[0], headers
+        path, _, query = parts[1].partition("?")
+        return parts[0], path, query, headers
 
     def _simple(self, writer, code, text, extra=""):
         body = text.encode()
@@ -327,14 +344,10 @@ class Server:
                 or headers.get("sec-websocket-version") != "13" or len(key) != 24):
             self._simple(writer, 400, "Bad Request")
             return writer.close()
-        origin = headers.get("origin")
-        if origin is not None:            # browsers always send one; native clients send none
-            o = urlsplit(origin).netloc.lower()
-            allowed = {h for h in (headers.get("host", "").lower(), headers.get("x-forwarded-host", "").lower()) if h}
-            if not o or o not in allowed:  # rejects "null" (sandboxed iframes, data: URLs) too
-                log.warning("rejected WebSocket from origin %s", origin)
-                self._simple(writer, 403, "Forbidden")
-                return writer.close()
+        if not _origin_allowed(headers):
+            log.warning("rejected WebSocket from origin %s", headers.get("origin"))
+            self._simple(writer, 403, "Forbidden")
+            return writer.close()
         accept = base64.b64encode(hashlib.sha1(key.encode() + _GUID).digest()).decode()
         writer.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                       "Sec-WebSocket-Accept: %s\r\n\r\n" % accept).encode())

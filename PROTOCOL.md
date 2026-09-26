@@ -18,6 +18,7 @@ the host encodes fewer frames instead of buffering stale ones.
     on the host, valid certificate).
   * On the host itself (testing): `ws://127.0.0.1:47470/ws`.
 * The host serves the browser client at `/` over the same origin.
+* File browsing and transfers are plain HTTPS requests under `/fs/` (§7.1).
 * `GET /api/info` (no auth) returns JSON:
   ```json
   {"app":"darpan","ver":"1.0.0","proto":1,"host":"workstation",
@@ -69,7 +70,7 @@ the host encodes fewer frames instead of buffering stale ones.
 3. Host replies either
    ```json
    {"t":"ok","sid":"<hex session id>","screen":{"w":2560,"h":1440},
-    "codecs":["h264"],"caps":["clip","files","text","cursor","res"],"url":"https://…",
+    "codecs":["h264"],"caps":["clip","files","text","cursor","res","fs"],"url":"https://…",
     "enc":"nvenc","gpu":"NVIDIA GeForce RTX 4090"}
    ```
    or
@@ -215,7 +216,41 @@ key-up for keys pressed while ⌘ is held: send those as an immediate down+up pa
 
 ---
 
-## 7. File upload (client → host)
+## 7. Files
+
+### 7.1 Browsing and transfers (HTTP)
+
+For clients when `ok.caps` contains `"fs"`. File data never travels over `/ws`: each request is
+its own HTTPS request to the same origin, so video, sound and input never wait behind a file.
+
+1. **Token.** On `/ws` send `{"t":"fs"}`. The host answers
+   `{"t":"fs","token":"<base64url, 32 bytes>","home":"/home/…","inbox":"/home/…/Desktop"}`.
+   The token is valid until that session ends, and asking again returns the same one. Send it with
+   every request as `Authorization: Bearer <token>`.
+2. **Requests.** `path=` is an absolute path, UTF-8, percent-encoded.
+
+| request | answer |
+|---|---|
+| `GET /fs/list?path=P` | `200`, JSON `{"path":P,"entries":[{"name":"a.txt","type":"f","size":12,"mtime":1727350000,"link":false}],"more":false}`. `type`: `d` directory, `f` regular file, `o` anything else (socket, device…). `link`: it is a symbolic link, and `type` describes its target. Names that aren't valid UTF-8 are left out. At most 20 000 entries; `more` is `true` if there were more. |
+| `GET /fs/list?path=P&deep=1` | The same for everything below P, for sending a whole folder: `name` is relative to P with `/` separators, a directory comes before its contents, links to directories aren't followed, at most 50 000 entries. |
+| `GET /fs/file?path=P` (also `HEAD`) | `200` and the bytes, with `Content-Length`, `Last-Modified`, `ETag` and `Accept-Ranges: bytes`. `Range: bytes=N-` or `bytes=N-M` gives `206` with `Content-Range`. To resume, send it with `If-Range: <the ETag you got>`: if the file has changed since, the answer is `200` with the whole file, so a resumed download never mixes two versions. Regular files only. |
+| `PUT /fs/file?path=P&exists=fail` with a body (`Content-Length` required) | Writes a hidden temporary file next to P and renames it into place once complete, so an aborted upload leaves nothing behind. The parent directory must exist. If P exists: `exists=fail` (the default) answers `409 exists`, `replace` replaces it, `rename` picks `name (1).ext`, `name (2).ext`… `201`, JSON `{"path":<the final path>}`. |
+| `POST /fs/mkdir?path=P` | `201`, JSON `{"path":P}`. `409 exists` if it already exists. |
+| `POST /fs/ticket?path=P` | `200`, JSON `{"ticket":"…"}`: `GET /fs/file?ticket=…` then works once, within 60 s, without an `Authorization` header, and answers with `Content-Disposition: attachment`. For browsers, which can't add a header to a download. |
+
+3. **Errors** are JSON `{"e":"<code>"}` with the status: `400 invalid` (not an absolute path, bad
+   query), `401 token`, `403 denied` (no permission), `404 notfound`, `409 exists`, `409 notdir`,
+   `409 isdir`, `409 notfile` (a socket, device or pipe), `411 length` (a PUT without `Content-Length`),
+   `416 range`, `429 busy` (more than 4 requests at once per session), `507 nospace`, `500 failed`. A refused
+   PUT is answered before its body is read (the host reads on for up to 2 s, so the answer isn't lost to a
+   reset); list the folder first, so a big upload isn't sent just to be refused.
+4. Everything runs as the logged-in user, like the desktop the client already controls. To send or
+   receive a folder, a client lists it with `deep=1`, then uses `mkdir` and `PUT`, or `GET`.
+
+### 7.2 Upload to the desktop over /ws
+
+The original upload, for clients without `"fs"`. New clients send dropped files with
+`PUT /fs/file?path=<inbox>/<name>&exists=rename` instead.
 
 1. `{"t":"fput","id":1,"name":"report.pdf","size":123456}` (`id` uint32 chosen by client)
 2. Host: `{"t":"fok","id":1}` or `{"t":"ferr","id":1,"e":"reason"}`.
