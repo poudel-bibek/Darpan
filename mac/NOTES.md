@@ -1,6 +1,6 @@
 # Notes on the Mac client
 
-Deviations from `MAC_PROMPT.md`, observations about the host and
+Design choices, observations about the host and
 protocol (nothing in `linux/` or `PROTOCOL.md` was changed), and what hasn't been tested yet.
 
 ## Host / protocol observations (all resolved in host 1.0.1)
@@ -16,7 +16,7 @@ protocol (nothing in `linux/` or `PROTOCOL.md` was changed), and what hasn't bee
   and a paused viewer's encoder stays down until the next `start`.
 * The linux side accepted the deviations below.
 
-## Deviations from MAC_PROMPT.md
+## Design choices
 
 * **Activity:** `ProcessInfo.beginActivity` uses `[.userInitiatedAllowingIdleSystemSleep,
   .latencyCritical]` rather than plain `.userInitiated`. A forgotten session shouldn't keep a

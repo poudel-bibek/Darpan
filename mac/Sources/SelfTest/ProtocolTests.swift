@@ -2,7 +2,7 @@ import Foundation
 import DarpanCore
 
 func protocolTests() {
-    section("auth: PBKDF2 + HMAC known-answer vector (MAC_PROMPT §3)") {
+    section("auth: PBKDF2 + HMAC known-answer vector (PROTOCOL.md §2)") {
         let salt = Data(base64Encoded: "c2FsdHNhbHRzYWx0c2FsdA==")!
         let nonce = Data(base64Encoded: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")!
         let key = try Auth.deriveKey(password: "correct horse battery", salt: salt, iterations: 200_000)
