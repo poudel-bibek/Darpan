@@ -55,7 +55,9 @@ it the first time, go to System Settings → Privacy & Security and click **Open
 * **The toolbar** is the small tab at the top of the window. Hover over it for full screen, display and
   quality, keyboard, clipboard and files. Drag it sideways if it's in the way.
 * **Shortcuts**: ⌘ works as Ctrl on Linux, and other ⌘ shortcuts go to Linux too. Three stay on the Mac: ⌃⌥⌘F full
-  screen, ⌃⌥⌘D disconnect, and ⌃⌥⌘⎋ to release the keyboard (press it again to capture).
+  screen, ⌃⌥⌘D disconnect, and ⌃⌥⌘⎋ to release the keyboard (press it again to capture). System shortcuts
+  (⌘Tab, ⌘Space, Mission Control) stay on the Mac unless you turn on *Send ⌘Tab, ⌘Space…* in the
+  toolbar's keyboard panel and allow Darpan under System Settings → Privacy & Security → Accessibility.
 
 <details>
 <summary><b>Requirements and limitations</b></summary>
@@ -97,8 +99,8 @@ sudo apt remove darpan
 rm -rf ~/.config/darpan ~/.local/state/darpan ~/.local/share/darpan   # settings, password, network state
 ```
 
-On the Mac, drag Darpan from Applications to the Trash, and delete `~/Library/Application Support/Darpan`
-(its network sign-in). Then remove both devices in the
+On the Mac, drag Darpan from Applications to the Trash, delete `~/Library/Application Support/Darpan`
+(its network sign-in), and in Keychain Access delete the `dev.darpan.Darpan` items (saved sign-ins). Then remove both devices in the
 [Tailscale admin console](https://login.tailscale.com/admin/machines).
 
 </details>
