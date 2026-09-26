@@ -17,14 +17,16 @@ enum NetworkMode: String, CaseIterable {
 final class Settings: ObservableObject {
     static let shared = Settings()
 
+    /// Bitrate ceilings (kbit/s); the host still adapts below them. The same four as the browser.
     static let qualities: [(name: String, kbps: Int)] =
-        [("Auto", 0), ("Low", 3000), ("Balanced", 10000), ("High", 20000), ("Max", 50000)]
+        [("Faster Speed", 6000), ("Balanced", 15000), ("Higher Quality", 30000), ("Max", 50000)]
+    static let defaultQuality = 15000
     static let frameRates = [30, 60, 120]
 
     private let d = UserDefaults.standard
 
     @Published var scale: ScaleMode { didSet { d.set(scale.rawValue, forKey: "scale") } }
-    /// Maximum bitrate in kbit/s, 0 = adaptive.
+    /// Maximum bitrate in kbit/s (one of `qualities`).
     @Published var quality: Int { didSet { d.set(quality, forKey: "quality") } }
     @Published var fps: Int { didSet { d.set(fps, forKey: "fps") } }
     @Published var command: CommandKey { didSet { d.set(command.rawValue, forKey: "command") } }
@@ -49,10 +51,9 @@ final class Settings: ObservableObject {
     @Published private(set) var hosts: [String] { didSet { d.set(hosts, forKey: "hosts") } }
 
     private init() {
-        d.register(defaults: ["quality": 0, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true, "checkUpdates": true])
+        d.register(defaults: ["quality": Self.defaultQuality, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true, "checkUpdates": true])
         scale = ScaleMode(rawValue: d.string(forKey: "scale") ?? "") ?? .fit
-        let q = d.integer(forKey: "quality")
-        quality = Self.qualities.contains { $0.kbps == q } ? q : 0
+        quality = Self.migrated(quality: d.integer(forKey: "quality"))
         let f = d.integer(forKey: "fps")
         fps = Self.frameRates.contains(f) ? f : 60
         command = CommandKey(rawValue: d.string(forKey: "command") ?? "") ?? .ctrl
@@ -67,6 +68,18 @@ final class Settings: ObservableObject {
         network = NetworkMode(rawValue: d.string(forKey: "network") ?? "") ?? .builtIn
         checkUpdates = d.bool(forKey: "checkUpdates")
         hosts = (d.stringArray(forKey: "hosts") ?? []).filter { (try? HostAddress(parsing: $0)) != nil }
+    }
+
+    /// A saved quality from before the four choices → the nearest new one (the old Auto and
+    /// 10 Mbit/s become Balanced).
+    static func migrated(quality q: Int) -> Int {
+        switch q {
+        case 6000, 15000, 30000, 50000: return q
+        case 1..<10000: return 6000
+        case 20000..<50000: return 30000
+        case 50000...: return 50000
+        default: return defaultQuality
+        }
     }
 
     func noteHost(_ origin: String) {
