@@ -7,12 +7,14 @@ set -euo pipefail
 deb=$(realpath "$1")
 mkdir -p "$2"
 cd "$2"
-rm -f InRelease
-cp "$deb" darpan_amd64.deb
+rm -f InRelease darpan_*_amd64.deb
+# The version in the name: a cached copy of an older .deb can't meet a newer index (Pages caches).
+name=$(dpkg-deb -f "$deb" Package)_$(dpkg-deb -f "$deb" Version)_amd64.deb
+cp "$deb" "$name"
 apt-ftparchive packages . > Packages
 release=$(mktemp)                       # outside the directory, so the index doesn't list itself
 trap 'rm -f "$release"' EXIT
 apt-ftparchive -o APT::FTPArchive::Release::Origin=Darpan -o APT::FTPArchive::Release::Label=Darpan \
     -o APT::FTPArchive::Release::Architectures=amd64 release . > "$release"
 gpg --batch --yes --clearsign --digest-algo SHA512 -o InRelease "$release"
-echo "wrote $(pwd)/{darpan_amd64.deb,Packages,InRelease}"
+echo "wrote $(pwd)/{$name,Packages,InRelease}"

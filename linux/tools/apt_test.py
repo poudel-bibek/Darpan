@@ -79,7 +79,8 @@ def main():
 
     print("apt index (packaging/apt-index.sh)")
     r = run(index, deb, objects, env=good)
-    ok("index written", r.returncode == 0 and all(os.path.exists(os.path.join(objects, n)) for n in ("darpan_amd64.deb", "Packages", "InRelease")), r.stderr.strip()[-80:])
+    ok("index written", r.returncode == 0 and all(os.path.exists(os.path.join(objects, n)) for n in
+                                                    ("darpan-apt-test_9.9.9_amd64.deb", "Packages", "InRelease")), r.stderr.strip()[-80:])
     listed = [l.split()[-1] for l in open(os.path.join(objects, "InRelease")) if l.startswith(" ") and len(l.split()) == 3]
     ok("index lists Packages only", set(listed) == {"Packages"}, str(sorted(set(listed))))
     r = apt("apt-get", "update")
