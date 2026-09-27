@@ -139,6 +139,8 @@ figcaption { color: var(--muted); font-size: 14px; margin-top: 10px; }
 .perf th, .perf td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .perf thead th { color: var(--muted); font-weight: 600; font-size: 13px; }
 .perf tbody th { font-weight: 600; }
+.perf sup { margin-left: 1px; color: var(--muted); font-size: .75em; line-height: 0; }
+.table-note { max-width: 720px; margin: 14px auto 0; padding: 0 10px; color: var(--muted); font-size: 13px; font-style: italic; }
 
 /* the changelog: one column; each release is a title, a line of version and date, then what changed */
 main.changelog { max-width: 752px; }
