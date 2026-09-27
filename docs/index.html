@@ -121,5 +121,25 @@
   <p>Free and open source (MIT) · <a href="https://github.com/poudel-bibek/Darpan">Source on GitHub</a> · <a href="https://github.com/poudel-bibek/Darpan/releases">All releases</a>
     · <a href="changelog.html">Changelog</a> · <a href="/">My website</a></p>
 </footer>
+<script>
+// Why Darpan: one card in each group stands forward, and the spotlight moves on by itself while the group
+// is on screen. Pointing at a card brings it forward. Nothing moves with reduced motion or on a phone.
+for (const group of document.querySelectorAll('.cards')) {
+  const cards = [...group.children], calm = matchMedia('(prefers-reduced-motion: reduce), (max-width: 760px)');
+  let at = 0, timer = 0, seen = false, over = false;
+  const show = (k) => { at = k; cards.forEach((c, j) => c.classList.toggle('on', j === k)); };
+  const tick = () => {
+    clearInterval(timer);
+    timer = seen && !over && !calm.matches ? setInterval(() => show((at + 1) % cards.length), 3200) : 0;
+  };
+  cards.forEach((c, k) => c.addEventListener('mouseenter', () => show(k)));
+  group.addEventListener('mouseenter', () => { over = true; tick(); });
+  group.addEventListener('mouseleave', () => { over = false; tick(); });
+  calm.addEventListener('change', tick);
+  new IntersectionObserver(([e]) => { seen = e.isIntersecting; tick(); }, {threshold: 0.5}).observe(group);
+  group.classList.add('live');
+  show(0);
+}
+</script>
 </body>
 </html>

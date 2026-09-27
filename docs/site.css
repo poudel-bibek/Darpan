@@ -121,11 +121,14 @@ figcaption { color: var(--muted); font-size: 14px; margin-top: 10px; }
 .note { max-width: 720px; margin: 0 auto 6px; color: var(--muted); font-size: 14px; }
 .note b { color: var(--fg); font-weight: 600; }
 
-/* why Darpan: three groups of three */
+/* why Darpan: three groups of three; in each, one card stands forward (the script moves it on) */
 .group { margin-top: 56px; }
 .group h3 { font-size: 22px; margin: 0 0 18px; }
-.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.card { margin: 0; padding: 10px 10px 22px; background: var(--soft); border-radius: 22px; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.card { margin: 0; padding: 10px 10px 22px; background: var(--soft); border-radius: 22px;
+  transition: transform .6s cubic-bezier(.2, .8, .2, 1), opacity .6s, box-shadow .6s; }
+.live .card { transform: scale(.96); opacity: .6; }
+.live .card.on { transform: scale(1.04); opacity: 1; box-shadow: 0 20px 44px rgba(0, 0, 0, .16); }
 .card img { display: block; width: 100%; border-radius: 14px; }
 .card figcaption { margin: 0; padding: 16px 10px 0; font-size: 14px; line-height: 1.45; }
 .card figcaption b { display: block; margin-bottom: 4px; color: var(--fg); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
@@ -135,22 +138,23 @@ figcaption { color: var(--muted); font-size: 14px; margin-top: 10px; }
 .perf thead th { color: var(--muted); font-weight: 600; font-size: 13px; }
 .perf tbody th { font-weight: 600; }
 
-/* the changelog: version and date on the left, what changed on the right */
+/* the changelog: one column; each release is a title, a line of version and date, then what changed */
+main.changelog { max-width: 752px; }
 .page-head { margin: 72px 0 8px; }
 .page-head h1 { font-size: clamp(36px, 7vw, 52px); letter-spacing: -0.03em; margin: 0 0 12px; }
 .page-head .lede { margin: 0; }
-.release { display: grid; grid-template-columns: 200px minmax(0, 640px); gap: 40px; padding-top: 64px; }
-.release + .release { margin-top: 64px; border-top: 1px solid var(--line); }
-.release .meta { position: sticky; top: 84px; align-self: start; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-size: 13px; color: var(--muted); }
-.ver { padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--soft); color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
-.entry h2 { text-align: left; font-size: clamp(24px, 4vw, 30px); margin: 0 0 10px; }
-.entry .intro { margin: 0 0 8px; color: var(--muted); font-size: 18px; line-height: 1.5; }
-.entry h3 { font-size: 16px; letter-spacing: -0.01em; margin: 32px 0 8px; }
-.entry p { margin: 0 0 12px; }
-.entry ul { margin: 0; padding-left: 1.2em; }
-.entry li { margin: 0 0 10px; padding-left: 4px; }
-.entry li::marker { color: var(--muted); }
-.entry li b { font-weight: 600; }
+.release { padding-top: 56px; }
+.release + .release { margin-top: 56px; border-top: 1px solid var(--line); }
+.release h2 { text-align: left; font-size: clamp(24px, 4vw, 30px); margin: 0 0 12px; }
+.release .meta { margin: 0 0 20px; color: var(--muted); font-size: 15px; }
+.release .meta b { color: var(--fg); font-weight: 600; }
+.release .intro { margin: 0 0 8px; color: var(--muted); font-size: 18px; line-height: 1.5; }
+.release h3 { font-size: 16px; letter-spacing: -0.01em; margin: 32px 0 8px; }
+.release p { margin: 0 0 12px; }
+.release ul { margin: 0; padding-left: 1.2em; }
+.release li { margin: 0 0 10px; padding-left: 4px; }
+.release li::marker { color: var(--muted); }
+.release li b { font-weight: 600; }
 .older { margin: 96px 0 0; color: var(--muted); font-size: 14px; }
 
 footer { border-top: 1px solid var(--line); margin-top: 104px; padding: 28px 16px 40px; text-align: center; }
@@ -159,9 +163,12 @@ footer p { color: var(--muted); font-size: 13px; margin: 0; }
 @media (max-width: 760px) {
   section { margin: 72px 0; }
   .cards { grid-template-columns: 1fr; }
-  .release { grid-template-columns: 1fr; gap: 16px; padding-top: 48px; }
+  .live .card, .live .card.on { transform: none; opacity: 1; box-shadow: none; }
+  .release { padding-top: 48px; }
   .release + .release { margin-top: 48px; }
-  .release .meta { position: static; flex-direction: row; align-items: center; gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card { transition: none; }
 }
 @media (max-width: 720px) {
   .sides { grid-template-columns: 1fr; }
