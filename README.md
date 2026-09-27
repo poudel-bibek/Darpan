@@ -22,8 +22,8 @@ Mac app. It feels local and stays private.</p>
 
 <table>
 <tr>
-<td width="50%" align="center" valign="top"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/onboarding-linux.png"><img src="docs/onboarding-linux.gif" width="420" alt="The Darpan window on Linux: Welcome to Darpan, finishing the sign-in in the browser, one click to allow secure addresses, and the password to connect with"></picture><br><sub>On the Linux computer</sub></td>
-<td width="50%" align="center" valign="top"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/onboarding-mac.png"><img src="docs/onboarding-mac.gif" width="420" alt="Darpan on the Mac: the disk image, Welcome to Darpan, your computers, the password, and the tip that shows the toolbar"></picture><br><sub>On the Mac</sub></td>
+<td width="50%" align="center" valign="top"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/onboarding-linux-still.webp"><img src="docs/onboarding-linux.webp" width="420" alt="The Darpan window on Linux: Welcome to Darpan, finishing the sign-in in the browser, one click to allow secure addresses, and the password to connect with"></picture><br><sub>On the Linux computer</sub></td>
+<td width="50%" align="center" valign="top"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/onboarding-mac-still.webp"><img src="docs/onboarding-mac.webp" width="420" alt="Darpan on the Mac: the disk image, Welcome to Darpan, your computers, the password, and the tip that shows the toolbar"></picture><br><sub>On the Mac</sub></td>
 </tr>
 </table>
 
@@ -41,55 +41,67 @@ no port forwarding and nothing to change on your router.
    **Open Anyway** under System Settings → Privacy & Security.
 3. **Connect:** sign in with the same account, click your Linux computer and enter its password.
 
-**From a browser instead**, on any other computer: install [Tailscale](https://tailscale.com/download),
-sign in with the same account, and open the address the Darpan window on Linux shows.
+**In a browser instead:** on any other computer, install [Tailscale](https://tailscale.com/download),
+sign in with the same account, and open the address shown in the Darpan window on Linux.
 
 <sub>Linux: Ubuntu 24.04 or similar, in an X11 session. Mac: macOS 14 or later. Browsers: Chrome, Safari,
 Edge or Firefox. All versions: [Releases](../../releases).</sub>
 
 ## Why Darpan
 
+### Fast, light and private
+
 <table>
 <tr>
 <td width="33%" valign="top">
 <p><img src="docs/feature-local.svg" width="100%" alt="Typing on the Mac shows up on the Linux computer at once"></p>
-<p><b>Feels local</b><br>~20–30 ms screen to screen,<br>even Wi-Fi to Wi-Fi.<br><sub>&nbsp;</sub></p>
-</td>
-<td width="33%" valign="top">
-<p><img src="docs/feature-private.svg" width="100%" alt="Another device trying to reach the Linux computer is refused"></p>
-<p><b>Private</b><br>Only your devices get in,<br>encrypted, no open ports.<br><sub>&nbsp;</sub></p>
+<p><b>Feels local</b><br>~20–30 ms screen to screen,<br>even Wi-Fi to Wi-Fi.</p>
 </td>
 <td width="33%" valign="top">
 <p><img src="docs/feature-light.svg" width="100%" alt="Darpan's CPU use drops to zero when the Mac disconnects, while the GPU keeps training"></p>
-<p><b>Lightweight</b><br>Linux: 0 % CPU when idle,<br>about 5 % during a video.<br><sub>&nbsp;</sub></p>
+<p><b>Lightweight</b><br>Linux: 0 % CPU when idle,<br>about 5 % during a video.</p>
+</td>
+<td width="33%" valign="top">
+<p><img src="docs/feature-private.svg" width="100%" alt="Another device trying to reach the Linux computer is refused"></p>
+<p><b>Private</b><br>Only your devices get in,<br>encrypted, no open ports.</p>
 </td>
 </tr>
+</table>
+
+### Works like your Mac
+
+<table>
 <tr>
-<td valign="top">
+<td width="33%" valign="top">
 <p><img src="docs/feature-sound.svg" width="100%" alt="A video plays on the Linux computer and its sound comes out of the Mac"></p>
-<p><b>Sound</b><br>Whatever plays on the Linux<br>computer plays on your Mac.<br><sub>&nbsp;</sub></p>
+<p><b>Sound</b><br>Whatever plays on the Linux<br>computer plays on your Mac.</p>
 </td>
-<td valign="top">
+<td width="33%" valign="top">
 <p><img src="docs/feature-clipboard.svg" width="100%" alt="Copying in a Linux terminal and pasting on the Mac, then back"></p>
-<p><b>Copy and paste</b><br>⌘C and ⌘V work both ways,<br>in Linux terminals too.<br><sub>&nbsp;</sub></p>
+<p><b>Copy and paste</b><br>⌘C and ⌘V work both ways,<br>in Linux terminals too.</p>
 </td>
-<td valign="top">
-<p><img src="docs/feature-files.svg" width="100%" alt="The Files window: a file sent from the Mac to Linux, and one received back"></p>
-<p><b>Files</b><br>Send and receive files,<br>or drop them on the window.<br><sub>&nbsp;</sub></p>
+<td width="33%" valign="top">
+<p><img src="docs/feature-dictation.svg" width="100%" alt="Dictating on the Mac: the words land at the Linux cursor"></p>
+<p><b>Dictation</b><br>Talk, and the words land<br>at the Linux cursor.</p>
 </td>
 </tr>
+</table>
+
+### Everything in reach
+
+<table>
 <tr>
-<td valign="top">
-<p><img src="docs/feature-dictation.svg" width="100%" alt="Dictating on the Mac: the words land at the Linux cursor"></p>
-<p><b>Dictation</b><br>Talk, and the words land<br>at the Linux cursor.<br><sub>&nbsp;</sub></p>
+<td width="33%" valign="top">
+<p><img src="docs/feature-files.svg" width="100%" alt="The Files window: a file sent from the Mac to Linux, and one received back"></p>
+<p><b>Files</b><br>Send and receive files,<br>or drop them on the window.</p>
 </td>
-<td valign="top">
+<td width="33%" valign="top">
 <p><img src="docs/feature-computers.svg" width="100%" alt="Picking one of two Linux computers in the Mac app's list"></p>
-<p><b>Your computers</b><br>Switch between Linux<br>computers with one click.<br><sub>&nbsp;</sub></p>
+<p><b>Your computers</b><br>Switch between Linux<br>computers with one click.</p>
 </td>
-<td valign="top">
+<td width="33%" valign="top">
 <p><img src="docs/feature-browser.svg" width="100%" alt="On another computer, the Linux desktop in a web browser"></p>
-<p><b>Also in a browser</b><br>Away from your Mac? Open<br>it in any web browser.<br><sub>&nbsp;</sub></p>
+<p><b>Also in a browser</b><br>Away from your Mac? Open<br>it in any web browser.</p>
 </td>
 </tr>
 </table>

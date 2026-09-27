@@ -6,6 +6,8 @@ Usage: python3 docs/features.py [out-dir]"""
 import os
 import sys
 
+from marks import apple
+
 W, H = 300, 146
 UI = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 MONO = "ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace"
@@ -130,8 +132,9 @@ def mac(s, content="", over=""):
     Both use the Mac's own units; the whole Mac is drawn at 90 %."""
     notch = SX + SW / 2 - 11
     menu = (f'<rect x="{SX}" y="{SY}" width="{SW}" height="6" fill="#fff" fill-opacity=".22"/>'
-            + text(SX + 6, SY + 4.4, "Darpan", 3.9, "#fff", weight=700)
-            + "".join(text(SX + x, SY + 4.4, w, 3.9, "#fff") for x, w in ((25, "File"), (34.5, "Edit"), (44, "View"), (56, "Window")))
+            + apple(SX + 2.6, SY + 1.2, 3.6)
+            + text(SX + 9, SY + 4.4, "Darpan", 3.9, "#fff", weight=700)
+            + "".join(text(SX + x, SY + 4.4, w, 3.9, "#fff") for x, w in ((28, "File"), (37.5, "Edit"), (47, "View"), (59, "Window")))
             + f'<g fill="none" stroke="#fff" stroke-width=".6" stroke-linecap="round" transform="translate({SX + SW - 34} {SY + 4.3})">'
               '<path d="M-2.4-1.6a3.4 3.4 0 0 1 4.8 0"/><path d="M-1.3-.5a1.8 1.8 0 0 1 2.6 0"/></g>'
             + f'<circle cx="{SX + SW - 34}" cy="{SY + 4.4}" r=".45" fill="#fff"/>'

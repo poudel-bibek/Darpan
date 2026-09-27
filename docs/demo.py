@@ -7,6 +7,8 @@ import os
 import re
 import sys
 
+from marks import apple
+
 T = 16.0                                   # loop length, seconds
 UI = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 MONO = "ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace"
@@ -93,11 +95,12 @@ def traffic(x, y, zoom=True):
 
 # ---------------------------------------------------------------- Mac desktop
 body.append(f'<rect width="{W}" height="{H}" fill="url(#wall)"/><rect width="{W}" height="{H}" fill="url(#glow)"/>')
-# the app's real menus (there's no File menu); x from typical 12 px system-font widths, ~18 px apart
+# the Apple menu, then the app's real menus (there's no File menu); x from typical 12 px system-font
+# widths, ~18 px apart
 items = "".join(f'<text x="{x}" y="16">{m}</text>' for m, x in
-                [("Edit", 84), ("View", 124), ("Connection", 169), ("Window", 249), ("Help", 313)])
-body.append(f'<rect width="{W}" height="24" fill="#fff" fill-opacity=".16"/>'
-            f'<g font-family="{UI}" font-size="12" fill="#fff"><text x="20" y="16" font-weight="700">Darpan</text>{items}'
+                [("Edit", 108), ("View", 148), ("Connection", 193), ("Window", 273), ("Help", 337)])
+body.append(f'<rect width="{W}" height="24" fill="#fff" fill-opacity=".16"/>' + apple(15, 5.5, 13) +
+            f'<g font-family="{UI}" font-size="12" fill="#fff"><text x="44" y="16" font-weight="700">Darpan</text>{items}'
             f'<text x="{W - 18}" y="16" text-anchor="end">Sat 26 Sep  9:41</text></g>'
             f'<g fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round">'
             f'<path d="M796.3 9.3a8 8 0 0 1 11.4 0M798.8 11.8a4.5 4.5 0 0 1 6.4 0"/><circle cx="802" cy="14.8" r="1.2" fill="#fff" stroke="none"/>'
