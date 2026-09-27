@@ -126,9 +126,11 @@ figcaption { color: var(--muted); font-size: 14px; margin-top: 10px; }
 .group h3 { font-size: 22px; margin: 0 0 18px; }
 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
 .card { margin: 0; padding: 10px 10px 22px; background: var(--soft); border-radius: 22px;
-  transition: transform .6s cubic-bezier(.2, .8, .2, 1), opacity .6s, box-shadow .6s; }
-.live .card { transform: scale(.96); opacity: .6; }
-.live .card.on { transform: scale(1.04); opacity: 1; box-shadow: 0 20px 44px rgba(0, 0, 0, .16); }
+  transition: transform .6s cubic-bezier(.2, .8, .2, 1), box-shadow .6s; }
+.live .card { transform: scale(.96); }
+.live .card.on { transform: scale(1.04); box-shadow: 0 20px 44px rgba(0, 0, 0, .16); }
+.live .card img { opacity: .55; transition: opacity .6s; }   /* only the picture dims: the words stay readable */
+.live .card.on img { opacity: 1; }
 .card img { display: block; width: 100%; border-radius: 14px; }
 .card figcaption { margin: 0; padding: 16px 10px 0; font-size: 14px; line-height: 1.45; }
 .card figcaption b { display: block; margin-bottom: 4px; color: var(--fg); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
@@ -163,12 +165,13 @@ footer p { color: var(--muted); font-size: 13px; margin: 0; }
 @media (max-width: 760px) {
   section { margin: 72px 0; }
   .cards { grid-template-columns: 1fr; }
-  .live .card, .live .card.on { transform: none; opacity: 1; box-shadow: none; }
+  .live .card, .live .card.on { transform: none; box-shadow: none; }
+  .live .card img { opacity: 1; }
   .release { padding-top: 48px; }
   .release + .release { margin-top: 48px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .card { transition: none; }
+  .card, .live .card img { transition: none; }
 }
 @media (max-width: 720px) {
   .sides { grid-template-columns: 1fr; }

@@ -136,7 +136,7 @@ for (const group of document.querySelectorAll('.cards')) {
   group.addEventListener('mouseenter', () => { over = true; tick(); });
   group.addEventListener('mouseleave', () => { over = false; tick(); });
   calm.addEventListener('change', tick);
-  new IntersectionObserver(([e]) => { seen = e.isIntersecting; tick(); }, {threshold: 0.5}).observe(group);
+  new IntersectionObserver(([e]) => { seen = e.intersectionRatio >= 0.5; tick(); }, {threshold: 0.5}).observe(group);
   group.classList.add('live');
   show(0);
 }
