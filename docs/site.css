@@ -1,3 +1,7 @@
+/* Inter (SIL Open Font License, fonts/OFL.txt), served from here so a visit asks no one else */
+@font-face { font-family: Inter; font-style: normal; font-weight: 100 900; font-display: swap; src: url(fonts/inter.woff2) format("woff2"); }
+@font-face { font-family: Inter; font-style: italic; font-weight: 100 900; font-display: swap; src: url(fonts/inter-italic.woff2) format("woff2"); }
+
 :root {
   --bg: #ffffff;
   --soft: #f5f5f7;
@@ -12,7 +16,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0b0b10;
-    --soft: #15151c;
+    --soft: #16161d;
     --fg: #f5f5f7;
     --muted: #a1a1aa;
     --line: rgba(255, 255, 255, 0.12);
@@ -28,13 +32,18 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Inter, Roboto, Arial, sans-serif;
+  font: 16px/1.6 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
 }
 img { max-width: 100%; height: auto; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
+/* no word left alone on a last line */
+p, li, figcaption { text-wrap: pretty; }
+h1, h2, h3, .tagline, .lede, .section-lede, .note { text-wrap: balance; }
 
-/* the bar at the top: the site, and its two sections */
+/* the bar at the top: the site, its two sections, and the code */
 .top {
   position: sticky;
   top: 0;
@@ -49,26 +58,26 @@ a:hover { text-decoration: underline; }
   backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 1px solid var(--line);
 }
-.brand { display: flex; align-items: center; gap: 8px; color: var(--fg); font-weight: 600; font-size: 18px; }
+.brand { display: flex; align-items: center; gap: 8px; color: var(--fg); font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
 .brand:hover { text-decoration: none; }
-.top nav { display: flex; gap: 4px; }
-.top nav a { color: var(--muted); padding: 6px 12px; border-radius: 999px; font-size: 15px; }
+.top nav { display: flex; gap: 2px; }
+.top nav a { display: flex; align-items: center; gap: 6px; color: var(--muted); padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 500; }
 .top nav a:hover { color: var(--fg); text-decoration: none; }
 .top nav a[aria-current="page"] { color: var(--fg); background: var(--soft); }
+.top nav svg { fill: currentColor; }
 
 main { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
-section { margin: 96px 0; }
-h1, h2 { letter-spacing: -0.02em; line-height: 1.1; }
-h2 { font-size: clamp(30px, 5vw, 40px); text-align: center; margin: 0 0 16px; }
-.section-lede { color: var(--muted); text-align: center; max-width: 680px; margin: 0 auto 40px; }
-.fine { color: var(--muted); font-size: 14px; }
-.lede, .section-lede, .hero .fine { text-wrap: balance; }
+section { margin: 104px 0; }
+h1, h2, h3 { letter-spacing: -0.022em; line-height: 1.1; font-weight: 700; }
+h2 { font-size: clamp(28px, 5vw, 40px); text-align: center; margin: 0 0 16px; }
+.section-lede { color: var(--muted); text-align: center; max-width: 680px; margin: 0 auto 44px; }
+.fine { color: var(--muted); font-size: 13px; }
 
 .hero { text-align: center; margin-top: 72px; }
 .hero .mark { display: block; margin: 0 auto 12px; }
-.hero h1 { font-size: clamp(44px, 9vw, 72px); margin: 0; }
-.tagline { font-size: clamp(22px, 4vw, 30px); font-weight: 600; margin: 8px 0 12px; }
-.lede { color: var(--muted); font-size: 19px; max-width: 640px; margin: 0 auto 28px; }
+.hero h1 { font-size: clamp(44px, 9vw, 72px); letter-spacing: -0.035em; margin: 0; }
+.tagline { font-size: clamp(20px, 4vw, 28px); font-weight: 600; letter-spacing: -0.02em; margin: 10px 0 12px; }
+.lede { color: var(--muted); font-size: 18px; max-width: 640px; margin: 0 auto 28px; }
 .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .btn {
   display: inline-block;
@@ -87,11 +96,11 @@ h2 { font-size: clamp(30px, 5vw, 40px); text-align: center; margin: 0 0 16px; }
 .demo { text-align: center; }
 .demo img { border-radius: 20px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25); }
 
-.sides { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+.sides { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .sides figure { margin: 0; text-align: center; }
-.sides img { border-radius: 12px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.2); }
-figcaption { color: var(--muted); font-size: 15px; margin-top: 10px; }
-.steps { max-width: 720px; margin: 40px auto 16px; padding: 0; list-style: none; counter-reset: step; }
+.sides img { border-radius: 14px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.2); }
+figcaption { color: var(--muted); font-size: 14px; margin-top: 10px; }
+.steps { max-width: 720px; margin: 44px auto 20px; padding: 0; list-style: none; counter-reset: step; }
 .steps li { position: relative; padding-left: 44px; margin: 0 0 18px; }
 .steps li::before {
   counter-increment: step;
@@ -109,38 +118,57 @@ figcaption { color: var(--muted); font-size: 15px; margin-top: 10px; }
   line-height: 28px;
   text-align: center;
 }
-.start > .fine { max-width: 720px; margin: 0 auto; }
+.note { max-width: 720px; margin: 0 auto 6px; color: var(--muted); font-size: 14px; }
+.note b { color: var(--fg); font-weight: 600; }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 32px 28px; }
-.grid figure { margin: 0; }
-.grid img { width: 100%; border-radius: 14px; }
-.grid figcaption { color: var(--muted); }
-.grid figcaption b { display: block; color: var(--fg); font-size: 17px; }
+/* why Darpan: three groups of three */
+.group { margin-top: 56px; }
+.group h3 { font-size: 22px; margin: 0 0 18px; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.card { margin: 0; padding: 10px 10px 22px; background: var(--soft); border-radius: 22px; }
+.card img { display: block; width: 100%; border-radius: 14px; }
+.card figcaption { margin: 0; padding: 16px 10px 0; font-size: 14px; line-height: 1.45; }
+.card figcaption b { display: block; margin-bottom: 4px; color: var(--fg); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
 
-.perf table { width: 100%; max-width: 720px; margin: 0 auto; border-collapse: collapse; font-size: 16px; }
+.perf table { width: 100%; max-width: 720px; margin: 0 auto; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
 .perf th, .perf td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-.perf thead th { color: var(--muted); font-weight: 600; font-size: 14px; }
+.perf thead th { color: var(--muted); font-weight: 600; font-size: 13px; }
 .perf tbody th { font-weight: 600; }
 
-.changelog { max-width: 760px; }
-.changelog h1 { font-size: clamp(36px, 7vw, 52px); text-align: center; margin: 64px 0 8px; }
-.changelog article { border-top: 1px solid var(--line); padding: 28px 0 8px; }
-.changelog article > h2 { text-align: left; font-size: 26px; margin: 0; }
-.changelog article > .fine { margin: 6px 0 12px; }
-.notes h2, .notes h3 { font-size: 17px; letter-spacing: 0; line-height: 1.5; text-align: left; margin: 20px 0 8px; }
-.notes br { display: none; }   /* older notes are wrapped by hand; let them flow */
-.notes ul { padding-left: 20px; }
-.notes li { margin: 4px 0; }
-.notes code { background: var(--soft); padding: 1px 5px; border-radius: 5px; font-size: 0.92em; }
-.notes pre { background: var(--soft); padding: 12px; border-radius: 10px; overflow-x: auto; font-size: 13px; }
-.notes pre code { background: none; padding: 0; font-size: inherit; }
+/* the changelog: version and date on the left, what changed on the right */
+.page-head { margin: 72px 0 8px; }
+.page-head h1 { font-size: clamp(36px, 7vw, 52px); letter-spacing: -0.03em; margin: 0 0 12px; }
+.page-head .lede { margin: 0; }
+.release { display: grid; grid-template-columns: 200px minmax(0, 640px); gap: 40px; padding-top: 64px; }
+.release + .release { margin-top: 64px; border-top: 1px solid var(--line); }
+.release .meta { position: sticky; top: 84px; align-self: start; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-size: 13px; color: var(--muted); }
+.ver { padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--soft); color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.entry h2 { text-align: left; font-size: clamp(24px, 4vw, 30px); margin: 0 0 10px; }
+.entry .intro { margin: 0 0 8px; color: var(--muted); font-size: 18px; line-height: 1.5; }
+.entry h3 { font-size: 16px; letter-spacing: -0.01em; margin: 32px 0 8px; }
+.entry p { margin: 0 0 12px; }
+.entry ul { margin: 0; padding-left: 1.2em; }
+.entry li { margin: 0 0 10px; padding-left: 4px; }
+.entry li::marker { color: var(--muted); }
+.entry li b { font-weight: 600; }
+.older { margin: 96px 0 0; color: var(--muted); font-size: 14px; }
 
-footer { border-top: 1px solid var(--line); margin-top: 96px; padding: 28px 16px 40px; text-align: center; }
-footer p { color: var(--muted); font-size: 14px; margin: 0; }
+footer { border-top: 1px solid var(--line); margin-top: 104px; padding: 28px 16px 40px; text-align: center; }
+footer p { color: var(--muted); font-size: 13px; margin: 0; }
 
+@media (max-width: 760px) {
+  section { margin: 72px 0; }
+  .cards { grid-template-columns: 1fr; }
+  .release { grid-template-columns: 1fr; gap: 16px; padding-top: 48px; }
+  .release + .release { margin-top: 48px; }
+  .release .meta { position: static; flex-direction: row; align-items: center; gap: 12px; }
+}
 @media (max-width: 720px) {
-  section { margin: 64px 0; }
   .sides { grid-template-columns: 1fr; }
-  .lede { font-size: 17px; }
-  .perf th, .perf td { padding: 10px 6px; font-size: 15px; }
+  .lede { font-size: 16px; }
+  .perf th, .perf td { padding: 10px 6px; font-size: 14px; }
+}
+@media (max-width: 440px) {
+  .top nav a { padding: 6px 10px; }
+  .top nav .gh span { display: none; }   /* the mark alone; the link keeps its name */
 }

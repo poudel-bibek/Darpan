@@ -6,12 +6,13 @@
 <title>Darpan</title>
 <meta name="description" content="A free, open-source remote desktop: your Linux computer on your Mac, private and fast.">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="site.css">
 </head>
 <body>
 <header class="top">
   <a class="brand" href="./"><img src="logo.svg" alt="" width="28" height="28">Darpan</a>
-  <nav><a href="./" aria-current="page">Home</a><a href="changelog.html">Changelog</a></nav>
+  <nav><a href="./" aria-current="page">Home</a><a href="changelog.html">Changelog</a><a class="gh" aria-label="GitHub" href="https://github.com/poudel-bibek/Darpan"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385 .6 .113 .82-.258 .82-.577 0-.285-.01-1.04-.015-2.04-3.338 .724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744 .084-.729 .084-.729 1.205 .084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495 .998 .108-.776 .417-1.305 .76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31 .465-2.38 1.235-3.22-.135-.303-.54-1.523 .105-3.176 0 0 1.005-.322 3.3 1.23 .96-.267 1.98-.399 3-.405 1.02 .006 2.04 .138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23 .645 1.653 .24 2.873 .12 3.176 .765 .84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92 .42 .36 .81 1.096 .81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315 .21 .69 .825 .57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg><span>GitHub</span></a></nav>
 </header>
 
 <main>
@@ -39,13 +40,13 @@
       your router.</p>
     <div class="sides">
       <figure>
-        <picture><source media="(prefers-reduced-motion: reduce)" srcset="onboarding-linux.png">
-          <img src="onboarding-linux.gif" width="880" height="657" alt="The Darpan window on Linux: Welcome to Darpan, finishing the sign-in in the browser, one click to allow secure addresses, and the password to connect with"></picture>
+        <picture><source media="(prefers-reduced-motion: reduce)" srcset="onboarding-linux-still.webp">
+          <img src="onboarding-linux.webp" width="1040" height="720" alt="The Darpan window on Linux: Welcome to Darpan, finishing the sign-in in the browser, one click to allow secure addresses, and the password to connect with"></picture>
         <figcaption>On the Linux computer</figcaption>
       </figure>
       <figure>
-        <picture><source media="(prefers-reduced-motion: reduce)" srcset="onboarding-mac.png">
-          <img src="onboarding-mac.gif" width="880" height="560" alt="Darpan on the Mac: the disk image, Welcome to Darpan, your computers, the password, and the tip that shows the toolbar"></picture>
+        <picture><source media="(prefers-reduced-motion: reduce)" srcset="onboarding-mac-still.webp">
+          <img src="onboarding-mac.webp" width="1040" height="720" alt="Darpan on the Mac: the disk image, Welcome to Darpan, your computers, the password, and the tip that shows the toolbar"></picture>
         <figcaption>On the Mac</figcaption>
       </figure>
     </div>
@@ -58,32 +59,45 @@
         by Apple: click <b>Done</b>, then <b>Open Anyway</b> under System Settings → Privacy &amp; Security.</li>
       <li><b>Connect:</b> sign in with the same account, click your Linux computer and enter its password.</li>
     </ol>
-    <p class="fine">From a browser instead, on any other computer: install Tailscale, sign in with the same account, and
-      open the address the Darpan window on Linux shows. Linux: Ubuntu 24.04 or similar, in an X11 session. Mac: macOS 14
-      or later.</p>
+    <p class="note"><b>In a browser instead:</b> on any other computer, install Tailscale, sign in with the same account,
+      and open the address shown in the Darpan window on Linux.</p>
+    <p class="note">Linux: Ubuntu 24.04 or similar, in an X11 session. Mac: macOS 14 or later.</p>
   </section>
 
   <section class="features">
     <h2>Why Darpan</h2>
-    <div class="grid">
-      <figure><img src="feature-local.svg" width="300" height="146" alt="Typing on the Mac shows up on the Linux computer at once">
-        <figcaption><b>Feels local</b>About 20–30 ms screen to screen, even Wi-Fi to Wi-Fi.</figcaption></figure>
-      <figure><img src="feature-private.svg" width="300" height="146" alt="Another device trying to reach the Linux computer is refused">
-        <figcaption><b>Private</b>Only your devices get in, encrypted, with no open ports.</figcaption></figure>
-      <figure><img src="feature-light.svg" width="300" height="146" alt="Darpan's CPU use drops to zero when the Mac disconnects">
-        <figcaption><b>Lightweight</b>0 % CPU on Linux when idle, about 5 % during a video.</figcaption></figure>
-      <figure><img src="feature-sound.svg" width="300" height="146" alt="A video plays on the Linux computer and its sound comes out of the Mac">
-        <figcaption><b>Sound</b>Whatever plays on the Linux computer plays on your Mac.</figcaption></figure>
-      <figure><img src="feature-clipboard.svg" width="300" height="146" alt="Copying in a Linux terminal and pasting on the Mac, then back">
-        <figcaption><b>Copy and paste</b>⌘C and ⌘V work both ways, in Linux terminals too.</figcaption></figure>
-      <figure><img src="feature-files.svg" width="300" height="146" alt="The Files window: a file sent from the Mac to Linux, and one received back">
-        <figcaption><b>Files</b>Send and receive files, or drop them on the window.</figcaption></figure>
-      <figure><img src="feature-dictation.svg" width="300" height="146" alt="Dictating on the Mac: the words land at the Linux cursor">
-        <figcaption><b>Dictation</b>Talk, and the words land at the Linux cursor.</figcaption></figure>
-      <figure><img src="feature-computers.svg" width="300" height="146" alt="Picking one of two Linux computers in the Mac app's list">
-        <figcaption><b>Your computers</b>Switch between Linux computers with one click.</figcaption></figure>
-      <figure><img src="feature-browser.svg" width="300" height="146" alt="On another computer, the Linux desktop in a web browser">
-        <figcaption><b>Also in a browser</b>Away from your Mac? Open it in any web browser.</figcaption></figure>
+    <div class="group">
+      <h3>Fast, light and private</h3>
+      <div class="cards">
+        <figure class="card"><img src="feature-local.svg" width="300" height="146" alt="Typing on the Mac shows up on the Linux computer at once">
+          <figcaption><b>Feels local</b>About 20–30 ms screen to screen, even Wi-Fi to Wi-Fi.</figcaption></figure>
+        <figure class="card"><img src="feature-light.svg" width="300" height="146" alt="Darpan's CPU use drops to zero when the Mac disconnects">
+          <figcaption><b>Lightweight</b>0 % CPU on Linux when idle, about 5 % during a video.</figcaption></figure>
+        <figure class="card"><img src="feature-private.svg" width="300" height="146" alt="Another device trying to reach the Linux computer is refused">
+          <figcaption><b>Private</b>Only your devices get in, encrypted, with no open ports.</figcaption></figure>
+      </div>
+    </div>
+    <div class="group">
+      <h3>Works like your Mac</h3>
+      <div class="cards">
+        <figure class="card"><img src="feature-sound.svg" width="300" height="146" alt="A video plays on the Linux computer and its sound comes out of the Mac">
+          <figcaption><b>Sound</b>Whatever plays on the Linux computer plays on your Mac.</figcaption></figure>
+        <figure class="card"><img src="feature-clipboard.svg" width="300" height="146" alt="Copying in a Linux terminal and pasting on the Mac, then back">
+          <figcaption><b>Copy and paste</b>⌘C and ⌘V work both ways, in Linux terminals too.</figcaption></figure>
+        <figure class="card"><img src="feature-dictation.svg" width="300" height="146" alt="Dictating on the Mac: the words land at the Linux cursor">
+          <figcaption><b>Dictation</b>Talk, and the words land at the Linux cursor.</figcaption></figure>
+      </div>
+    </div>
+    <div class="group">
+      <h3>Everything in reach</h3>
+      <div class="cards">
+        <figure class="card"><img src="feature-files.svg" width="300" height="146" alt="The Files window: a file sent from the Mac to Linux, and one received back">
+          <figcaption><b>Files</b>Send and receive files, or drop them on the window.</figcaption></figure>
+        <figure class="card"><img src="feature-computers.svg" width="300" height="146" alt="Picking one of two Linux computers in the Mac app's list">
+          <figcaption><b>Your computers</b>Switch between Linux computers with one click.</figcaption></figure>
+        <figure class="card"><img src="feature-browser.svg" width="300" height="146" alt="On another computer, the Linux desktop in a web browser">
+          <figcaption><b>Also in a browser</b>Away from your Mac? Open it in any web browser.</figcaption></figure>
+      </div>
     </div>
   </section>
 
