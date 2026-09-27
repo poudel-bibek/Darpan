@@ -8,6 +8,8 @@ Mac app. It feels local and stays private.</p>
 
 <p align="center"><b>Free and open source · No account with us · No subscription</b></p>
 
+<p align="center"><a href="https://poudel-bibek.github.io/Darpan/">Website</a> · <a href="https://poudel-bibek.github.io/Darpan/changelog.html">Changelog</a></p>
+
 <p align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/host-Linux-555" alt="Host: Linux">
@@ -35,8 +37,8 @@ no port forwarding and nothing to change on your router.
    It shows you a password.
 2. <a name="mac-app"></a>**On the Mac**, the one you connect from: download
    [Darpan.dmg](../../releases/latest/download/Darpan.dmg), drag Darpan to Applications and open it.
-   The first time, macOS asks you to allow it under System Settings → Privacy & Security →
-   **Open Anyway**, because Darpan isn't notarized by Apple.
+   The first time, macOS can't check Darpan, because it isn't notarized by Apple: click **Done**, then
+   **Open Anyway** under System Settings → Privacy & Security.
 3. **Connect:** sign in with the same account, click your Linux computer and enter its password.
 
 **From a browser instead**, on any other computer: install [Tailscale](https://tailscale.com/download),

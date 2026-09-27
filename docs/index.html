@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Darpan</title>
+<meta name="description" content="A free, open-source remote desktop: your Linux computer on your Mac, private and fast.">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="./"><img src="logo.svg" alt="" width="28" height="28">Darpan</a>
+  <nav><a href="./" aria-current="page">Home</a><a href="changelog.html">Changelog</a></nav>
+</header>
+
+<main>
+  <section class="hero">
+    <img class="mark" src="logo.svg" alt="" width="112" height="112">
+    <h1>Darpan</h1>
+    <p class="tagline">Stop paying for remote desktop.</p>
+    <p class="lede">A high-performance, lightweight remote desktop: use your Linux computer from a native Mac app.
+      It feels local and stays private.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/poudel-bibek/Darpan/releases/latest/download/Darpan.dmg">Download for Mac</a>
+      <a class="btn" href="https://github.com/poudel-bibek/Darpan/releases/latest/download/darpan_amd64.deb">Download for Linux</a>
+    </div>
+    <p class="fine"><span>Free and open source</span> · <span>No account with us</span> · <span>No subscription</span></p>
+  </section>
+
+  <section class="demo">
+    <img src="demo.svg" width="960" height="600" alt="Connecting from the Darpan Mac app, starting a training run on the Linux desktop, and switching to full screen">
+  </section>
+
+  <section id="download" class="start">
+    <h2>Get started</h2>
+    <p class="section-lede">You sign in with the Google, Apple, GitHub or Microsoft account you already have, through
+      Tailscale's free private network, which is built in. No Darpan account, no port forwarding, nothing to change on
+      your router.</p>
+    <div class="sides">
+      <figure>
+        <picture><source media="(prefers-reduced-motion: reduce)" srcset="onboarding-linux.png">
+          <img src="onboarding-linux.gif" width="880" height="657" alt="The Darpan window on Linux: Welcome to Darpan, finishing the sign-in in the browser, one click to allow secure addresses, and the password to connect with"></picture>
+        <figcaption>On the Linux computer</figcaption>
+      </figure>
+      <figure>
+        <picture><source media="(prefers-reduced-motion: reduce)" srcset="onboarding-mac.png">
+          <img src="onboarding-mac.gif" width="880" height="560" alt="Darpan on the Mac: the disk image, Welcome to Darpan, your computers, the password, and the tip that shows the toolbar"></picture>
+        <figcaption>On the Mac</figcaption>
+      </figure>
+    </div>
+    <ol class="steps">
+      <li><b>On the Linux computer</b>, the one you connect to: download
+        <a href="https://github.com/poudel-bibek/Darpan/releases/latest/download/darpan_amd64.deb">darpan_amd64.deb</a> and double-click it. Open
+        <b>Darpan</b> and click <b>Get started</b>. It shows you a password.</li>
+      <li><b>On the Mac</b>, the one you connect from: download <a href="https://github.com/poudel-bibek/Darpan/releases/latest/download/Darpan.dmg">Darpan.dmg</a>,
+        drag Darpan to Applications and open it. The first time, macOS can't check Darpan, because it isn't notarized
+        by Apple: click <b>Done</b>, then <b>Open Anyway</b> under System Settings → Privacy &amp; Security.</li>
+      <li><b>Connect:</b> sign in with the same account, click your Linux computer and enter its password.</li>
+    </ol>
+    <p class="fine">From a browser instead, on any other computer: install Tailscale, sign in with the same account, and
+      open the address the Darpan window on Linux shows. Linux: Ubuntu 24.04 or similar, in an X11 session. Mac: macOS 14
+      or later.</p>
+  </section>
+
+  <section class="features">
+    <h2>Why Darpan</h2>
+    <div class="grid">
+      <figure><img src="feature-local.svg" width="300" height="146" alt="Typing on the Mac shows up on the Linux computer at once">
+        <figcaption><b>Feels local</b>About 20–30 ms screen to screen, even Wi-Fi to Wi-Fi.</figcaption></figure>
+      <figure><img src="feature-private.svg" width="300" height="146" alt="Another device trying to reach the Linux computer is refused">
+        <figcaption><b>Private</b>Only your devices get in, encrypted, with no open ports.</figcaption></figure>
+      <figure><img src="feature-light.svg" width="300" height="146" alt="Darpan's CPU use drops to zero when the Mac disconnects">
+        <figcaption><b>Lightweight</b>0 % CPU on Linux when idle, about 5 % during a video.</figcaption></figure>
+      <figure><img src="feature-sound.svg" width="300" height="146" alt="A video plays on the Linux computer and its sound comes out of the Mac">
+        <figcaption><b>Sound</b>Whatever plays on the Linux computer plays on your Mac.</figcaption></figure>
+      <figure><img src="feature-clipboard.svg" width="300" height="146" alt="Copying in a Linux terminal and pasting on the Mac, then back">
+        <figcaption><b>Copy and paste</b>⌘C and ⌘V work both ways, in Linux terminals too.</figcaption></figure>
+      <figure><img src="feature-files.svg" width="300" height="146" alt="The Files window: a file sent from the Mac to Linux, and one received back">
+        <figcaption><b>Files</b>Send and receive files, or drop them on the window.</figcaption></figure>
+      <figure><img src="feature-dictation.svg" width="300" height="146" alt="Dictating on the Mac: the words land at the Linux cursor">
+        <figcaption><b>Dictation</b>Talk, and the words land at the Linux cursor.</figcaption></figure>
+      <figure><img src="feature-computers.svg" width="300" height="146" alt="Picking one of two Linux computers in the Mac app's list">
+        <figcaption><b>Your computers</b>Switch between Linux computers with one click.</figcaption></figure>
+      <figure><img src="feature-browser.svg" width="300" height="146" alt="On another computer, the Linux desktop in a web browser">
+        <figcaption><b>Also in a browser</b>Away from your Mac? Open it in any web browser.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="perf">
+    <h2>Light on both computers</h2>
+    <p class="section-lede">Measured on a Linux PC with an RTX 4090 at 2560×1440, viewed from a MacBook over Wi-Fi. CPU is a
+      share of one core.</p>
+    <table>
+      <thead><tr><th></th><th>Linux computer</th><th>Mac app</th></tr></thead>
+      <tbody>
+        <tr><th>Nobody connected</th><td>0 % CPU, no GPU memory</td><td>—</td></tr>
+        <tr><th>Everyday use</th><td>3 % CPU</td><td>8–10 % CPU</td></tr>
+        <tr><th>Full-screen video with sound</th><td>6 % CPU</td><td>32 % CPU</td></tr>
+        <tr><th>Screen to screen</th><td colspan="2">about 27 ms over Wi-Fi</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<footer>
+  <p>Free and open source (MIT) · <a href="https://github.com/poudel-bibek/Darpan">Source on GitHub</a> · <a href="https://github.com/poudel-bibek/Darpan/releases">All releases</a>
+    · <a href="changelog.html">Changelog</a> · <a href="/">My website</a></p>
+</footer>
+</body>
+</html>

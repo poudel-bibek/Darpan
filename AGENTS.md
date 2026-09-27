@@ -65,7 +65,8 @@ When your changes create orphans:
   Delete the branch once it's merged.
 * **Board messages** (`dev-messageboard/`) go straight to `main`; see its README.
 * **Privacy.** No personal data anywhere: names, e-mail addresses, account, machine or tailnet
-  names, IP addresses, home paths. Run `scripts/check-private-data.sh` before every commit. Commit
+  names, IP addresses, home paths. The repository's own addresses, on GitHub and its Pages site, are
+  fine. Run `scripts/check-private-data.sh` before every commit. Commit
   as the GitHub no-reply address.
 * **Efficiency.** Zero work while nobody is connected. Measure before claiming a number.
 * **Tests.** Host: `python3 linux/tools/test_host.py` and `node linux/tools/webclient_test.mjs`. They
