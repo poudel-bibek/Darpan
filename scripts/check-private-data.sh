@@ -4,6 +4,7 @@
 # Generic patterns: e-mail addresses, IPv4 addresses, home-directory paths, tailnet host names.
 # Personal terms (names, accounts, machine names…) go in .private-denylist (untracked, one
 # case-insensitive fixed string per line, # comments) so the list itself is never committed.
+# The repository's own addresses, on GitHub and its Pages site, may name the account (the owner agreed).
 # The check itself is Python 3, so it behaves the same with GNU tools (Linux) and BSD ones (macOS).
 cd "$(git rev-parse --show-toplevel)" || exit 2
 exec python3 - "$@" <<'PY'
@@ -39,6 +40,18 @@ else:
     print("note: no .private-denylist — only generic patterns were checked", file=sys.stderr)
 # str, not bytes: re.I on bytes folds ASCII only, and names can have accents or other scripts
 denied = re.compile("|".join(re.escape(d) for d in deny), re.I) if deny else None
+# github.com/<owner>/<repo>, its API address and <owner>.github.io/<repo>, from origin; nothing else is let through
+origin = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True).stdout.strip()
+m = re.search(r"github\.com[:/]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$", origin)
+own = None
+if m:
+    own = re.compile(r"(?:github\.com/{0}/{1}|api\.github\.com/repos/{0}/{1}|{0}\.github\.io/{1})(?![\w.-])"
+                     .format(re.escape(m[1]), re.escape(m[2])), re.I)
+
+
+def personal(text):
+    return denied.search(own.sub("", text) if own else text)
+
 
 found = False
 
@@ -65,7 +78,7 @@ for name in files:
                     report(label, "%s:%d:%s" % (shown, n, m.decode("utf-8", "replace")))
         if denied:
             text = line.decode("utf-8", "replace")
-            if denied.search(text):
+            if personal(text):
                 report("denylist", "%s:%d:%s" % (shown, n, text.strip()))
 
 if "--history" in sys.argv[1:]:
@@ -75,7 +88,7 @@ if "--history" in sys.argv[1:]:
     if denied:
         for rec in git("log", "--all", "--format=%h %B%x01").split(b"\x01"):
             for line in rec.strip().decode("utf-8", "replace").split("\n"):
-                if denied.search(line):
+                if personal(line):
                     report("commit", line)
 
 if not found:
