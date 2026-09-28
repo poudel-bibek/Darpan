@@ -52,3 +52,15 @@ picture, small on the Mac, and more to capture and encode than you're looking at
 * **The work:** list the monitors with xrandr, capture only the chosen one's rectangle (on the CUDA
   and the Vulkan paths), shift pointer input by its position, and apply resolution changes to it.
   The monitor list and the choice need a PROTOCOL.md change agreed with the Mac side.
+
+## Several computers at once
+
+The Mac app holds one connection at a time: opening another Linux computer ends the first. (A
+Linux computer already takes up to three viewers at once.)
+
+* **The idea:** each Linux computer in its own window, all connected at the same time, like browser
+  windows. ⌘` moves between them, and the Window menu lists them.
+* **Stays efficient:** a window you've minimized or hidden asks its computer to pause, so it
+  captures and encodes nothing until you look again.
+* **The work:** the Mac app's single session becomes a list (sound follows the window in front,
+  the clipboard syncs with each), and the connect window opens a new one instead of replacing it.
