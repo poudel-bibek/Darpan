@@ -28,3 +28,27 @@ that's big enough.
 * **The work:** NVIDIA's MetaModes (`ViewPortIn`/`ViewPortOut`) or xrandr `--fb` with a transform,
   tested across monitors and drivers. The physical monitor shows pillarboxes meanwhile.
 * **Same rules:** nothing changes unless you choose it, and nothing runs while nobody is connected.
+
+## Rename your computers
+
+The Mac app lists each Linux computer by its name on your Tailscale network, which is often a
+hostname you didn't choose.
+
+* **On the Mac:** rename a computer in the list, and the new name shows there and in its window's
+  title. *Reset name* brings back the original.
+* **Only on this Mac:** the name is kept with the Mac's saved computers; the Linux computer and your
+  Tailscale network don't change.
+
+## Several monitors
+
+With two monitors on the Linux computer, Darpan sends the whole X screen: both side by side in one
+picture, small on the Mac, and more to capture and encode than you're looking at.
+
+* **Pick one:** the display panel lists the Linux computer's monitors, and only the one you choose
+  is captured, encoded and sent. The primary monitor by default; *All* shows them side by side as
+  today.
+* **Stays efficient:** changes on a monitor you aren't shown cost nothing, and switching restarts
+  the stream, not the session.
+* **The work:** list the monitors with xrandr, capture only the chosen one's rectangle (on the CUDA
+  and the Vulkan paths), shift pointer input by its position, and apply resolution changes to it.
+  The monitor list and the choice need a PROTOCOL.md change agreed with the Mac side.
