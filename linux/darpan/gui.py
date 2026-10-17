@@ -406,8 +406,16 @@ class Window(Adw.ApplicationWindow):
         for s in sessions:
             since = time.strftime("%H:%M", time.localtime(s["since"]))
             sub = "%s · since %s" % (s.get("user") or s["source"], since)
-            if s.get("streaming"):
+            if s.get("streaming"):                     # what it's getting: size, colour, bitrate, and on what
                 sub += " · %d×%d" % (s["w"], s["h"])
+                if s.get("chroma") == 444:
+                    sub += " · full colour"
+                if s.get("kbps"):
+                    sub += " · %d Mbit/s" % round(s["kbps"] / 1000)
+                if s.get("api") == "software":
+                    sub += " · encoded on the processor"
+            elif s.get("w"):
+                sub += " · paused"
             row = Adw.ActionRow(title=s["client"] or "Unknown device", subtitle=sub)
             row.add_prefix(Gtk.Image.new_from_icon_name("computer-symbolic"))
             b = Gtk.Button(label="Disconnect", valign=Gtk.Align.CENTER)
