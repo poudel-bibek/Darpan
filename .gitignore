@@ -13,3 +13,6 @@ __pycache__/
 .vscode/
 .idea/
 .private-denylist
+
+# third-party code kept locally for study; never committed
+reference/
