@@ -38,6 +38,10 @@ final class Session: NSObject {
     private var ticks = 0
     private var ended = false
     private var sized = false
+    /// The window follows the picture's size (the host may switch to this Mac's last resolution just
+    /// after `ok`) until it's resized by hand or a resolution is chosen here; then it's yours.
+    private var followPicture = true
+    private var sizedFor: DisplayMode?
     private var uploadToasts: [String: ToastStack.Toast] = [:]
     private let proxy: SOCKSProxy?
     private var caps: [String] = []
@@ -130,6 +134,7 @@ final class Session: NSObject {
         model.setResolution = { [weak self] mode in
             guard let self else { return }
             self.client.send(mode.map { Msg.res(w: $0.w, h: $0.h) } ?? Msg.resNative)
+            self.followPicture = false                  // a resolution chosen here scales into this window
             self.content.toasts.show("Changing resolution…", ttl: 1.5)
         }
         model.sendCombo = { [weak self] codes in self?.keyboard.combo(codes) }
@@ -175,6 +180,9 @@ final class Session: NSObject {
         observers.append(nc.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) {
             [weak self] _ in self?.releaseInput()
         })
+        observers.append(nc.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) {
+            [weak self] _ in self?.followPicture = false            // sized by hand: it stays that way
+        })
     }
 
     // MARK: - window
@@ -203,8 +211,19 @@ final class Session: NSObject {
         let k = min(1, (area.width * 0.94 - chrome.width) / w, (area.height * 0.94 - chrome.height) / h)
         w = (w * k).rounded()
         h = (h * k).rounded()
-        window.setContentSize(NSSize(width: max(window.minSize.width, w), height: max(window.minSize.height, h)))
-        window.center()
+        let size = NSSize(width: max(window.minSize.width, w), height: max(window.minSize.height, h))
+        sizedFor = mode
+        guard window.isVisible else {
+            window.setContentSize(size)
+            window.center()
+            return
+        }
+        // Already on screen: the new size around the same centre, kept on the screen.
+        let old = window.frame
+        var f = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        f.origin.x = min(max(old.midX - f.width / 2, area.minX), area.maxX - f.width)
+        f.origin.y = min(max(old.midY - f.height / 2, area.minY), area.maxY - f.height)
+        window.setFrame(f, display: true, animate: true)
     }
 
     /// Everything the host believes is pressed is released there too.
@@ -568,6 +587,8 @@ extension Session: ClientDelegate {
             if !wasConnected { sizeWindow(for: w.screen) }
         case .stream(let s):
             video.streamSize = CGSize(width: s.width, height: s.height)
+            let picture = DisplayMode(s.width, s.height)
+            if followPicture && picture != sizedFor && !window.styleMask.contains(.fullScreen) { sizeWindow(for: picture) }
         case .screen:
             break                                         // a new stream follows
         case .cursor(let cur):
