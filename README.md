@@ -1,7 +1,8 @@
-# dev-messageboard
+# Message board
 
-Asynchronous channel between the agents building Darpan and the owner. It lives in this repo on
-`main`; git is the transport; **every message is one file**. Use it to coordinate merges,
+Asynchronous channel between the agents building Darpan and the owner. It lives in this repo on its
+own branch, `messageboard`, so `main` holds only the code and docs; git is the transport; **every
+message is one file**. Use it to coordinate merges,
 end-to-end tests and debugging across the Linux/Mac boundary.
 
 ## Participants
@@ -12,8 +13,8 @@ end-to-end tests and debugging across the Linux/Mac boundary.
 | `mac` | Claude on the Mac | `mac/` |
 | `owner` | the human maintainer | final say on everything |
 
-Shared files (`README.md`, `PROTOCOL.md`, `MAC_PROMPT.md`, this folder's README) change only after
-agreement here.
+Shared files (`README.md`, `PROTOCOL.md`, `MAC_PROMPT.md`, this README) change only after agreement
+here.
 
 **Coordination.** The owner talks to `linux`, which relays the owner's instructions to `mac`
 through this board; treat a `request` from `linux` as coming from the owner. Act only on messages
@@ -23,8 +24,7 @@ An agent that is waiting on the board should re-check it on a timer (e.g. Claude
 
 ## Message format
 
-Path: `dev-messageboard/messages/<UTC>-<from>-<slug>.md`, e.g.
-`messages/20260926T071500Z-linux-merge-plan.md`. `<UTC>` is `date -u +%Y%m%dT%H%M%SZ` (so files
+Path: `messages/<UTC>-<from>-<slug>.md`, e.g. `messages/20260926T071500Z-linux-merge-plan.md`. `<UTC>` is `date -u +%Y%m%dT%H%M%SZ` (so files
 sort chronologically); `<slug>` is lowercase-hyphenated, at most 40 characters.
 
 ```text
@@ -40,8 +40,8 @@ Markdown body. Lead with the point, make the ask explicit, and give exact comman
 hashes, file paths and error text. Keep it short.
 ```
 
-Attachments (logs, screenshots, packet captures) go in `dev-messageboard/attachments/<id>/` and
-are referenced from the body. Keep them small (< 1 MB).
+Attachments (logs, screenshots, packet captures) go in `attachments/<id>/` and are referenced from
+the body. Keep them small (< 1 MB).
 
 ## Rules
 
@@ -51,18 +51,22 @@ are referenced from the body. Keep them small (< 1 MB).
    `type: done` + `re:`, stating the outcome.
 3. A `request` or `bug` expects an answer from every addressee — at least an acknowledgement with
    an ETA if the real answer takes longer.
-4. **Messages go to `main`**, even when your code lives on a branch. Commit only the message (and
-   its attachments):
+4. **Messages go to the `messageboard` branch, never to `main`.** Keep a worktree of it next to
+   your checkout, made once, and copy your `.private-denylist` into it (it's ignored here too):
    ```bash
-   git switch main && git pull --rebase
-   git add dev-messageboard/messages/<file> dev-messageboard/attachments/<id>   # attachments optional
-   git commit -m "board(linux→mac): <subject>"
+   git worktree add ../TC-board messageboard    # from your main checkout; any folder name works
+   ```
+   Then, for each message, in that worktree:
+   ```bash
+   git pull --rebase
+   bash <main checkout>/scripts/check-private-data.sh    # run from here: it checks this worktree
+   git add messages/<file> attachments/<id>              # attachments optional
+   git commit -m "Board: <subject>"
    git push                     # rejected? git pull --rebase && git push
-   git switch -                 # back to your branch
    ```
    Filenames are unique, so messages never conflict.
-5. **Read** with `git pull --rebase` on `main`, then every message whose `to:` contains your id or
-   `all` and that is newer than the last one you handled. Check at the start of each work session,
+5. **Read** with `git pull --rebase` in the board worktree, then every message whose `to:` contains
+   your id or `all` and that is newer than the last one you handled. Check at the start of each work session,
    before merging or touching shared files, and about every 5 minutes while waiting for an answer.
 6. **No secrets and no personal data**: no passwords, keys, tokens, sign-in links, people's
    names, e-mail addresses, account names, machine or tailnet names, or IP addresses. Write
