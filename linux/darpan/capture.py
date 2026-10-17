@@ -28,21 +28,24 @@ class _NvmlMemory(ctypes.Structure):
     _fields_ = [("total", ctypes.c_ulonglong), ("free", ctypes.c_ulonglong), ("used", ctypes.c_ulonglong)]
 
 
+_nvml = None        # NVML, opened on first use and kept open: then a query takes microseconds (opening it, ~7 ms)
+
+
 def gpu_free_mib(index=0):
     """Free memory on the NVIDIA GPU, in MiB, from NVML (the driver's own library); None if it can't tell."""
-    try:
-        nvml = ctypes.CDLL("libnvidia-ml.so.1")
-    except OSError:
+    global _nvml
+    if _nvml is None:
+        try:
+            lib = ctypes.CDLL("libnvidia-ml.so.1")
+            _nvml = lib if lib.nvmlInit_v2() == 0 else False
+        except OSError:
+            _nvml = False
+    if not _nvml:
         return None
-    if nvml.nvmlInit_v2():
+    dev, mem = ctypes.c_void_p(), _NvmlMemory()
+    if _nvml.nvmlDeviceGetHandleByIndex_v2(index, ctypes.byref(dev)) or _nvml.nvmlDeviceGetMemoryInfo(dev, ctypes.byref(mem)):
         return None
-    try:
-        dev, mem = ctypes.c_void_p(), _NvmlMemory()
-        if nvml.nvmlDeviceGetHandleByIndex_v2(index, ctypes.byref(dev)) or nvml.nvmlDeviceGetMemoryInfo(dev, ctypes.byref(mem)):
-            return None
-        return mem.free >> 20
-    finally:
-        nvml.nvmlShutdown()
+    return mem.free >> 20
 FLAG_KEY, FLAG_REFRESH, FLAG_INFO = 0x1, 0x2, 0x80000000
 
 

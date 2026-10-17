@@ -191,6 +191,9 @@ class Session:
         self.short = set()               # "gpu" (More GPU), "nvenc" (the GPU at all), "444" (full colour): off
                                          # for lack of GPU memory, until it has room again
         self.recheck_at = 0.0
+        self.recheck_s = RECHECK_S       # doubles each time something that came back has to go again
+        self.came_back = set()
+        self.told = set()                # each kind of "GPU memory is full" notice once a connection
         self.last_kf = 0.0
         self.wd_after = 3.0              # ack watchdog: 3 s, doubling while acks stay away
         self.last_ping = 0.0
@@ -586,14 +589,10 @@ class Session:
                  self.rc.kbps)
         self.ws.send_json(self._stream_msg(w, h))
         if self.cap.encoder == "nvenc" and self.cap.chroma != 444 and self._full_colour() and "444" not in self.short:
-            free = capture.gpu_free_mib(self.hub.cfg["gpu"])
-            if free is not None and free < NEED_MIB["444"]:  # (with room to spare, this GPU can't encode 4:4:4)
-                log.warning("session %s: no GPU memory for full colour (%d MiB free) — 4:2:0 until there is",
-                            self.sid, free)
-                self.short.add("444")
-                self.recheck_at = time.monotonic() + RECHECK_S
-                self.ws.send_json({"t": "notice", "level": "info", "text": "Full colour is off for now: the "
-                                   "Linux computer's GPU memory is full. It comes back by itself when there's room."})
+            if self._short_of_memory("444"):   # (with room to spare, this GPU just can't encode 4:4:4: say nothing)
+                log.warning("session %s: no GPU memory for full colour — 4:2:0 until there is", self.sid)
+                self._tell("444", "Full colour is off for now: the Linux computer's GPU memory is full. It comes back "
+                           "by itself when there's room.")
 
     def _cap_frame(self, flags, ts, cap_us, enc_us, data):
         if self.paused_at is not None or self.ws.closed:
@@ -622,8 +621,8 @@ class Session:
             if self._short_of_memory("gpu"):
                 log.warning("session %s: no GPU memory for the more-GPU encoder — the standard one until there is",
                             self.sid)
-                self.ws.send_json({"t": "notice", "level": "info", "text": "Can't use more of the Linux computer's "
-                                   "GPU right now: its memory is full. Darpan switches over by itself when there's room."})
+                self._tell("gpu", "Can't use more of the Linux computer's GPU right now: its memory is full. "
+                           "Darpan switches over by itself when there's room.")
             else:                                  # not memory: CUDA can't do it here, so not on this connection
                 log.warning("session %s: the more-GPU encoder failed — the standard one instead", self.sid)
                 self.params["gpu"] = False
@@ -633,9 +632,8 @@ class Session:
         elif reason == "no-nvenc":
             self._fall_back_to_x264("NVENC unavailable")
             if self._short_of_memory("nvenc"):
-                self.ws.send_json({"t": "notice", "level": "info", "text": "The Linux computer's GPU memory is full, "
-                                   "so it's encoding on its processor for now. Darpan switches back by itself when "
-                                   "there's room."})
+                self._tell("nvenc", "The Linux computer's GPU memory is full, so it's encoding on its processor for "
+                           "now. Darpan switches back by itself when there's room.")
             delay = 0
         elif reason == "vulkan":                   # the same NVENC through CUDA, for as long as we run
             log.warning("session %s: Vulkan Video failed — NVENC through CUDA from now on", self.sid)
@@ -660,18 +658,27 @@ class Session:
         self._task(later())
 
     def _short_of_memory(self, what):
-        """After a failed encoder start: if the GPU really is short of memory, note it (looked at again every
-        RECHECK_S) and say so; a failure with memory to spare is something else."""
+        """After a failed encoder start: if the GPU really is short of memory, note it, to look again later (less
+        often each time a comeback fails: training's memory moves, and a host near the line would flap). A
+        failure with memory to spare is something else."""
         free = capture.gpu_free_mib(self.hub.cfg["gpu"])
         if free is None or free >= NEED_MIB[what]:
             return False
+        if what in self.came_back:                       # back, and gone again: look less often
+            self.recheck_s = min(8 * RECHECK_S, 2 * self.recheck_s)
+        self.came_back.discard(what)
         self.short.add(what)
-        self.recheck_at = time.monotonic() + RECHECK_S
+        self.recheck_at = time.monotonic() + self.recheck_s
         return True
+
+    def _tell(self, what, text):
+        if what not in self.told:
+            self.told.add(what)
+            self.ws.send_json({"t": "notice", "level": "info", "text": text})
 
     def _recheck_gpu(self, now):
         """More GPU, the GPU itself or full colour went for lack of GPU memory: bring back whatever fits again."""
-        self.recheck_at = now + RECHECK_S
+        self.recheck_at = now + self.recheck_s
         free = capture.gpu_free_mib(self.hub.cfg["gpu"])
         back = {k for k in self.short if free is not None and free >= NEED_MIB[k]}
         if back:
@@ -680,6 +687,7 @@ class Session:
             if "nvenc" in back:
                 self.x264_until = 0.0            # don't wait out the software back-off
             self.short -= back
+            self.came_back |= back
             self._task(self._start_capture(restart=True))
 
     def _fall_back_to_x264(self, why):
