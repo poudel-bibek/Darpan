@@ -26,7 +26,7 @@ cd "$MAC"
 # whose plugin they don't ship. Until a release fixes that: the native build system, against the
 # newest macOS 26 SDK when there is one.
 SWIFT=(--build-system native)
-SDK26=$(ls -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.*.sdk 2>/dev/null | sort -V | tail -1)
+SDK26=$(ls -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.*.sdk 2>/dev/null | sort -V | tail -1 || true)
 [[ -n $SDK26 ]] && export SDKROOT=$SDK26
 
 echo "==> libtailscale"
