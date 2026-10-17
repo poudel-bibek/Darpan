@@ -948,6 +948,32 @@ async def run(args, tmp, probe_log):
     reader.cancel()
     resyncs = open(log_path).read().count("ack watchdog") - before
     ok("watchdog backs off", 1 <= resyncs <= 2, "%d resyncs in 16 s (without back-off: 4)" % resyncs)
+    frozen = [l.strip() for l in open(log_path) if "picture frozen" in l]
+    ok("a freeze is logged once, with what the viewer was doing", len(frozen) == 1 and "last word from the viewer" in frozen[0],
+       frozen[-1][-110:] if frozen else "no line")
+    # a freeze with our own socket backed up (the network) is noted too, though there's no resync then; a pause
+    # ends a freeze instead of counting the hidden time
+    from darpan.session import Session as Sess
+    import types
+    logged, keyframes = [], []
+    async def note(*a):
+        logged.append(a)
+    f3 = types.SimpleNamespace(sid="t", inflight={7: (time.monotonic() - 4.0, 1000)}, freeze_at=None, freezes=[],
+                               wd_after=3.0, ws=types.SimpleNamespace(buffered=900 * 1024, last_rx=time.monotonic() - 4.0),
+                               _task=lambda c: asyncio.ensure_future(c), cap=types.SimpleNamespace(
+                                   keyframe=lambda: keyframes.append(1), pause=lambda: None), paused_at=None,
+                               _credit=lambda n: None)
+    f3._log_freeze = note
+    f3._end_freeze = lambda by: Sess._end_freeze(f3, by)
+    Sess._watchdog(f3, time.monotonic())
+    await asyncio.sleep(0)
+    backed_up = f3.freeze_at is not None and logged and logged[0][3] == 900 * 1024 and not keyframes
+    Sess.on_stop(f3, {})
+    ok("a freeze while the link is backed up is noted; a pause ends it", backed_up and f3.freeze_at is None and
+       len(f3.freezes) == 1 and 3.9 < f3.freezes[0] < 5, "%s %s %s" % (logged, keyframes, f3.freezes))
+    closed = [l.strip() for l in open(log_path) if " closed after " in l]
+    ok("each session ends with a summary", bool(closed) and "Mbit/s on average" in closed[-1] and "path" in closed[-1],
+       closed[-1][-120:] if closed else "no line")
     live.w.close()
 
     # close: gives up on a peer that never takes the data (the flush never finishes)
