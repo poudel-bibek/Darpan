@@ -20,6 +20,7 @@ _MODE_RE = re.compile(r"^\s+(\d+)x(\d+)\s+(.*)$")
 _OUT_RE = re.compile(r"^(\S+) connected( primary)?(?: (\d+)x(\d+)\+\d+\+\d+)?")
 SCALE_KEY = ("org.gnome.desktop.interface", "scaling-factor")   # GNOME on X11: 1 or 2 (0 = automatic)
 FIT_SCALES = [100, 200]
+FIT_MAX = 4096                   # a side, at most: H.264 on NVENC goes no bigger
 
 
 async def _run(display, *cmd):
@@ -153,8 +154,10 @@ class Screen:
         """The desktop exactly w×h, drawn at scale % (100 or 200); the monitor keeps its own mode and NVIDIA
         scales the desktop onto it (a MetaMode with ViewPortIn). GNOME reads its scale only when the monitors
         change, so the scale is set first."""
-        if scale not in FIT_SCALES or not (640 <= w <= 8192 and 480 <= h <= 8192):
+        if scale not in FIT_SCALES or not (640 <= w <= 16384 and 480 <= h <= 16384):
             raise ValueError("can't fit %dx%d at %d %%" % (w, h, scale))
+        k = min(1.0, FIT_MAX / max(w, h))            # bigger than the encoder takes: both sides down together
+        w, h = int(w * k) // 2 * 2, int(h * k) // 2 * 2   # and even (4:2:0); modes' "fitted" says what it made
         text = await _xrandr(self.display, "--query")
         name, current, _ = _parse(text)
         native, meta = _native(text, name), await self._metamode()

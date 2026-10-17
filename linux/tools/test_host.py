@@ -1501,6 +1501,8 @@ async def run(args, tmp, probe_log):
     _, before = await pump(c, 1.5, "modes")
     c.send({"t": "res", "fit": [1600, 1000], "scale": 200})
     _, fitted = await pump(c, 2.0, "modes")
+    c.send({"t": "res", "fit": [5000, 3001], "scale": 200})     # too big for H.264, and odd: 4096 a side, even
+    _, big = await pump(c, 2.0, "modes")
     c.send({"t": "res", "native": True})
     _, after = await pump(c, 2.0, "modes")
     c.w.close()
@@ -1510,11 +1512,14 @@ async def run(args, tmp, probe_log):
             "nvidia-settings --assign CurrentMetaMode=DPY-1: nvidia-auto-select @1600x1000 +0+0 "
             "{ViewPortIn=1600x1000, ViewPortOut=1728x1080+96+0}",
             "gsettings set org.gnome.desktop.interface scaling-factor 0"]
-    got = [l for l in order if l.startswith(("gsettings", "nvidia-settings"))][-3:]
+    seq = [l for l in order if l.startswith(("gsettings", "nvidia-settings"))][-5:]
+    got = len(seq) == 5 and [seq[0], seq[1], seq[4]] == want and seq[2] == want[0] and seq[3].startswith(
+        "nvidia-settings --assign CurrentMetaMode=DPY-1: nvidia-auto-select @4096x2458 +0+0 {ViewPortIn=4096x2458,")
     cleared = any(l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tools)
     ok("fit: GNOME's scale, then the desktop size; native undoes both", before and before.get("fit_scales") == [100, 200]
-       and fitted and fitted.get("fitted") == [1600, 1000, 200] and after and "fitted" not in after and got == want and cleared,
-       "%s | %s | %s" % (before and before.get("fit_scales"), fitted and fitted.get("fitted"), got))
+       and fitted and fitted.get("fitted") == [1600, 1000, 200] and after and "fitted" not in after and got and cleared
+       and big and big.get("fitted") == [4096, 2458, 200],
+       "%s | %s | %s | %s" % (before and before.get("fit_scales"), fitted and fitted.get("fitted"), big and big.get("fitted"), seq))
     return all(r for _, r in results), results
 
 

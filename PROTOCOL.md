@@ -295,7 +295,8 @@ client-selected mode is active. Client → host:
 * `{"t":"res","fit":[3024,1890],"scale":200}` — make the desktop exactly this size, in device pixels (the
   viewer's view area), drawn at `scale` % (GNOME's 100 or 200). The monitor keeps its own mode; the GPU
   scales the desktop onto it. Offered when `modes` has `fit_scales` (an NVIDIA host with nvidia-settings);
-  while it's in effect, `modes` has `"fitted":[w,h,scale]`.
+  while it's in effect, `modes` has `"fitted":[w,h,scale]`. Sizes are rounded down to even numbers, and a
+  side over 4096 (H.264's limit) scales both down together; `fitted` and `screen` say what it made.
 * `{"t":"res","native":true}` — restore the original mode (and scale).
 * `{"t":"modes"}` — ask for a fresh `modes` message.
 
