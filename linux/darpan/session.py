@@ -619,18 +619,23 @@ class Session:
         if reason == "resize":
             delay = 0.3
         elif reason == "no-nvenc" and self._cuda() and not self.hub.no_vulkan:
-            log.warning("session %s: no GPU memory for the more-GPU encoder — the standard one until there is", self.sid)
-            self.short.add("gpu")
-            self.recheck_at = now + RECHECK_S
-            self.ws.send_json({"t": "notice", "level": "info", "text": "Can't use more of the Linux computer's GPU "
-                               "right now: its memory is full. Darpan switches over by itself when there's room."})
+            if self._short_of_memory("gpu"):
+                log.warning("session %s: no GPU memory for the more-GPU encoder — the standard one until there is",
+                            self.sid)
+                self.ws.send_json({"t": "notice", "level": "info", "text": "Can't use more of the Linux computer's "
+                                   "GPU right now: its memory is full. Darpan switches over by itself when there's room."})
+            else:                                  # not memory: CUDA can't do it here, so not on this connection
+                log.warning("session %s: the more-GPU encoder failed — the standard one instead", self.sid)
+                self.params["gpu"] = False
+                self.ws.send_json({"t": "notice", "level": "info",
+                                   "text": "Can't use more of the Linux computer's GPU on this connection"})
             delay = 0
         elif reason == "no-nvenc":
-            self._fall_back_to_x264("NVENC unavailable (GPU memory full?)")
-            self.short.add("nvenc")
-            self.recheck_at = now + RECHECK_S
-            self.ws.send_json({"t": "notice", "level": "info", "text": "The Linux computer's GPU memory is full, so "
-                               "it's encoding on its processor for now. Darpan switches back by itself when there's room."})
+            self._fall_back_to_x264("NVENC unavailable")
+            if self._short_of_memory("nvenc"):
+                self.ws.send_json({"t": "notice", "level": "info", "text": "The Linux computer's GPU memory is full, "
+                                   "so it's encoding on its processor for now. Darpan switches back by itself when "
+                                   "there's room."})
             delay = 0
         elif reason == "vulkan":                   # the same NVENC through CUDA, for as long as we run
             log.warning("session %s: Vulkan Video failed — NVENC through CUDA from now on", self.sid)
@@ -654,16 +659,27 @@ class Session:
                 await self._start_capture(restart=True)
         self._task(later())
 
+    def _short_of_memory(self, what):
+        """After a failed encoder start: if the GPU really is short of memory, note it (looked at again every
+        RECHECK_S) and say so; a failure with memory to spare is something else."""
+        free = capture.gpu_free_mib(self.hub.cfg["gpu"])
+        if free is None or free >= NEED_MIB[what]:
+            return False
+        self.short.add(what)
+        self.recheck_at = time.monotonic() + RECHECK_S
+        return True
+
     def _recheck_gpu(self, now):
-        """More GPU or full colour went for lack of GPU memory: once there's room again, restart with them."""
+        """More GPU, the GPU itself or full colour went for lack of GPU memory: bring back whatever fits again."""
         self.recheck_at = now + RECHECK_S
         free = capture.gpu_free_mib(self.hub.cfg["gpu"])
-        if free is not None and free >= max(NEED_MIB[k] for k in self.short):
+        back = {k for k in self.short if free is not None and free >= NEED_MIB[k]}
+        if back:
             log.info("session %s: GPU memory free again (%d MiB): %s back", self.sid, free,
-                     ", ".join({"gpu": "More GPU", "nvenc": "the GPU", "444": "full colour"}[k] for k in sorted(self.short)))
-            if "nvenc" in self.short:
+                     ", ".join({"gpu": "More GPU", "nvenc": "the GPU", "444": "full colour"}[k] for k in sorted(back)))
+            if "nvenc" in back:
                 self.x264_until = 0.0            # don't wait out the software back-off
-            self.short.clear()
+            self.short -= back
             self._task(self._start_capture(restart=True))
 
     def _fall_back_to_x264(self, why):

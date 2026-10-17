@@ -1086,32 +1086,42 @@ async def run(args, tmp, probe_log):
         _task=lambda c: (c.close(), tasks.append("restart")), _start_capture=lambda restart=False: asyncio.sleep(0))
     fake._fall_back_to_x264 = lambda why: Session._fall_back_to_x264(fake, why)
     fake._cuda = lambda: Session._cuda(fake)
+    fake._short_of_memory = lambda what: Session._short_of_memory(fake, what)
     Session.on_start(fake, {"fps": 60, "gpu": "full"})
     Session.on_start(fake, {"fps": 60, "gpu": "lean"})
     ok("warm resume only on the same route", tasks == ["restart", "resume"], tasks)
+    import darpan.capture as capture_mod
+    real_free = capture_mod.gpu_free_mib
+    free_mib = [100]                                                # a GPU full of training
+    capture_mod.gpu_free_mib = lambda index=0: free_mib[0]
     fake.params, fake.paused_at, tasks[:] = {"gpu": True}, None, []
     Session._cap_exit(fake, "no-nvenc")
     lean = fake.short == {"gpu"} and fake.params["gpu"] and not fake.x264_until and sent and sent[-1]["t"] == "notice"
     Session._cap_exit(fake, "no-nvenc")
-    ok("more GPU out of memory: lean first, then software", lean and fake.x264_until > 0 and tasks == ["restart"] * 2,
-       "%s %s" % (sent, tasks))
+    ok("more GPU out of memory: lean first, then software", lean and fake.short == {"gpu", "nvenc"} and
+       fake.x264_until > 0 and tasks == ["restart"] * 2, "%s %s" % (sent, tasks))
 
-    # ... and once the GPU has room again, More GPU comes back by itself; with too little, nothing restarts
-    import darpan.capture as capture_mod
-    real_free = capture_mod.gpu_free_mib
-    free_mib = [300]
-    capture_mod.gpu_free_mib = lambda index=0: free_mib[0]
-    fake.short, tasks[:] = {"gpu"}, []
+    # the memory comes back in steps: room for the standard encoder first (without the software back-off), More GPU later
+    free_mib[0], tasks[:] = 300, []
     Session._recheck_gpu(fake, 100.0)
-    still = fake.short == {"gpu"} and not tasks and fake.recheck_at == 130.0
-    free_mib[0] = 2000
+    partial = fake.short == {"gpu"} and fake.x264_until == 0.0 and tasks == ["restart"] and not fake._cuda()
+    tasks[:] = []
     Session._recheck_gpu(fake, 130.0)
-    ok("more GPU: back once the GPU has room", still and not fake.short and tasks == ["restart"] and fake._cuda(),
-       "%s %s" % (fake.short, tasks))
-    fake.short, fake.x264_until, tasks[:] = {"gpu", "nvenc"}, time.monotonic() + 900, []
-    Session._recheck_gpu(fake, 200.0)
-    ok("software for lack of GPU memory: the GPU again once it has room, without the back-off",
-       not fake.short and fake.x264_until == 0.0 and tasks == ["restart"], "%s %s" % (fake.short, fake.x264_until))
+    still = fake.short == {"gpu"} and not tasks and fake.recheck_at == 160.0
+    free_mib[0] = 2000
+    Session._recheck_gpu(fake, 160.0)
+    ok("GPU memory back: the standard encoder at 300 MiB free, More GPU at 2000", partial and still and not fake.short
+       and tasks == ["restart"] and fake._cuda(), "%s %s" % (fake.short, tasks))
+
+    # a failure with memory to spare isn't a shortage: More GPU off for this connection, software with its back-off,
+    # no "comes back by itself", no re-checks
+    free_mib[0], sent[:], tasks[:] = 20000, [], []
+    fake.params, fake.short, fake.x264_until, fake.x264_backoff = {"gpu": True}, set(), 0.0, 60.0
+    Session._cap_exit(fake, "no-nvenc")
+    Session._cap_exit(fake, "no-nvenc")
+    ok("a GPU failure with memory to spare: no memory notice, no re-checks", not fake.params["gpu"] and not fake.short
+       and fake.x264_until > 0 and [m["text"] for m in sent] == ["Can't use more of the Linux computer's GPU on this connection"],
+       "%s %s" % (fake.short, sent))
 
     # full colour asked for but the stream came up 4:2:0: with the GPU full, say so and look again later; with
     # plenty free, this GPU just can't encode 4:4:4, so say nothing
