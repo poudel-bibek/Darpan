@@ -414,7 +414,7 @@ class Window(Adw.ApplicationWindow):
                     sub += " · %d Mbit/s" % round(s["kbps"] / 1000)
                 if s.get("api") == "software":
                     sub += " · encoded on the processor"
-            elif s.get("w"):
+            elif s.get("paused"):                      # (not just between encoders: its window is hidden)
                 sub += " · paused"
             row = Adw.ActionRow(title=s["client"] or "Unknown device", subtitle=sub)
             row.add_prefix(Gtk.Image.new_from_icon_name("computer-symbolic"))
