@@ -100,7 +100,9 @@ Client → host:
 ```
 * `fps`: maximum frame rate (1–120, default 60). The host only sends frames when the
   screen actually changes, so a static screen costs ~0 bandwidth regardless.
-* `bitrate`: maximum kbit/s; `0` = automatic (adaptive, the default).
+* `bitrate`: the quality the viewer chose, in kbit/s. The host encodes at it from the first frame and drops
+  below it only while the network can't carry it, coming back once it can. `0` = automatic: it starts at
+  12000 and climbs while the picture uses the bits.
 
 Host → client, before the first frame of every new stream:
 ```json
