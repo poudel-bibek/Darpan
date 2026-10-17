@@ -212,6 +212,8 @@ public final class Client {
     private var hostRestarting = false
     private var retry = 0
     private var lastInbound = 0.0
+    /// Closed for the Mac's sleep (`sleep()`); `wake()` reconnects.
+    private var asleep = false
     private var pingTimer: DispatchSourceTimer?
     private var activity: NSObjectProtocol?
 
@@ -336,9 +338,29 @@ public final class Client {
         }
     }
 
-    /// After the Mac wakes: probe at once instead of waiting for the next ping.
+    /// The Mac is going to sleep: end the connection cleanly, so the host gets its desktop back at once
+    /// instead of after 30 s without a reply, and don't reconnect until `wake()`. While asleep the Mac
+    /// wakes for a moment about every 15 min, with the network up (a dark wake); those connect nothing.
+    public func sleep() {
+        queue.async {
+            guard self.everConnected, !self.asleep else { return }
+            self.asleep = true
+            self.generation += 1                    // the closing socket and any scheduled reconnect are stale
+            self.teardown()
+            self.publish(.reconnecting(restarting: false))
+        }
+    }
+
+    /// The Mac is awake again (its screens are on): reconnect after a `sleep()`, or else probe at once
+    /// instead of waiting for the next ping.
     public func wake() {
         queue.async {
+            if self.asleep {
+                self.asleep = false
+                self.retry = 0
+                self.open(initial: false)
+                return
+            }
             guard self.authed else { return }
             self.lastInbound = Clock.nowMs()
             self.ping()
