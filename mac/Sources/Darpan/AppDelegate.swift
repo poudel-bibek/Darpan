@@ -126,7 +126,7 @@ extension AppDelegate: SessionOwner {
 
     func sessionWaitingForHost(_ s: Session) {
         guard s === session else { return }
-        connectWindow.model.hostStarting(s.address.shortName)
+        connectWindow.model.hostStarting(Settings.shared.title(s.address.origin, original: s.address.shortName))
     }
 
     func sessionDidEnd(_ s: Session, failure: Client.Failure?) {
