@@ -1390,8 +1390,9 @@ async def run(args, tmp, probe_log):
     pw = open(os.path.join(tmp, "config", "darpan", "password.txt")).read().strip()
     res_file = os.path.join(tmp, "state", "darpan", "resolutions.json")
 
-    def switches():
-        return open(os.path.join(tmp, "host.log")).read().count("switching screen to 1920x1080")
+    def switches():                       # (the only mode there is: "already at" it counts as a switch)
+        text = open(os.path.join(tmp, "host.log")).read()
+        return text.count("switching screen to 1920x1080") + text.count("screen already at 1920x1080")
 
     async def visit(msg=None):
         c = await WS.connect("127.0.0.1", args.port)
@@ -1409,6 +1410,30 @@ async def run(args, tmp, probe_log):
             await visit()]
     ok("each client gets its last resolution back", seen == [(1, {"test_host.py": [1920, 1080]}),
        (2, {"test_host.py": [1920, 1080]}), (3, {}), (3, {})], seen)
+
+    # the resolution goes back a while after the last viewer leaves, so a quick reconnect finds it as it was
+    import darpan.session as session_mod
+    restored, hub = [], types.SimpleNamespace(sessions=set(), x=object(), _repeat_off=False, _screen=asyncio.Lock(),
+                                              login_screen=False, _restoring=None)
+    marker = os.path.join(tmp, "screen-state.json")
+    open(marker, "w").write("{}")
+
+    async def fake_restore():
+        restored.append(time.monotonic())
+    hub.screen = types.SimpleNamespace(state_file=marker, restore=fake_restore)
+    hub._restore_later = lambda: session_mod.Hub._restore_later(hub)
+    real_after, session_mod.RESTORE_AFTER_S = session_mod.RESTORE_AFTER_S, 0.3
+    await session_mod.Hub.session_ended(hub)            # the last viewer leaves ...
+    await asyncio.sleep(0.1)
+    hub.sessions.add("back")                            # ... and is back before the 0.3 s are up
+    await asyncio.sleep(0.4)
+    kept = not restored
+    hub.sessions.clear()
+    await session_mod.Hub.session_ended(hub)            # gone for good
+    await asyncio.sleep(0.5)
+    session_mod.RESTORE_AFTER_S = real_after
+    ok("resolution back only after a while without viewers", kept and len(restored) == 1,
+       "quick reconnect kept it: %s; restored %d time(s) after leaving" % (kept, len(restored)))
     return all(r for _, r in results), results
 
 

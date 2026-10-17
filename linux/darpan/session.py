@@ -58,6 +58,7 @@ MAX_KBPS = 200000                           # the highest bitrate a viewer may c
 NEED_MIB = {"gpu": 512, "nvenc": 192, "444": 256}   # free GPU memory before More GPU (~280 MiB), the GPU at
                                                     # all, or 4:4:4 is tried again
 RECHECK_S = 30.0                            # how often, while one of them is off for lack of it
+RESTORE_AFTER_S = 10.0                      # the resolution goes back this long after the last viewer leaves
 
 
 class RateControl:
@@ -1001,6 +1002,7 @@ class Hub:
         self._restore_keymap = None
         self._typing = asyncio.Lock()
         self._screen = asyncio.Lock()     # set_mode / restore never interleave
+        self._restoring = None            # the pending put-it-back, after the last viewer left
         self.unauthed_by = collections.Counter()
         self.audio_ok = audio.available()
         self.audio_pre_skip = None
@@ -1207,6 +1209,13 @@ class Hub:
                 os.unlink(self.repeat_marker)
             except FileNotFoundError:
                 pass
+        if not self._restoring or self._restoring.done():
+            self._restoring = asyncio.get_running_loop().create_task(self._restore_later())
+
+    async def _restore_later(self):
+        # A little later, not at once: a quick reconnect (the Mac waking up, a dropped link, a short look) finds the
+        # screen as it left it, instead of two mode switches that make the desktop rearrange its windows.
+        await asyncio.sleep(RESTORE_AFTER_S)
         async with self._screen:
             if self.sessions:             # someone connected while we waited
                 return

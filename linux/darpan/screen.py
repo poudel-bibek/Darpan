@@ -101,6 +101,9 @@ class Screen:
         rates = [r for rs in match for r in rs]
         # ~60 Hz is plenty for a remote view and lets the compositor do less work.
         rate = min(rates, key=lambda r: abs(r - 60))
+        if (w, h) == tuple(current[:2]) and abs(rate - current[2]) < 0.05:
+            log.info("%s already at %dx%d@%.2f", name, w, h, rate)   # e.g. a reconnect before the old mode came back
+            return
         if not os.path.exists(self.state_file):
             config.write_private(self.state_file, json.dumps(
                 {"output": name, "w": current[0], "h": current[1], "rate": current[2]}))
