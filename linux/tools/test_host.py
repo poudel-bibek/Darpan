@@ -24,6 +24,28 @@ import tempfile
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Stand-ins for the tools a fit uses, all logging to one file so the order shows: nvidia-settings answers the
+# MetaMode query as an NVIDIA driver would, gsettings keeps GNOME's scale in a file, xrandr is the real one.
+FAKE_NVIDIA_SETTINGS = r'''#!/usr/bin/env python3
+import os, sys
+if "-q" in sys.argv:
+    print("id=50, switchable=yes, source=RandR :: DPY-1: 1920x1080_60 @1920x1080 +0+0 {ViewPortIn=1920x1080, ViewPortOut=1920x1080+0+0}")
+else:
+    open(os.environ["DARPAN_FAKE_TOOL_LOG"], "a").write("nvidia-settings " + " ".join(sys.argv[1:]) + "\n")
+'''
+FAKE_GSETTINGS = r'''#!/usr/bin/env python3
+import os, sys
+log = os.environ["DARPAN_FAKE_TOOL_LOG"]
+if sys.argv[1] == "get":
+    print("uint32 " + (open(log + ".scale").read() if os.path.exists(log + ".scale") else "0"))
+else:
+    open(log + ".scale", "w").write(sys.argv[-1])
+    open(log, "a").write("gsettings " + " ".join(sys.argv[1:]) + "\n")
+'''
+FAKE_XRANDR = r'''#!/bin/sh
+case "$*" in --query*) ;; *) echo "xrandr $*" >> "$DARPAN_FAKE_TOOL_LOG" ;; esac
+exec REAL_XRANDR "$@"
+'''
 FAKE_PW_RECORD = r'''#!/usr/bin/env python3
 # Stand-in for pw-record in tests: writes a WAV header, then paced 48 kHz stereo s16 PCM on stdout:
 # 1 s of a 1 kHz tone, 0.3 s of digital silence, repeated. Logs its arguments and when it's started.
@@ -1469,6 +1491,30 @@ async def run(args, tmp, probe_log):
     session_mod.RESTORE_AFTER_S = real_after
     ok("on shutdown the resolution goes back at once", len(restored) == 1 and restored[0] - stop_at < 0.1,
        "%d restore(s), %.2f s after the stop" % (len(restored), restored[0] - stop_at if restored else -1))
+
+    # fit: the desktop exactly the viewer's size at 200 %: GNOME's scale first (it reads it only when the monitors
+    # change), then NVIDIA's MetaMode with the desktop fitted into the monitor's own mode; native undoes both,
+    # the scale first again, and clears the scaling
+    c = await WS.connect("127.0.0.1", args.port)
+    _, h = await c.recv()
+    c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py fit"})
+    _, before = await pump(c, 1.5, "modes")
+    c.send({"t": "res", "fit": [1600, 1000], "scale": 200})
+    _, fitted = await pump(c, 2.0, "modes")
+    c.send({"t": "res", "native": True})
+    _, after = await pump(c, 2.0, "modes")
+    c.w.close()
+    tools = [l.strip() for l in open(os.path.join(tmp, "tools.log"))] if os.path.exists(os.path.join(tmp, "tools.log")) else []
+    order = [l for l in tools if not l.startswith("xrandr --output screen --mode 1920x1080 --rate") or "--transform none" in l]
+    want = ["gsettings set org.gnome.desktop.interface scaling-factor 2",
+            "nvidia-settings --assign CurrentMetaMode=DPY-1: nvidia-auto-select @1600x1000 +0+0 "
+            "{ViewPortIn=1600x1000, ViewPortOut=1728x1080+96+0}",
+            "gsettings set org.gnome.desktop.interface scaling-factor 0"]
+    got = [l for l in order if l.startswith(("gsettings", "nvidia-settings"))][-3:]
+    cleared = any(l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tools)
+    ok("fit: GNOME's scale, then the desktop size; native undoes both", before and before.get("fit_scales") == [100, 200]
+       and fitted and fitted.get("fitted") == [1600, 1000, 200] and after and "fitted" not in after and got == want and cleared,
+       "%s | %s | %s" % (before and before.get("fit_scales"), fitted and fitted.get("fitted"), got))
     return all(r for _, r in results), results
 
 
@@ -1497,11 +1543,14 @@ def main():
             time.sleep(0.1)
     fakebin = os.path.join(tmp, "bin")
     os.makedirs(fakebin)
-    with open(os.path.join(fakebin, "pw-record"), "w") as f:
-        f.write(FAKE_PW_RECORD)
-    os.chmod(os.path.join(fakebin, "pw-record"), 0o755)
+    for tool, text in (("pw-record", FAKE_PW_RECORD), ("nvidia-settings", FAKE_NVIDIA_SETTINGS),
+                       ("gsettings", FAKE_GSETTINGS), ("xrandr", FAKE_XRANDR.replace("REAL_XRANDR", shutil.which("xrandr")))):
+        with open(os.path.join(fakebin, tool), "w") as f:
+            f.write(text)
+        os.chmod(os.path.join(fakebin, tool), 0o755)
     env = dict(os.environ, DISPLAY=args.display, XDG_CONFIG_HOME=os.path.join(tmp, "config"),
                PATH=fakebin + os.pathsep + os.environ.get("PATH", ""), DARPAN_FAKE_PW_LOG=os.path.join(tmp, "pw.log"),
+               DARPAN_FAKE_TOOL_LOG=os.path.join(tmp, "tools.log"),
                XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"),
                XDG_RUNTIME_DIR=os.path.join(tmp, "run"), HOME=tmp, PYTHONPATH=args.root)
     os.makedirs(env["XDG_RUNTIME_DIR"], mode=0o700)
