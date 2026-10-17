@@ -254,6 +254,8 @@ final class Session: NSObject {
     private func tick() {
         ticks += 1
         content.toolbar.quality = Quality(ms: client.quality)
+        let target = client.targetKbps.map { ($0 / 100).rounded() * 100 }
+        if model.targetKbps != target { model.targetKbps = target }
         if NSApp.isActive { clipboard.poll() }
         guard settings.showStats || logStats else { return }
         let s = client.takeStats()
@@ -568,6 +570,7 @@ extension Session: ClientDelegate {
             if !wasConnected { sizeWindow(for: w.screen) }
         case .stream(let s):
             video.streamSize = CGSize(width: s.width, height: s.height)
+            model.stream = s
         case .screen:
             break                                         // a new stream follows
         case .cursor(let cur):
@@ -578,6 +581,8 @@ extension Session: ClientDelegate {
             model.modes = m
         case .notice(let text, let error):
             content.toasts.show(text, error: error, ttl: error ? 8 : 3.5)
+            // Why More GPU or full colour went (or came back): the display panel shows it next to what's in effect.
+            if text.localizedCaseInsensitiveContains("GPU") || text.localizedCaseInsensitiveContains("colour") { model.notice = text }
         case .upload(let u):
             uploadEvent(u)
         case .files(let access):

@@ -114,6 +114,18 @@ public final class Client {
         public let encoder: String
         /// 444 for full colour (with the `h264-444` capability), else 420.
         public var chroma = 420
+        /// How the host encodes: "vulkan", "cuda" or "software" (nil from hosts before 1.4.1).
+        public var api: String?
+
+        public init(id: UInt16, width: Int, height: Int, fps: Int, encoder: String, chroma: Int = 420, api: String? = nil) {
+            self.id = id
+            self.width = width
+            self.height = height
+            self.fps = fps
+            self.encoder = encoder
+            self.chroma = chroma
+            self.api = api
+        }
     }
 
     public struct Cursor {
@@ -386,6 +398,12 @@ public final class Client {
         s.hardwareDecoder = c.hardware
         s.framesTotal = c.framesTotal
         return s
+    }
+
+    /// The host's bitrate target from its latest `stats` (kbit/s), without resetting counters.
+    public var targetKbps: Double? {
+        lock.lock(); defer { lock.unlock() }
+        return counters.host?.targetKbps
     }
 
     /// Latest latency estimate for the quality dot, without resetting counters.
@@ -765,6 +783,7 @@ public final class Client {
               w > 0, h > 0 else { return }
         var info = StreamInfo(id: UInt16(id), width: w, height: h, fps: m.int("fps") ?? fps, encoder: m.string("enc") ?? "")
         info.chroma = m.int("chroma") ?? 420
+        info.api = m.string("api")
         stream = info
         decoder.requireKeyFrame()
         needKeySince = Clock.nowMs()

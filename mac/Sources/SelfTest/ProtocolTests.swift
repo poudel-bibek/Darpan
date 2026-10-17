@@ -84,6 +84,33 @@ func protocolTests() {
         eq(problem("https://"), .invalid, "no host")
     }
 
+    section("what's in effect") {
+        func s(_ chroma: Int, _ api: String?, enc: String = "nvenc") -> Client.StreamInfo {
+            Client.StreamInfo(id: 1, width: 2560, height: 1440, fps: 60, encoder: enc, chroma: chroma, api: api)
+        }
+        let max = InEffect(stream: s(444, "cuda"), targetKbps: 50000, chosenKbps: 50000, fullGPU: true, decodesFullColour: true)
+        eq(max.picture, "2560×1440, 60 fps", "size and frame rate")
+        eq(max.colour, "Full colour (4:4:4)", "4:4:4")
+        eq(max.encoding, "On the GPU, using more of it (CUDA)", "CUDA")
+        eq(max.bitrate, "50.0 Mbit/s now", "at the chosen bitrate")
+        eq(max.notes, [], "everything chosen is in effect")
+        let short = InEffect(stream: s(420, "vulkan"), targetKbps: 21000, chosenKbps: 50000, fullGPU: true, decodesFullColour: true)
+        eq(short.encoding, "On the GPU (Vulkan)", "Vulkan")
+        eq(short.bitrate, "21.0 Mbit/s now, lowered for the network", "below the choice")
+        eq(short.notes, ["More GPU isn't in use right now.", "Full colour isn't in use right now."], "GPU memory took both away")
+        let balanced = InEffect(stream: s(420, "vulkan"), targetKbps: 15000, chosenKbps: 15000, fullGPU: false, decodesFullColour: true)
+        eq(balanced.notes, [], "4:2:0 at Balanced is as chosen")
+        let soft = InEffect(stream: s(420, "software", enc: "x264"), targetKbps: nil, chosenKbps: 30000, fullGPU: true, decodesFullColour: true)
+        eq(soft.encoding, "On the processor (no GPU)", "software")
+        eq(soft.bitrate, nil, "no stats yet")
+        eq(soft.notes.count, 1, "one note for software: no GPU at all")
+        let old = InEffect(stream: s(420, nil), targetKbps: 12000, chosenKbps: 30000, fullGPU: false, decodesFullColour: false)
+        eq(old.encoding, "On the GPU", "a host without `api`")
+        eq(old.notes, [], "no 4:4:4 note when this Mac can't decode it")
+        eq(InEffect(stream: s(420, nil, enc: "x264"), targetKbps: nil, chosenKbps: 15000, fullGPU: false,
+                    decodesFullColour: true).encoding, "On the processor (no GPU)", "x264 without `api`: software")
+    }
+
     section("clock sync and latency") {
         var c = ClockSync()
         // Host clock = local + 5 s. Ping sent at 1000 ms, pong at 1020 ms: the host stamped it mid-way.
