@@ -54,6 +54,7 @@ def _desktop_dir():
 
 
 FULL_COLOUR_KBPS = 25000                    # Higher Quality (30 Mbit/s) and Max get 4:4:4
+MAX_KBPS = 200000                           # the highest bitrate a viewer may choose (darpan-capture's own limit)
 
 
 class RateControl:
@@ -352,7 +353,7 @@ class Session:
             self.ws.send_json({"t": "notice", "level": "error", "text": "unsupported codec"})
             return
         fps = int(m.get("fps") or self.hub.cfg["fps"])
-        self.params = {"fps": max(1, min(120, fps)), "bitrate": max(0, int(m.get("bitrate") or 0)),
+        self.params = {"fps": max(1, min(120, fps)), "bitrate": max(0, min(MAX_KBPS, int(m.get("bitrate") or 0))),
                        "gpu": m.get("gpu") == "full"}
         if (self.cap and self.paused_at is not None and self.cap.fps_ == self.params["fps"] and
                 getattr(self.cap, "cuda", None) in (None, self.hub.no_vulkan or self.params["gpu"]) and
@@ -381,7 +382,7 @@ class Session:
             if self.rc:
                 self.rc.fps = self.params["fps"]
         if "bitrate" in m:
-            b = max(0, int(m["bitrate"]))
+            b = max(0, min(MAX_KBPS, int(m["bitrate"])))
             self.params["bitrate"] = b
             if self.rc:
                 self.rc.cap = b or self.hub.cfg["max_kbps"]

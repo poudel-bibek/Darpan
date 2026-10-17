@@ -1283,6 +1283,14 @@ async def run(args, tmp, probe_log):
     c.send({"t": "cfg", "bitrate": 15000})
     _, lower = await pump(c, 3.0, "stream")
     c.w.close()
+    c = await WS.connect("127.0.0.1", args.port)                # an absurd bitrate: the host's own limit
+    _, h = await c.recv()
+    c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py huge"})
+    while (await asyncio.wait_for(c.recv(), 10))[1].get("t") != "ok":
+        pass
+    c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 10 ** 9})
+    await pump(c, 2.0, "stream")
+    c.w.close()
     ok("full colour: 4:4:4 at Higher Quality", full and full.get("chroma") == 444 and worst444 <= 6 and
        lower and lower.get("chroma") == 420, "%s, colour error %d/255; then %s" % (
            full and {k: full.get(k) for k in ("chroma", "api")}, worst444, lower and lower.get("chroma")))
@@ -1292,7 +1300,8 @@ async def run(args, tmp, probe_log):
     ok("the chosen quality from the first frame, a new one at once; automatic starts at 12 Mbit/s",
        any(s.endswith("4:4:4, 30 fps, 30000 kbit/s\n") for s in streams) and
        any(s.endswith("4:2:0, 30 fps, 15000 kbit/s\n") for s in streams) and
-       any(s.endswith("4:2:0, 60 fps, 12000 kbit/s\n") for s in streams), "".join(streams[-4:]).strip())
+       any(s.endswith("4:2:0, 60 fps, 12000 kbit/s\n") for s in streams) and
+       any(s.endswith("30 fps, 200000 kbit/s\n") for s in streams), "".join(streams[-4:]).strip())
 
     # each kind of client gets back the resolution it chose last time; Native forgets it. The test display
     # offers only 1920×1080, so count the host's switches to it.
