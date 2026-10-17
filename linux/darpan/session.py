@@ -385,10 +385,10 @@ class Session:
             self.params["bitrate"] = b
             if self.rc:
                 self.rc.cap = b or self.hub.cfg["max_kbps"]
-                target = min(self.rc.kbps, self.rc.cap)      # a higher ceiling is climbed to, not jumped to
-                self.rc.kbps = target
+                # a newly chosen quality applies at once; the rate still drops if the path can't carry it
+                self.rc.kbps = self.rc.before_cut = self.rc.cap if b else min(self.rc.kbps, self.rc.cap)
                 if self.cap:
-                    self.cap.bitrate(target)
+                    self.cap.bitrate(self.rc.kbps)
             if (self.cap and self.paused_at is None and self.cap.encoder == "nvenc" and
                     self.cap.c444 != self._full_colour()):
                 self._task(self._start_capture(restart=True))   # full colour on or off: a key frame follows
@@ -446,7 +446,10 @@ class Session:
         cfg = hub.cfg
         cap_kbps = p["bitrate"] or cfg["max_kbps"]
         if not self.rc or not restart:
-            self.rc = RateControl(cfg["start_kbps"], cap_kbps, p["fps"])    # gently, up to the chosen ceiling
+            # The quality the viewer chose, from the first frame: starting lower and climbing meant a desktop
+            # (mostly quiet, so it never "used" the bits) stayed at the start rate whatever was chosen. The
+            # rate still drops the moment the path queues. Only "automatic" starts lower and climbs.
+            self.rc = RateControl(cap_kbps if p["bitrate"] else cfg["start_kbps"], cap_kbps, p["fps"])
         self.window = self.rc.window()
         self.withhold = 0
         use_nvenc = hub.encoder and time.monotonic() >= self.x264_until and cfg["encoder"] != "x264"
@@ -506,6 +509,9 @@ class Session:
 
     def _cap_started(self, w, h, enc):
         self.w, self.h = w, h
+        log.info("session %s: stream %d: %dx%d %s via %s, %s, %d fps, %d kbit/s", self.sid, self.stream_id, w, h,
+                 self.cap.encoder, self.cap.api, "4:4:4" if self.cap.chroma == 444 else "4:2:0", self.params["fps"],
+                 self.rc.kbps)
         self.ws.send_json(self._stream_msg(w, h))
 
     def _cap_frame(self, flags, ts, cap_us, enc_us, data):

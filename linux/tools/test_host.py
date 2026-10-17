@@ -1288,6 +1288,11 @@ async def run(args, tmp, probe_log):
            full and {k: full.get(k) for k in ("chroma", "api")}, worst444, lower and lower.get("chroma")))
     ok("full colour only when asked for", plain_stream and plain_stream.get("chroma") == 420,
        "a viewer without h264-444 at 30 Mbit/s: %s" % (plain_stream and plain_stream.get("chroma")))
+    streams = [l.split(": stream ")[1] for l in open(os.path.join(tmp, "host.log")) if ": stream " in l]
+    ok("the chosen quality from the first frame, a new one at once; automatic starts at 12 Mbit/s",
+       any(s.endswith("4:4:4, 30 fps, 30000 kbit/s\n") for s in streams) and
+       any(s.endswith("4:2:0, 30 fps, 15000 kbit/s\n") for s in streams) and
+       any(s.endswith("4:2:0, 60 fps, 12000 kbit/s\n") for s in streams), "".join(streams[-4:]).strip())
 
     # each kind of client gets back the resolution it chose last time; Native forgets it. The test display
     # offers only 1920×1080, so count the host's switches to it.
