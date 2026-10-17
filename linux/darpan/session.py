@@ -191,6 +191,10 @@ class Session:
         self._kf_pending = False
         self._cap_lock = asyncio.Lock()  # start/stop/restart never overlap (no orphaned encoders)
         self.stats = [0, 0, 0, 0]   # frames, bytes, cap_us, enc_us  (this second)
+        self.total = [0, 0]              # frames, bytes: the whole session, for its summary
+        self.freeze_at = None            # when the oldest unacked frame of a freeze went out
+        self.freezes = []                # how long each lasted (s)
+        self.path0 = None                # the tailnet path at the start: "direct" or "relay <region>"
         self.last_stats = time.monotonic()
         # input
         self.keys = set()
@@ -300,6 +304,7 @@ class Session:
         self.caps = {c for c in caps if isinstance(c, str)} if isinstance(caps, list) else set()
         log.info("session %s: %s from %s%s", self.sid, self.client, self.source,
                  " (%s)" % self.ts_user if self.ts_user else "")
+        self._task(self._note_path())
         return True
 
     def _welcome(self):
@@ -333,8 +338,32 @@ class Session:
         await self._stop_capture()
         self._release_all()
         if self.authed:
-            log.info("session %s closed", self.sid)
+            if self.freeze_at is not None:
+                self.freezes.append(time.monotonic() - self.freeze_at)
+            secs = max(1.0, time.time() - self.since)
+            fz = self.freezes
+            log.info("session %s closed after %d min: %d frames, %.1f Mbit/s on average, %s; path %s → %s", self.sid,
+                     round(secs / 60), self.total[0], self.total[1] * 8 / secs / 1e6,
+                     "%d freeze%s (%.0f s in all, longest %.1f s)" % (len(fz), "" if len(fz) == 1 else "s", sum(fz), max(fz))
+                     if fz else "no freezes", self.path0 or "?", await self._path() or "?")
         await hub.session_ended()
+
+    async def _path(self):
+        """How the viewer's traffic travels the tailnet: "direct" or "relay <region>"; None if it can't tell."""
+        st = await asyncio.to_thread(tailscale.status)
+        for p in ((st or {}).get("Peer") or {}).values():
+            if self.source in (p.get("TailscaleIPs") or []):
+                return "direct" if p.get("CurAddr") else "relay %s" % (p.get("Relay") or "?")
+        return None
+
+    async def _note_path(self):
+        self.path0 = await self._path()
+
+    async def _log_freeze(self, frozen, unacked, quiet):
+        # Did the viewer go quiet altogether (the network, or the Mac asleep), or keep talking but stop acking frames
+        # (its decoder or display)? And did the traffic go direct or through a relay just then?
+        log.info("session %s: picture frozen %.1f s: %d frames unacked, last word from the viewer %.1f s ago, path %s",
+                 self.sid, frozen, unacked, quiet, await self._path() or "?")
 
     def _task(self, coro):
         t = asyncio.get_running_loop().create_task(coro)
@@ -425,6 +454,10 @@ class Session:
             del self.inflight[s]
             give += 1
         self.wd_after = 3.0
+        if self.freeze_at is not None:
+            self.freezes.append(now - self.freeze_at)
+            log.info("session %s: picture moving again after %.1f s", self.sid, now - self.freeze_at)
+            self.freeze_at = None
         self.rc.on_ack(now, now - ent[0], ent[1])
         self._credit(give)
 
@@ -520,6 +553,8 @@ class Session:
         st = self.stats
         st[0] += 1
         st[1] += n
+        self.total[0] += 1
+        self.total[1] += n
         st[2] += cap_us
         st[3] += enc_us
 
@@ -603,6 +638,9 @@ class Session:
             # Acks stopped: resync from a key frame so we never deadlock — unless the socket itself
             # is backed up (link stalled): queueing more frames would only add latency.
             if now - oldest > self.wd_after and self.ws.buffered < 256 * 1024:
+                if self.freeze_at is None:
+                    self.freeze_at = oldest
+                    self._task(self._log_freeze(now - oldest, len(self.inflight), now - self.ws.last_rx))
                 log.info("session %s: ack watchdog, resyncing (next after %d s)", self.sid, min(30, self.wd_after * 2))
                 k = len(self.inflight)
                 self.inflight.clear()

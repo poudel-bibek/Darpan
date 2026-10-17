@@ -948,6 +948,12 @@ async def run(args, tmp, probe_log):
     reader.cancel()
     resyncs = open(log_path).read().count("ack watchdog") - before
     ok("watchdog backs off", 1 <= resyncs <= 2, "%d resyncs in 16 s (without back-off: 4)" % resyncs)
+    frozen = [l.strip() for l in open(log_path) if "picture frozen" in l]
+    ok("a freeze is logged once, with what the viewer was doing", len(frozen) == 1 and "last word from the viewer" in frozen[0],
+       frozen[-1][-110:] if frozen else "no line")
+    closed = [l.strip() for l in open(log_path) if " closed after " in l]
+    ok("each session ends with a summary", bool(closed) and "Mbit/s on average" in closed[-1] and "path" in closed[-1],
+       closed[-1][-120:] if closed else "no line")
     live.w.close()
 
     # close: gives up on a peer that never takes the data (the flush never finishes)
