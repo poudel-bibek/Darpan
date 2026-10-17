@@ -63,7 +63,7 @@ When your changes create orphans:
 * **Merging.** Merge locally with a merge commit (`Merge #N: <title>`), made as the GitHub no-reply
   identity, then push. A merge on the GitHub website can record the account's real e-mail address.
   Delete the branch once it's merged.
-* **Board messages** (`dev-messageboard/`) go straight to `main`; see its README.
+* **Board messages** go to the `messageboard` branch, never to `main`; see the README there.
 * **Privacy.** No personal data anywhere: names, e-mail addresses, account, machine or tailnet
   names, IP addresses, home paths. The repository's own addresses, on GitHub and its Pages site, are
   fine. Run `scripts/check-private-data.sh` before every commit. Commit
