@@ -359,11 +359,34 @@ class Session:
     async def _note_path(self):
         self.path0 = await self._path()
 
-    async def _log_freeze(self, frozen, unacked, quiet):
+    def _watchdog(self, now):
+        oldest = min(t for t, _ in self.inflight.values())
+        if now - oldest > 3.0 and self.freeze_at is None:     # a freeze, whatever its cause
+            self.freeze_at = oldest
+            self._task(self._log_freeze(now - oldest, len(self.inflight), now - self.ws.last_rx, self.ws.buffered))
+        # Acks stopped: resync from a key frame so we never deadlock — unless the socket itself
+        # is backed up (link stalled): queueing more frames would only add latency.
+        if now - oldest > self.wd_after and self.ws.buffered < 256 * 1024:
+            log.info("session %s: ack watchdog, resyncing (next after %d s)", self.sid, min(30, self.wd_after * 2))
+            k = len(self.inflight)
+            self.inflight.clear()
+            self._credit(k)
+            self.cap.keyframe()
+            self.wd_after = min(30.0, self.wd_after * 2)   # a peer that never acks gets fewer key frames
+
+    def _end_freeze(self, by):
+        """A pause or a new stream ends a freeze too (its frames are dropped): count it up to now."""
+        if self.freeze_at is not None:
+            self.freezes.append(time.monotonic() - self.freeze_at)
+            log.info("session %s: picture frozen until %s, %.1f s", self.sid, by, self.freezes[-1])
+            self.freeze_at = None
+
+    async def _log_freeze(self, frozen, unacked, quiet, queued):
         # Did the viewer go quiet altogether (the network, or the Mac asleep), or keep talking but stop acking frames
-        # (its decoder or display)? And did the traffic go direct or through a relay just then?
-        log.info("session %s: picture frozen %.1f s: %d frames unacked, last word from the viewer %.1f s ago, path %s",
-                 self.sid, frozen, unacked, quiet, await self._path() or "?")
+        # (its decoder or display)? Was our own socket backed up? And did the traffic go direct or through a relay?
+        log.info("session %s: picture frozen %.1f s: %d frames unacked, last word from the viewer %.1f s ago, "
+                 "%d KiB waiting to be sent, path %s", self.sid, frozen, unacked, quiet, queued // 1024,
+                 await self._path() or "?")
 
     def _task(self, coro):
         t = asyncio.get_running_loop().create_task(coro)
@@ -392,6 +415,7 @@ class Session:
 
     def on_stop(self, m):
         if self.cap and self.paused_at is None:
+            self._end_freeze("a pause")
             self.paused_at = time.monotonic()   # keep the encoder warm for a quick resume
             self.cap.pause()
 
@@ -489,6 +513,7 @@ class Session:
         fps = p["fps"] if use_nvenc else min(p["fps"], 30)   # software encoding: spare the CPU
         self.stream_id = (self.stream_id % 0xFFFF) + 1
         self.seq = 0
+        self._end_freeze("a new stream")
         self.inflight.clear()
         self.wd_after = 3.0
         self.paused_at = None
@@ -634,19 +659,7 @@ class Session:
             self.withhold += self.window - win
         self.window = win
         if self.inflight:
-            oldest = min(t for t, _ in self.inflight.values())
-            # Acks stopped: resync from a key frame so we never deadlock — unless the socket itself
-            # is backed up (link stalled): queueing more frames would only add latency.
-            if now - oldest > self.wd_after and self.ws.buffered < 256 * 1024:
-                if self.freeze_at is None:
-                    self.freeze_at = oldest
-                    self._task(self._log_freeze(now - oldest, len(self.inflight), now - self.ws.last_rx))
-                log.info("session %s: ack watchdog, resyncing (next after %d s)", self.sid, min(30, self.wd_after * 2))
-                k = len(self.inflight)
-                self.inflight.clear()
-                self._credit(k)
-                self.cap.keyframe()
-                self.wd_after = min(30.0, self.wd_after * 2)   # a peer that never acks gets fewer key frames
+            self._watchdog(now)
         f, b, c, e = self.stats
         dt = now - self.last_stats
         self.last_stats = now
