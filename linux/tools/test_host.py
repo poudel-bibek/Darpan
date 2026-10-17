@@ -1414,7 +1414,7 @@ async def run(args, tmp, probe_log):
     # the resolution goes back a while after the last viewer leaves, so a quick reconnect finds it as it was
     import darpan.session as session_mod
     restored, hub = [], types.SimpleNamespace(sessions=set(), x=object(), _repeat_off=False, _screen=asyncio.Lock(),
-                                              login_screen=False, _restoring=None)
+                                              login_screen=False, _restoring=None, _restore_at=0.0)
     marker = os.path.join(tmp, "screen-state.json")
     open(marker, "w").write("{}")
 
@@ -1424,16 +1424,20 @@ async def run(args, tmp, probe_log):
     hub._restore_later = lambda: session_mod.Hub._restore_later(hub)
     real_after, session_mod.RESTORE_AFTER_S = session_mod.RESTORE_AFTER_S, 0.3
     await session_mod.Hub.session_ended(hub)            # the last viewer leaves ...
+    await asyncio.sleep(0.05)
+    hub.sessions.add("back")                            # ... is back at once ...
     await asyncio.sleep(0.1)
-    hub.sessions.add("back")                            # ... and is back before the 0.3 s are up
-    await asyncio.sleep(0.4)
+    hub.sessions.clear()                                # ... and gone again while the first timer still runs
+    left = time.monotonic()
+    await session_mod.Hub.session_ended(hub)
+    await asyncio.sleep(0.2)                            # past the first deadline, not the new one
     kept = not restored
-    hub.sessions.clear()
-    await session_mod.Hub.session_ended(hub)            # gone for good
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.4)
     session_mod.RESTORE_AFTER_S = real_after
-    ok("resolution back only after a while without viewers", kept and len(restored) == 1,
-       "quick reconnect kept it: %s; restored %d time(s) after leaving" % (kept, len(restored)))
+    ok("resolution back only after a while without viewers, counted from the last departure",
+       kept and len(restored) == 1 and restored[0] - left >= 0.29,
+       "quick reconnect kept it: %s; restored %d time(s), %.2f s after the last departure" % (
+           kept, len(restored), restored[0] - left if restored else -1))
     return all(r for _, r in results), results
 
 
