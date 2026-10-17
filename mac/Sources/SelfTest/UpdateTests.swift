@@ -3,6 +3,17 @@ import DarpanCore
 import Foundation
 
 func updateTests() {
+    section("update schedule") {
+        let now: TimeInterval = 1_800_000_000
+        eq(UpdateSchedule.delay(lastAnswer: 0, failedSince: false, now: now), 0, "never checked: now")
+        eq(UpdateSchedule.delay(lastAnswer: now - 2 * 3600, failedSince: false, now: now), 22 * 3600, "a day after the last answer")
+        eq(UpdateSchedule.delay(lastAnswer: now - 30 * 3600, failedSince: false, now: now), 0, "overdue: now")
+        eq(UpdateSchedule.delay(lastAnswer: now - 2 * 3600, failedSince: true, now: now), 3600,
+           "couldn't reach GitHub: an hour, not the rest of the day")
+        eq(UpdateSchedule.delay(lastAnswer: now - 30 * 3600, failedSince: true, now: now), 3600,
+           "still failing: every hour, never in a tight loop")
+    }
+
     section("update manifest") {
         let key = Curve25519.Signing.PrivateKey()
         let pub = key.publicKey.rawRepresentation
