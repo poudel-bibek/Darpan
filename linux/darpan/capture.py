@@ -8,6 +8,7 @@ X264Capture is the safety net when NVENC is unavailable (e.g. the NVIDIA driver 
 updated): GStreamer ximagesrc + x264, same flow control, more CPU.
 """
 import asyncio
+import ctypes
 import json
 import logging
 import os
@@ -21,6 +22,27 @@ from . import config
 log = logging.getLogger("darpan.capture")
 
 _REC = struct.Struct("<IIQII")
+
+
+class _NvmlMemory(ctypes.Structure):
+    _fields_ = [("total", ctypes.c_ulonglong), ("free", ctypes.c_ulonglong), ("used", ctypes.c_ulonglong)]
+
+
+def gpu_free_mib(index=0):
+    """Free memory on the NVIDIA GPU, in MiB, from NVML (the driver's own library); None if it can't tell."""
+    try:
+        nvml = ctypes.CDLL("libnvidia-ml.so.1")
+    except OSError:
+        return None
+    if nvml.nvmlInit_v2():
+        return None
+    try:
+        dev, mem = ctypes.c_void_p(), _NvmlMemory()
+        if nvml.nvmlDeviceGetHandleByIndex_v2(index, ctypes.byref(dev)) or nvml.nvmlDeviceGetMemoryInfo(dev, ctypes.byref(mem)):
+            return None
+        return mem.free >> 20
+    finally:
+        nvml.nvmlShutdown()
 FLAG_KEY, FLAG_REFRESH, FLAG_INFO = 0x1, 0x2, 0x80000000
 
 
