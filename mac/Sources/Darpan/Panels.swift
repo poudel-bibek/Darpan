@@ -241,6 +241,7 @@ private struct ScalePicker: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(on ? Color.white : Color.primary)
                 .background(RoundedRectangle(cornerRadius: 6).fill(on ? Color.accentColor : Color.clear))
+                .accessibilityAddTraits(on ? .isSelected : [])          // (the colour alone says nothing to VoiceOver)
             }
         }
         .padding(2)
