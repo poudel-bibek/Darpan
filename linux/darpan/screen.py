@@ -315,7 +315,6 @@ class Screen:
         except Exception:
             os.unlink(self.state_file)
             return
-        log.info("restoring %s to %dx%d@%.2f", orig["output"], orig["w"], orig["h"], orig["rate"])
         await self._unscale(orig)
         self.scaled = None
         try:
@@ -323,6 +322,7 @@ class Screen:
                 await self._step(await _xrandr(self.display, "--query"), orig["w"], orig["h"])
             xid = _pick(_mutter_modes(await _xrandr(self.display, "--verbose"), orig["output"])[0],
                         orig["w"], orig["h"], orig["rate"])
+            log.info("restoring %s to %dx%d@%.2f (%s)", orig["output"], orig["w"], orig["h"], orig["rate"], xid)
             mode = ["--mode", xid] if xid else ["--mode", "%dx%d" % (orig["w"], orig["h"]), "--rate", "%.2f" % orig["rate"]]
             await _xrandr(self.display, "--output", orig["output"], *mode, "--transform", "none")
         except RuntimeError as e:
