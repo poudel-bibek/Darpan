@@ -1595,6 +1595,20 @@ async def run(args, tmp, probe_log):
     two = await screen_mod.Screen(":0")._metamode()
     screen_mod._run = real_run
     ok("two displays: no fit offered", two is None, repr(two))
+    # a mode its output refuses (xrandr --verbose lists modes attached to no output after the last one): by size and rate
+    calls = []
+
+    async def refusing(display, *args):
+        calls.append(args)
+        if "0x99" in args:
+            raise RuntimeError("xrandr: cannot find mode 0x99")
+        return ""
+    real_xrandr, screen_mod._xrandr = screen_mod._xrandr, refusing
+    await screen_mod._switch(":0", "eDP-2", "0x99", 2560, 1600, 60.0)
+    screen_mod._xrandr = real_xrandr
+    ok("a refused mode xid falls back to size and rate",
+       calls == [("--output", "eDP-2", "--mode", "0x99", "--transform", "none"),
+                 ("--output", "eDP-2", "--mode", "2560x1600", "--rate", "60.00", "--transform", "none")], calls)
     # a mode GNOME knows: a laptop panel had two 60 Hz modes 0.0001 Hz apart; mutter keeps the first listed (a
     # later one with the preferred mode's flags would replace it), and xrandr --rate picked the other: no monitor
     # in GNOME, and the shell crashed at the next click on the top bar
@@ -1621,11 +1635,19 @@ HDMI-1 disconnected (normal left inverted right x axis y axis)
     twin = screen_mod._mutter_modes(panel.replace("  1920x1440 (0x4b)", "  2560x1600 (0x4a) 777.322MHz -HSync -VSync\n"
         "        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock 285.78KHz\n"
         "        v: height 1600 start 1603 end 1609 total 1732           clock 165.00Hz\n  1920x1440 (0x4b)"), "eDP-2")[0]
+    named = screen_mod._mutter_modes(panel.replace("  2560x1600 (0x46)", "  2560x1600-165-custom (0x45) 777.322MHz -HSync -VSync\n"
+        "        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock 285.78KHz\n"
+        "        v: height 1600 start 1603 end 1609 total 1732           clock 165.00Hz\n  2560x1600 (0x46)"), "eDP-2")[0]
+    spaced = screen_mod._mutter_modes(panel.replace("  2560x1600 (0x46)", "  My mode (0x44) 777.322MHz -HSync -VSync\n"
+        "        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock 285.78KHz\n"
+        "        v: height 1600 start 1603 end 1609 total 1732           clock 165.00Hz\n  2560x1600 (0x46)"), "eDP-2")[0]
     picks = [screen_mod._pick(kept, 2560, 1600, 60.0), screen_mod._pick(kept, 2560, 1600, 165.0),
              screen_mod._pick(kept, 1920, 1440, 60.0), screen_mod._pick(flagless, 2560, 1600, 60.0),
-             screen_mod._pick(twin, 2560, 1600, 165.0)]          # (the preferred mode itself is never replaced)
+             screen_mod._pick(twin, 2560, 1600, 165.0),          # (the preferred mode itself is never replaced)
+             screen_mod._pick(named, 2560, 1600, 165.0),         # (a custom-named mode counts, sized as mutter does)
+             screen_mod._pick(spaced, 2560, 1600, 165.0)]        # (a name with a space too)
     ok("modes are picked as GNOME keeps them (of two alike to a thousandth of a Hz, its own)",
-       picks == ["0x47", "0x46", "0x4b", "0x48", "0x46"] and cur == "0x48" and len(kept) == 3,
+       picks == ["0x47", "0x46", "0x4b", "0x48", "0x46", "0x45", "0x44"] and cur == "0x48" and len(kept) == 3,
        "%s, current %s, %d kept" % (picks, cur, len(kept)))
     ok("fit at the size the desktop already is: a step to another size, so GNOME reads the scale",
        stepped and same and same.get("fitted") == [1920, 1080, 200] and rescaled and rescaled.get("fitted") == [1920, 1080, 100],
