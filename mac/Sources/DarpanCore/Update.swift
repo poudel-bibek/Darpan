@@ -59,3 +59,17 @@ public struct UpdateManifest: Equatable {
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }
+
+/// When the next background check for updates runs.
+public enum UpdateSchedule {
+    /// Between checks that got an answer from GitHub.
+    public static let interval: TimeInterval = 24 * 3600
+    /// After a check that couldn't reach it (offline, or GitHub down): one bad moment shouldn't cost a day.
+    public static let retry: TimeInterval = 3600
+
+    /// Seconds from `now` to the next check. `lastAnswer`: when a check last got an answer (0: never);
+    /// `failedSince`: a check since then couldn't reach GitHub.
+    public static func delay(lastAnswer: TimeInterval, failedSince: Bool, now: TimeInterval) -> TimeInterval {
+        failedSince ? retry : max(0, lastAnswer + interval - now)
+    }
+}

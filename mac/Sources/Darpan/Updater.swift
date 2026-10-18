@@ -24,13 +24,15 @@ final class Updater: ObservableObject {
     /// Ed25519, raw 32 bytes: the release key's public half (the private half never leaves the
     /// release machine).
     private static let publicKey = Data(base64Encoded: "25WwdShAmjlKpC4Y0JyLHxjEPnF5YsFf09FTXDg9G4w=")!
-    private static let interval: TimeInterval = 24 * 3600
+    /// When a check last got an answer from GitHub (seconds since 1970).
     private static let lastCheckKey = "updateLastCheck"
 
     /// "owner/name", written into Info.plist by build.sh; nil in development builds (no updates).
     private let repo = Bundle.main.object(forInfoDictionaryKey: "DarpanRepository") as? String
     private let settings = Settings.shared
     private var timer: Timer?
+    /// The last check couldn't reach GitHub: the next one in an hour, not a day.
+    private var failed = false
     private let session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
         c.timeoutIntervalForRequest = 30
@@ -41,7 +43,7 @@ final class Updater: ObservableObject {
 
     private init() {}
 
-    /// Schedules the daily check (the first one is due a day after the last).
+    /// Schedules the daily check (due a day after the last answer, or an hour after a check that failed).
     func start() {
         timer?.invalidate()
         timer = nil
@@ -66,8 +68,8 @@ final class Updater: ObservableObject {
         }
         #endif
         guard repo != nil, settings.checkUpdates else { return }
-        let last = UserDefaults.standard.double(forKey: Self.lastCheckKey)
-        let due = max(0, last + Self.interval - Date().timeIntervalSince1970)
+        let due = UpdateSchedule.delay(lastAnswer: UserDefaults.standard.double(forKey: Self.lastCheckKey),
+                                       failedSince: failed, now: Date().timeIntervalSince1970)
         let t = Timer(timeInterval: max(due, 5), repeats: false) { [weak self] _ in self?.check(manual: false) }
         t.tolerance = 60
         RunLoop.main.add(t, forMode: .common)
@@ -97,9 +99,11 @@ final class Updater: ObservableObject {
         defer {
             // An offered update isn't stamped: the next launch offers it again, in case it went
             // unseen (a saved computer connects at launch and hides the connect window).
-            // Found one: no more checks this launch (it stays offered). Otherwise the next in a day.
+            // Found one: no more checks this launch (it stays offered). Couldn't reach GitHub: not
+            // stamped, and tried again in an hour. Otherwise the next in a day.
+            failed = json == nil || sig == nil
             if case .available = state {} else {
-                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckKey)
+                if !failed { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckKey) }
                 start()
             }
         }
