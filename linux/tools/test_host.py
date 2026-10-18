@@ -243,7 +243,8 @@ async def fs_checks(port, tmp, pw, ok, caps):
 
     st, hd, b = await http(port, "GET", "/fs/list?path=" + Q(base))
     ok("fs: no token → 401", st == 401 and J(b).get("e") == "token" and "bearer" in hd.get("www-authenticate", "").lower(), st)
-    st, _, b = await http(port, "GET", "/fs/list?path=" + Q(base), {"Authorization": "Bearer x" + tok[1:]})
+    wrong = ("y" if tok[0] == "x" else "x") + tok[1:]      # (1 token in 64 starts with x)
+    st, _, b = await http(port, "GET", "/fs/list?path=" + Q(base), {"Authorization": "Bearer " + wrong})
     ok("fs: wrong token → 401", st == 401, st)
 
     st, _, b = await http(port, "GET", "/fs/list?path=" + Q(base), A)
