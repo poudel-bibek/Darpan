@@ -1411,6 +1411,29 @@ async def run(args, tmp, probe_log):
     ok("each client gets its last resolution back", seen == [(1, {"test_host.py": [1920, 1080]}),
        (2, {"test_host.py": [1920, 1080]}), (3, {}), (3, {})], seen)
 
+    # another device right after, with no choice of its own, gets the original back at once, not the last viewer's
+    host_log = os.path.join(tmp, "host.log")
+    restores = open(host_log).read().count("restoring screen to")
+
+    async def device(name, msg=None):
+        c = await WS.connect("127.0.0.1", args.port)
+        _, h = await c.recv()
+        c.send({"t": "auth", "proof": proof_for(pw, h), "client": name})
+        await pump(c, 1.0)
+        if msg:
+            c.send(msg)
+            await pump(c, 1.0)
+        c.w.close()
+    await device("test_host.py A", {"t": "res", "w": 1920, "h": 1080})
+    # (the test screen has one mode, so A's choice switched nothing: write what a real switch leaves behind)
+    with open(os.path.join(tmp, "state", "darpan", "screen.json"), "w") as f:
+        json.dump({"output": "screen", "w": 1920, "h": 1080, "rate": 0.0}, f)
+    await device("test_host.py B")
+    await asyncio.sleep(0.5)
+    ok("another device within the delay gets the original, not the last viewer's",
+       open(host_log).read().count("restoring screen to") - restores == 1,
+       "%d restore(s)" % (open(host_log).read().count("restoring screen to") - restores))
+
     # the resolution goes back a while after the last viewer leaves, so a quick reconnect finds it as it was
     import darpan.session as session_mod
     restored, hub = [], types.SimpleNamespace(sessions=set(), x=object(), _repeat_off=False, _screen=asyncio.Lock(),
@@ -1438,6 +1461,14 @@ async def run(args, tmp, probe_log):
        kept and len(restored) == 1 and restored[0] - left >= 0.29,
        "quick reconnect kept it: %s; restored %d time(s), %.2f s after the last departure" % (
            kept, len(restored), restored[0] - left if restored else -1))
+    restored.clear()                                    # the host stopping: at once, not cancelled with it
+    session_mod.RESTORE_AFTER_S = 0.3
+    await session_mod.Hub.session_ended(hub)            # a restore pending ...
+    stop_at = time.monotonic()
+    await session_mod.Hub.session_ended(hub, now=True)  # ... and the host stops
+    session_mod.RESTORE_AFTER_S = real_after
+    ok("on shutdown the resolution goes back at once", len(restored) == 1 and restored[0] - stop_at < 0.1,
+       "%d restore(s), %.2f s after the stop" % (len(restored), restored[0] - stop_at if restored else -1))
     return all(r for _, r in results), results
 
 
