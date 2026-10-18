@@ -293,8 +293,12 @@ class Screen:
         want = 1 if scale == 100 else 2
         k = min(native[0] / dw, native[1] / dh)
         ow, oh = int(dw * k) // 2 * 2, int(dh * k) // 2 * 2
-        log.info("fitting %s to %dx%d at %d %% (a %dx%d desktop; its own %dx%d shows it %dx%d)",
-                 name, w, h, scale, dw, dh, *native, ow, oh)
+        if mode:
+            log.info("fitting %s to %dx%d at %d %% (a %dx%d desktop, scaled onto its %dx%d mode %s)",
+                     name, w, h, scale, dw, dh, mode[1], mode[2], mode[0])
+        else:
+            log.info("fitting %s to %dx%d at %d %% (a %dx%d desktop; its own %dx%d shows it %dx%d)",
+                     name, w, h, scale, dw, dh, *native, ow, oh)
         await _run(None, "gsettings", "set", *SCALE_KEY, str(want))
         was = self.scaled, self.fitted           # both before the desktop changes (the pointer reads them meanwhile)
         self.scaled, self.fitted = (w, h) if (dw, dh) != (w, h) else None, [w, h, scale]
