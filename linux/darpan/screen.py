@@ -70,11 +70,12 @@ def _f32(v):
 
 def _mutter_modes(verbose, output):
     """The output's modes as GNOME's mutter keeps them, from `xrandr --verbose`: ([(xid, w, h, refresh)], the
-    current mode's xid). Mutter names a mode WxH@<refresh to 3 decimals> (computed in single precision) and keeps
-    one per name: the first listed, unless a later one has no sync flags. A monitor left on a mode it dropped
-    has no logical monitor in GNOME, and a click on the top bar then crashes the shell (a laptop panel with two
-    60 Hz modes 0.0001 Hz apart did that)."""
-    kept, order, current, mine = {}, [], None, False
+    current mode's xid). Mutter (meta-monitor.c, GNOME 46 and later) names a mode WxH@<refresh to 3 decimals>,
+    computed in single precision, and keeps one per name: the first listed, unless a later one has exactly the
+    flags of the preferred mode (the output's first) and another name than it. A monitor left on a mode it
+    dropped has no logical monitor in GNOME, and a click on the top bar then crashes the shell (a laptop panel
+    with two 60 Hz modes 0.0001 Hz apart did that)."""
+    kept, order, current, mine, preferred = {}, [], None, False, None
     lines = verbose.splitlines()
     for i, line in enumerate(lines):
         m = _OUT_RE.match(line)
@@ -97,9 +98,12 @@ def _mutter_modes(verbose, output):
             vt /= 2
         refresh = _f32(_f32(round(float(mm.group(5)) * 1e6)) / _f32(_f32(ht) * _f32(vt))) if ht and vt else 0.0
         name = "%dx%d%s@%.3f" % (w, h, "i" if "Interlace" in rest else "", refresh)
+        flags = set(rest.split()) - {"*current", "+preferred"}
+        if preferred is None:
+            preferred = (name, flags)
         if name not in kept:
             order.append(name)
-        if name not in kept or not re.search(r"[+-][HV]Sync|CSync|Interlace|DoubleScan", rest):
+        if name not in kept or (flags == preferred[1] and name != preferred[0]):
             kept[name] = (xid, w, h, refresh)
     return [kept[n] for n in order], current
 
