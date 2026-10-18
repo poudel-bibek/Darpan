@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private weak var pending: Session?
     /// The session whose window was in front last: only its sound plays.
     private weak var front: Session?
+    /// A computer that failed while the connect window was busy with another: told once that's done.
+    private var missed: (origin: String, title: String, failure: Client.Failure)?
     private var resolutionMenu: NSMenu?
     private var terminating = false
 
@@ -106,8 +108,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sessions.first { $0.window.isKeyWindow } ?? sessions.first { $0.window.isMainWindow } ?? front
     }
 
+    /// The computers with a window of their own, connected or reconnecting (their rows bring it forward).
     private func updateConnected() {
-        connectWindow.model.connectedOrigins = Set(sessions.filter(\.isConnected).map(\.address.origin))
+        connectWindow.model.connectedOrigins = Set(sessions.filter(\.wasConnected).map(\.address.origin))
+    }
+
+    /// A failure missed while another computer was connecting, now that the connect window is free.
+    private func tellMissed() {
+        guard let m = missed else { return }
+        missed = nil
+        connectWindow.model.address = m.origin                // a password prompt is for that computer
+        connectWindow.model.ended(m.failure, wasConnected: true, name: m.title)
+        connectWindow.showWindow(nil)
     }
 
     @objc func newConnection(_ sender: Any?) {
@@ -144,12 +156,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 extension AppDelegate: ConnectHandler {
     func connect(to address: HostAddress, proxy: SOCKSProxy?, password: String?, saved: SavedKey?, remember: Bool?) {
         if let open = sessions.first(where: { $0.address.origin == address.origin }) {
-            // Already open: its window, not a second connection.
-            if open.isConnected {
+            // Already open: its window (connected or reconnecting), not a second connection.
+            if open.wasConnected {
                 connectWindow.model.connected()
                 open.window.makeKeyAndOrderFront(nil)
             } else {
-                pending = open                               // still (re)connecting: the connect window follows it
+                pending = open                               // still signing in: the connect window follows it
             }
             return
         }
@@ -165,7 +177,7 @@ extension AppDelegate: ConnectHandler {
     }
 
     func show(_ origin: String) {
-        guard let s = sessions.first(where: { $0.address.origin == origin && $0.isConnected }) else { return }
+        guard let s = sessions.first(where: { $0.address.origin == origin && $0.wasConnected }) else { return }
         s.window.makeKeyAndOrderFront(nil)
     }
 }
@@ -178,6 +190,7 @@ extension AppDelegate: SessionOwner {
         if s === pending {
             pending = nil
             connectWindow.model.connected()
+            tellMissed()
         }
     }
 
@@ -194,12 +207,18 @@ extension AppDelegate: SessionOwner {
             front = next
             next.playsSound = true
         }
-        // What happened shows in the connect window, unless it's busy connecting another computer.
-        guard pending == nil || s === pending else { return }
+        // What happened shows in the connect window; while it's busy connecting another computer, a
+        // failure waits until that's done.
+        guard pending == nil || s === pending else {
+            if let failure { missed = (s.address.origin, s.window.title, failure) }
+            return
+        }
         pending = nil
+        connectWindow.model.address = s.address.origin           // a password prompt is for this computer
         connectWindow.model.ended(failure, wasConnected: s.wasConnected,
                                   name: sessions.isEmpty ? nil : s.window.title)
         if failure != nil || sessions.isEmpty { connectWindow.showWindow(nil) }
+        if failure != nil { missed = nil } else { tellMissed() }  // (two failures at once: the window shows this one)
     }
 }
 
