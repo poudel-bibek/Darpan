@@ -1496,11 +1496,12 @@ async def run(args, tmp, probe_log):
 
     # fit: the desktop exactly the viewer's size at 200 %: GNOME's scale first (it reads it only when the monitors
     # change), then NVIDIA's MetaMode with the desktop fitted into the monitor's own mode; native undoes both,
-    # the scale first again, and clears the scaling
+    # the scale first again, and clears the scaling; so does a mode, even the one the screen already reports
     c = await WS.connect("127.0.0.1", args.port)
     _, h = await c.recv()
     c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py fit"})
     _, before = await pump(c, 1.5, "modes")
+    await pump(c, 1.0)                          # (modes again: the visits above left a restore pending)
     c.send({"t": "res", "fit": [1600, 1000], "scale": 200})
     _, fitted = await pump(c, 2.0, "modes")
     c.send({"t": "res", "fit": [1600, 1000], "scale": 200})    # the same again (a reconnect): nothing switches
@@ -1509,6 +1510,10 @@ async def run(args, tmp, probe_log):
     _, big = await pump(c, 2.0, "modes")
     c.send({"t": "res", "native": True})
     _, after = await pump(c, 2.0, "modes")
+    c.send({"t": "res", "fit": [2000, 1200], "scale": 200})
+    await pump(c, 2.0, "modes")
+    c.send({"t": "res", "w": 1920, "h": 1080})                   # RandR's current mode: still a switch, to undo the fit
+    _, moded = await pump(c, 2.0, "modes")
     c.send({"t": "res", "fit": [1234, 800], "scale": 200})      # refused by the driver: not 200 % on the old desktop
     _, refused = await pump(c, 2.0, "notice")
     c.w.close()
@@ -1525,6 +1530,9 @@ async def run(args, tmp, probe_log):
     got = len(seq) == 5 and [seq[0], seq[1], seq[4]] == want and seq[2] == want[0] and seq[3].startswith(
         "nvidia-settings --assign CurrentMetaMode=DPY-1: nvidia-auto-select @4096x2458 +0+0 {ViewPortIn=4096x2458,")
     cleared = any(l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tools)
+    tail = tools[next((k for k, l in enumerate(tools) if "@2000x1200" in l), len(tools)):]
+    unfit = ("gsettings set org.gnome.desktop.interface scaling-factor 0" in tail and any(
+        l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tail))
     # two displays: no fit offered (a MetaMode names every display; assigning one would turn the other off)
     import darpan.screen as screen_mod
     real_run = screen_mod._run
@@ -1536,9 +1544,10 @@ async def run(args, tmp, probe_log):
     two = await screen_mod.Screen(":0")._metamode()
     screen_mod._run = real_run
     ok("two displays: no fit offered", two is None, repr(two))
-    ok("fit: GNOME's scale, then the desktop size; native undoes both", before and before.get("fit_scales") == [100, 200]
+    ok("fit: GNOME's scale, then the desktop size; native or a mode undoes both", before and before.get("fit_scales") == [100, 200]
        and fitted and fitted.get("fitted") == [1600, 1000, 200] and after and "fitted" not in after and got and cleared
-       and big and big.get("fitted") == [4096, 2458, 200] and once and undone and refused is not None,
+       and big and big.get("fitted") == [4096, 2458, 200] and once and undone and refused is not None
+       and moded and "fitted" not in moded and unfit,
        "%s | %s | %s | %s" % (before and before.get("fit_scales"), fitted and fitted.get("fitted"), big and big.get("fitted"), seq))
     return all(r for _, r in results), results
 
