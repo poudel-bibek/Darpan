@@ -117,11 +117,8 @@ struct DisplayPanel: View {
             }
             if let offered = model.modes?.fitScales, offered.count > 1 {
                 PanelSection(title: "Size") {
-                    Picker("Size", selection: Binding(get: { model.fitScale }, set: { model.setFitScale($0) })) {
-                        ForEach(offered, id: \.self) { Text("\($0) %").tag($0) }
-                    }
-                    .pickerStyle(.segmented).labelsHidden()
-                    .disabled(model.modes?.fitted == nil)
+                    ScalePicker(scales: offered, selection: Binding(get: { model.fitScale }, set: { model.setFitScale($0) }))
+                        .disabled(model.modes?.fitted == nil).opacity(model.modes?.fitted == nil ? 0.5 : 1)
                     .help("How large the Linux desktop draws things in this window (200 % looks like a Retina screen)")
                 }
             }
@@ -222,6 +219,33 @@ private struct InEffectSection: View {
                 .font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+}
+
+/// The scales a fitted desktop can be drawn at, as a segmented row in the quality choices' style: the
+/// segments share the panel's width, so five (100-200 %) fit where the system's segmented control doesn't.
+private struct ScalePicker: View {
+    let scales: [Int]
+    @Binding var selection: Int
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(scales, id: \.self) { s in
+                let on = selection == s
+                Button { selection = s } label: {
+                    Text("\(s) %")
+                        .font(.system(size: 11, weight: on ? .semibold : .regular))
+                        .frame(maxWidth: .infinity, minHeight: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(on ? Color.white : Color.primary)
+                .background(RoundedRectangle(cornerRadius: 6).fill(on ? Color.accentColor : Color.clear))
+                .accessibilityAddTraits(on ? .isSelected : [])          // (the colour alone says nothing to VoiceOver)
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.08)))
     }
 }
 
