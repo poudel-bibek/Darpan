@@ -1621,11 +1621,15 @@ HDMI-1 disconnected (normal left inverted right x axis y axis)
     twin = screen_mod._mutter_modes(panel.replace("  1920x1440 (0x4b)", "  2560x1600 (0x4a) 777.322MHz -HSync -VSync\n"
         "        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock 285.78KHz\n"
         "        v: height 1600 start 1603 end 1609 total 1732           clock 165.00Hz\n  1920x1440 (0x4b)"), "eDP-2")[0]
+    named = screen_mod._mutter_modes(panel.replace("  2560x1600 (0x46)", "  2560x1600-165-custom (0x45) 777.322MHz -HSync -VSync\n"
+        "        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock 285.78KHz\n"
+        "        v: height 1600 start 1603 end 1609 total 1732           clock 165.00Hz\n  2560x1600 (0x46)"), "eDP-2")[0]
     picks = [screen_mod._pick(kept, 2560, 1600, 60.0), screen_mod._pick(kept, 2560, 1600, 165.0),
              screen_mod._pick(kept, 1920, 1440, 60.0), screen_mod._pick(flagless, 2560, 1600, 60.0),
-             screen_mod._pick(twin, 2560, 1600, 165.0)]          # (the preferred mode itself is never replaced)
+             screen_mod._pick(twin, 2560, 1600, 165.0),          # (the preferred mode itself is never replaced)
+             screen_mod._pick(named, 2560, 1600, 165.0)]         # (a custom-named mode counts, sized as mutter does)
     ok("modes are picked as GNOME keeps them (of two alike to a thousandth of a Hz, its own)",
-       picks == ["0x47", "0x46", "0x4b", "0x48", "0x46"] and cur == "0x48" and len(kept) == 3,
+       picks == ["0x47", "0x46", "0x4b", "0x48", "0x46", "0x45"] and cur == "0x48" and len(kept) == 3,
        "%s, current %s, %d kept" % (picks, cur, len(kept)))
     ok("fit at the size the desktop already is: a step to another size, so GNOME reads the scale",
        stepped and same and same.get("fitted") == [1920, 1080, 200] and rescaled and rescaled.get("fitted") == [1920, 1080, 100],

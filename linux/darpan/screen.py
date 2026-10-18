@@ -19,8 +19,8 @@ log = logging.getLogger("darpan.screen")
 
 _MODE_RE = re.compile(r"^\s+(\d+)x(\d+)\s+(.*)$")
 _OUT_RE = re.compile(r"^(\S+) connected( primary)?(?: (\d+)x(\d+)\+\d+\+\d+)?")
-_VMODE_RE = re.compile(r"^\s+(\d+)x(\d+)(i?)\s+\((0x[0-9a-f]+)\)\s+([\d.]+)MHz(.*)$")   # xrandr --verbose
-_TOTAL_RE = re.compile(r"\stotal\s+(\d+)")
+_VMODE_RE = re.compile(r"^\s+(\S+)\s+\((0x[0-9a-f]+)\)\s+([\d.]+)MHz(.*)$")   # xrandr --verbose (any name)
+_SIZE_RE = re.compile(r"\s(?:width|height)\s+(\d+)\s.*\stotal\s+(\d+)")       # its h: and v: lines
 SCALE_KEY = ("org.gnome.desktop.interface", "scaling-factor")   # GNOME on X11: 1 or 2 (0 = automatic)
 FIT_SCALES = [100, 125, 150, 175, 200]  # 125-175: GNOME draws at 200 % on a desktop that much bigger,
                                         # and the capture scales it down to the window's size
@@ -86,18 +86,19 @@ def _mutter_modes(verbose, output):
         mm = _VMODE_RE.match(line) if mine else None
         if not mm:
             continue
-        w, h, xid, rest = int(mm.group(1)), int(mm.group(2)), mm.group(4), mm.group(6)
+        xid, rest = mm.group(2), mm.group(4)
         if "*current" in rest:
             current = xid
-        totals = [_TOTAL_RE.search(l) for l in lines[i + 1:i + 3]]
-        if len(totals) < 2 or not all(totals):
+        hv = [_SIZE_RE.search(l) for l in lines[i + 1:i + 3]]     # the size from these, as mutter takes it, not the
+        if len(hv) < 2 or not all(hv):                          # name (a mode added with --newmode has its own)
             continue
-        ht, vt = float(totals[0].group(1)), float(totals[1].group(1))
+        w, h = int(hv[0].group(1)), int(hv[1].group(1))
+        ht, vt = float(hv[0].group(2)), float(hv[1].group(2))
         if "DoubleScan" in rest:
             vt *= 2
         if "Interlace" in rest:
             vt /= 2
-        refresh = _f32(_f32(round(float(mm.group(5)) * 1e6)) / _f32(_f32(ht) * _f32(vt))) if ht and vt else 0.0
+        refresh = _f32(_f32(round(float(mm.group(3)) * 1e6)) / _f32(_f32(ht) * _f32(vt))) if ht and vt else 0.0
         name = "%dx%d%s@%.3f" % (w, h, "i" if "Interlace" in rest else "", refresh)
         flags = set(rest.split()) - {"*current", "+preferred"}
         if preferred is None:
