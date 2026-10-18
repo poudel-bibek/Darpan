@@ -224,7 +224,9 @@ final class Session: NSObject {
         })
         // The desktop follows this window's size, once it has settled (not during a live resize or a
         // full-screen transition: each size is a mode switch on the Linux side).
-        for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didEnterFullScreenNotification] {
+        // (A move to a screen of another density changes the pixels without a resize.)
+        for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didEnterFullScreenNotification,
+                     NSWindow.didChangeBackingPropertiesNotification] {
             observers.append(nc.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in self?.requestFitSoon() })
         }
     }
