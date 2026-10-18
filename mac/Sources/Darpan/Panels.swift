@@ -11,6 +11,11 @@ final class ViewerModel: ObservableObject {
     @Published var accessibilityTrusted = KeyboardCapture.accessibilityTrusted
     /// The scale a fit is drawn at now (the viewer's choice, or by this Mac's screen).
     @Published var fitScale = 200
+    /// The latest `stream`, and the host's bitrate target to 0.1 Mbit/s: what the display panel says is in effect.
+    @Published var stream: Client.StreamInfo?
+    @Published var targetKbps: Double?
+    /// The host's last notice, e.g. why More GPU or full colour went.
+    @Published var notice: String?
 
     var setResolution: (DisplayMode?) -> Void = { _ in }     // nil: native
     var fitThisWindow: () -> Void = {}
@@ -76,6 +81,11 @@ struct DisplayPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let st = model.stream {
+                InEffectSection(e: InEffect(stream: st, targetKbps: model.targetKbps, chosenKbps: settings.quality,
+                                            fullGPU: settings.fullGPU, decodesFullColour: DecoderCaps.fullColour),
+                                notice: model.notice)
+            }
             PanelSection(title: "Remote resolution") {
                 let rows = model.resolutionRows
                 if rows.isEmpty {
@@ -187,6 +197,32 @@ struct KeysPanel: View {
     }
 }
 
+/// What's in effect, so a choice that didn't take shows (GPU memory full, say).
+private struct InEffectSection: View {
+    let e: InEffect
+    let notice: String?
+
+    var body: some View {
+        PanelSection(title: "In effect") {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(e.picture)
+                Text(e.colour)
+                Text(e.encoding)
+                if let b = e.bitrate { Text(b) }
+            }
+            .font(.system(size: 12))
+            if !e.notes.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(e.notes, id: \.self) { Label($0, systemImage: "exclamationmark.triangle.fill") }
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                    if let notice { Text(notice).foregroundStyle(.secondary) }
+                }
+                .font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
 /// Four quality choices as a segmented row; the long names take two lines ("Faster" over "Speed").
 private struct QualityPicker: View {
     @Binding var selection: Int
@@ -206,7 +242,7 @@ private struct QualityPicker: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(on ? Color.white : Color.primary)
                 .background(RoundedRectangle(cornerRadius: 6).fill(on ? Color.accentColor : Color.clear))
-                .help("Up to \(q.kbps / 1000) Mbit/s; less when the network needs it")
+                .help("\(q.kbps / 1000) Mbit/s; less only while the network needs it")
             }
         }
         .padding(2)

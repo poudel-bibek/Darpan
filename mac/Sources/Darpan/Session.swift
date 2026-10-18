@@ -54,6 +54,8 @@ final class Session: NSObject {
     private let proxy: SOCKSProxy?
     private var caps: [String] = []
     private var files: FilesWindowController?
+    /// The computer's own name: from its address, then from the host itself.
+    private var ownName: String
     private let logStats = ProcessInfo.processInfo.environment["DARPAN_LOG_STATS"] != nil
 
     init(address: HostAddress, proxy: SOCKSProxy?, remember: Bool?, owner: SessionOwner) {
@@ -61,6 +63,7 @@ final class Session: NSObject {
         self.remember = remember
         self.owner = owner
         self.proxy = proxy
+        ownName = address.shortName
         window = NSWindow(contentRect: content.frame, styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: true)
         super.init()
@@ -100,7 +103,7 @@ final class Session: NSObject {
     // MARK: - setup
 
     private func setUpWindow() {
-        window.title = address.shortName
+        window.title = settings.title(address.origin, original: ownName)
         window.contentView = content
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = .black
@@ -162,6 +165,9 @@ final class Session: NSObject {
         settings.$scale.sink { [weak self] in self?.video.scaleMode = $0 }.store(in: &bag)
         settings.$fitScale.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { self?.requestFit() }       // a new size on this window: at once
+        }.store(in: &bag)
+        settings.$names.combineLatest(settings.$emoji).dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { if let self { self.window.title = self.settings.title(self.address.origin, original: self.ownName) } }
         }.store(in: &bag)
         settings.$fps.combineLatest(settings.$quality, settings.$fullGPU)
             .sink { [weak self] fps, kbps, full in self?.client.setVideo(fps: fps, bitrate: kbps, fullGPU: full) }.store(in: &bag)
@@ -275,7 +281,9 @@ final class Session: NSObject {
     /// The window takes the picture's size, while it follows it (not in full screen: then on the way out).
     private func followPictureNow() {
         let s = video.streamSize
-        guard followPicture, s.width > 0, !window.styleMask.contains(.fullScreen) else { return }
+        // (Not to a fit: the picture follows the window then, and one the host had to shrink, over 4096 a
+        // side, would shrink the window.)
+        guard followPicture, model.modes?.fitted == nil, s.width > 0, !window.styleMask.contains(.fullScreen) else { return }
         let picture = DisplayMode(Int(s.width), Int(s.height))
         if picture != sizedFor { sizeWindow(for: picture) }
     }
@@ -351,6 +359,8 @@ final class Session: NSObject {
     private func tick() {
         ticks += 1
         content.toolbar.quality = Quality(ms: client.quality)
+        let target = client.targetKbps.map { ($0 / 100).rounded() * 100 }
+        if model.targetKbps != target { model.targetKbps = target }
         if NSApp.isActive { clipboard.poll() }
         guard settings.showStats || logStats else { return }
         let s = client.takeStats()
@@ -659,13 +669,15 @@ extension Session: ClientDelegate {
     func client(_ c: Client, received e: Client.Event) {
         switch e {
         case .welcome(let w):
-            window.title = w.hostName ?? address.shortName
+            ownName = w.hostName ?? address.shortName
+            window.title = settings.title(address.origin, original: ownName)
             caps = w.caps
             if files != nil { client.requestFiles() }        // a new session: a new token
             if !wasConnected { sizeWindow(for: w.screen) }
             fitAsked = nil                                    // a new host session: ask again if need be
         case .stream(let s):
             video.streamSize = CGSize(width: s.width, height: s.height)
+            model.stream = s
             followPictureNow()
         case .screen:
             break                                         // a new stream follows
@@ -678,6 +690,8 @@ extension Session: ClientDelegate {
             requestFitSoon()
         case .notice(let text, let error):
             content.toasts.show(text, error: error, ttl: error ? 8 : 3.5)
+            // Why More GPU or full colour went (or came back): the display panel shows it next to what's in effect.
+            if text.localizedCaseInsensitiveContains("GPU") || text.localizedCaseInsensitiveContains("colour") { model.notice = text }
         case .upload(let u):
             uploadEvent(u)
         case .files(let access):

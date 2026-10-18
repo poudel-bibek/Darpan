@@ -17,7 +17,8 @@ enum NetworkMode: String, CaseIterable {
 final class Settings: ObservableObject {
     static let shared = Settings()
 
-    /// Bitrate ceilings (kbit/s); the host still adapts below them. The same four as the browser.
+    /// Bitrates (kbit/s): the host encodes at the chosen one from the first frame and goes lower only while
+    /// the network can't carry it. The same four as the browser.
     static let qualities: [(name: String, kbps: Int)] =
         [("Faster Speed", 6000), ("Balanced", 15000), ("Higher Quality", 30000), ("Max", 50000)]
     static let defaultQuality = 15000
@@ -31,7 +32,7 @@ final class Settings: ObservableObject {
     @Published var fitWindow: Bool { didSet { d.set(fitWindow, forKey: "fitWindow") } }
     /// Its scale in % (100 or 200); 0: by this Mac's screen (200 % on Retina).
     @Published var fitScale: Int { didSet { d.set(fitScale, forKey: "fitScale") } }
-    /// Maximum bitrate in kbit/s (one of `qualities`).
+    /// The chosen bitrate in kbit/s (one of `qualities`).
     @Published var quality: Int { didSet { d.set(quality, forKey: "quality") } }
     @Published var fps: Int { didSet { d.set(fps, forKey: "fps") } }
     /// Let the Linux computer use more of its GPU (NVENC through CUDA), for sharper fast scrolling.
@@ -60,6 +61,9 @@ final class Settings: ObservableObject {
     @Published var checkUpdates: Bool { didSet { d.set(checkUpdates, forKey: "checkUpdates"); Updater.shared.start() } }
     /// Origins, most recent first.
     @Published private(set) var hosts: [String] { didSet { d.set(hosts, forKey: "hosts") } }
+    /// Names and emoji given to computers here (origin → value). Only this Mac shows them.
+    @Published private(set) var names: [String: String] { didSet { d.set(names, forKey: "names") } }
+    @Published private(set) var emoji: [String: String] { didSet { d.set(emoji, forKey: "emoji") } }
 
     private init() {
         d.register(defaults: ["quality": Self.defaultQuality, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true, "checkUpdates": true, "fitWindow": true])
@@ -84,6 +88,8 @@ final class Settings: ObservableObject {
         network = NetworkMode(rawValue: d.string(forKey: "network") ?? "") ?? .builtIn
         checkUpdates = d.bool(forKey: "checkUpdates")
         hosts = (d.stringArray(forKey: "hosts") ?? []).filter { (try? HostAddress(parsing: $0)) != nil }
+        names = d.dictionary(forKey: "names") as? [String: String] ?? [:]
+        emoji = d.dictionary(forKey: "emoji") as? [String: String] ?? [:]
     }
 
     /// A saved quality from before the four choices → the nearest new one (the old Auto and
@@ -103,6 +109,18 @@ final class Settings: ObservableObject {
 
     func forgetHost(_ origin: String) {
         hosts.removeAll { $0 == origin }
+        label(origin, name: nil, emoji: nil)
+    }
+
+    /// Gives a computer a name and an emoji on this Mac; nil for either brings back none.
+    func label(_ origin: String, name: String?, emoji e: String?) {
+        if names[origin] != name { names[origin] = name }
+        if emoji[origin] != e { emoji[origin] = e }
+    }
+
+    /// The emoji and the name to show for a computer: the ones given here, else its own name.
+    func title(_ origin: String, original: String) -> String {
+        ComputerLabel.title(name: names[origin], emoji: emoji[origin], original: original)
     }
 }
 

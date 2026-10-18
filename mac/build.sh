@@ -21,12 +21,19 @@ REPO=${DARPAN_REPO:-$(git -C "$ROOT" remote get-url origin | sed -E 's#^(git@git
 [[ $REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "can't tell the GitHub repository (set DARPAN_REPO=owner/name)"; exit 1; }
 
 cd "$MAC"
+# Command Line Tools 27: SwiftPM's new default build system can't start ("Unknown error parsing
+# property list", even for an empty package), and the macOS 27 SDK makes SwiftUI's @State a macro
+# whose plugin they don't ship. Until a release fixes that: the native build system, against the
+# newest macOS 26 SDK when there is one.
+SWIFT=(--build-system native)
+SDK26=$(ls -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.*.sdk 2>/dev/null | sort -V | tail -1 || true)
+[[ -n $SDK26 ]] && export SDKROOT=$SDK26
 
 echo "==> libtailscale"
 bash "$MAC/tailscale/build-libtailscale.sh"
 
 echo "==> self-tests"
-swift run -c release SelfTest
+swift run -c release "${SWIFT[@]}" SelfTest
 
 echo "==> release builds"
 # No build machine paths in the binary: #file strings and debug info name paths relative to the
@@ -34,8 +41,8 @@ echo "==> release builds"
 MAP=(-Xswiftc -file-prefix-map -Xswiftc "$ROOT/=" -Xcc "-ffile-prefix-map=$ROOT/=")
 BINS=()
 for arch in arm64 x86_64; do
-    swift build -c release --arch "$arch" --product "$NAME" "${MAP[@]}"
-    BINS+=("$(swift build -c release --arch "$arch" --show-bin-path "${MAP[@]}")/$NAME")
+    swift build -c release "${SWIFT[@]}" --arch "$arch" --product "$NAME" "${MAP[@]}"
+    BINS+=("$(swift build -c release "${SWIFT[@]}" --arch "$arch" --show-bin-path "${MAP[@]}")/$NAME")
 done
 
 echo "==> $APP"

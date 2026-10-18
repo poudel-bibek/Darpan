@@ -55,7 +55,7 @@ dirs.push(profile);
 // browser only ever loads our own page on 127.0.0.1.
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
   '--no-default-browser-check', '--window-size=1400,860', '--disable-background-timer-throttling',
-  '--autoplay-policy=no-user-gesture-required', 'about:blank'],   // sound starts without a real click
+  '--autoplay-policy=no-user-gesture-required', '--mute-audio', 'about:blank'],   // sound starts without a real click; never reaches the speakers
   { stdio: ['ignore', 'ignore', 'pipe'] });
 chrome.signal = 'SIGKILL';
 procs.push(chrome);
