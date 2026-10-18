@@ -42,6 +42,8 @@ final class Session: NSObject {
     private let proxy: SOCKSProxy?
     private var caps: [String] = []
     private var files: FilesWindowController?
+    /// The computer's own name: from its address, then from the host itself.
+    private var ownName: String
     private let logStats = ProcessInfo.processInfo.environment["DARPAN_LOG_STATS"] != nil
 
     init(address: HostAddress, proxy: SOCKSProxy?, remember: Bool?, owner: SessionOwner) {
@@ -49,6 +51,7 @@ final class Session: NSObject {
         self.remember = remember
         self.owner = owner
         self.proxy = proxy
+        ownName = address.shortName
         window = NSWindow(contentRect: content.frame, styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: true)
         super.init()
@@ -88,7 +91,7 @@ final class Session: NSObject {
     // MARK: - setup
 
     private func setUpWindow() {
-        window.title = address.shortName
+        window.title = settings.title(address.origin, original: ownName)
         window.contentView = content
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = .black
@@ -139,6 +142,9 @@ final class Session: NSObject {
         }
 
         settings.$scale.sink { [weak self] in self?.video.scaleMode = $0 }.store(in: &bag)
+        settings.$names.combineLatest(settings.$emoji).dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { if let self { self.window.title = self.settings.title(self.address.origin, original: self.ownName) } }
+        }.store(in: &bag)
         settings.$fps.combineLatest(settings.$quality, settings.$fullGPU)
             .sink { [weak self] fps, kbps, full in self?.client.setVideo(fps: fps, bitrate: kbps, fullGPU: full) }.store(in: &bag)
         settings.$command.sink { [weak self] in self?.keyboard.translator.command = $0 }.store(in: &bag)
@@ -562,7 +568,8 @@ extension Session: ClientDelegate {
     func client(_ c: Client, received e: Client.Event) {
         switch e {
         case .welcome(let w):
-            window.title = w.hostName ?? address.shortName
+            ownName = w.hostName ?? address.shortName
+            window.title = settings.title(address.origin, original: ownName)
             caps = w.caps
             if files != nil { client.requestFiles() }        // a new session: a new token
             if !wasConnected { sizeWindow(for: w.screen) }

@@ -84,6 +84,22 @@ func protocolTests() {
         eq(problem("https://"), .invalid, "no host")
     }
 
+    section("computer names and emoji") {
+        eq(ComputerLabel.name("  Studio   desk\n"), "Studio desk", "trimmed, one space between words")
+        eq(ComputerLabel.name(" \t "), nil, "blank: the computer's own name")
+        eq(ComputerLabel.name(String(repeating: "a", count: 60))?.count, ComputerLabel.maxName, "at most 40 characters")
+        eq(ComputerLabel.emoji("🐧"), "🐧", "an emoji")
+        eq(ComputerLabel.emoji("🐧🚀"), "🚀", "a new pick replaces the old one")
+        eq(ComputerLabel.emoji("🖥️"), "🖥️", "made an emoji by its variation selector")
+        eq(ComputerLabel.emoji("👩🏽‍💻"), "👩🏽‍💻", "a sequence is one emoji")
+        eq(ComputerLabel.emoji("1️⃣"), "1️⃣", "a keycap")
+        eq(ComputerLabel.emoji("a1#*"), nil, "letters, digits, # and * aren't emoji")
+        eq(ComputerLabel.emoji(""), nil, "none")
+        eq(ComputerLabel.title(name: "Studio", emoji: "🐧", original: "workstation"), "🐧 Studio", "emoji, then the name")
+        eq(ComputerLabel.title(name: nil, emoji: nil, original: "workstation"), "workstation", "nothing given: its own name")
+        eq(ComputerLabel.title(name: nil, emoji: "🐧", original: "workstation"), "🐧 workstation", "an emoji on its own name")
+    }
+
     section("clock sync and latency") {
         var c = ClockSync()
         // Host clock = local + 5 s. Ping sent at 1000 ms, pong at 1020 ms: the host stamped it mid-way.

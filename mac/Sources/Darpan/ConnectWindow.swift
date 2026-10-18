@@ -137,7 +137,7 @@ final class ConnectModel: ObservableObject {
         connecting = true
         showTailscaleHint = false
         failure = nil
-        show("Connecting to \(a.shortName)…", error: false)
+        show("Connecting to \(settings.title(a.origin, original: a.shortName))…", error: false)
         launched = true
         handler?.connect(to: a, proxy: proxy, password: pw, saved: saved, remember: remember)
     }
@@ -249,6 +249,8 @@ struct ConnectView: View {
     @State private var manual = false
     /// "Get started" was clicked: open the Tailscale sign-in as soon as its link exists.
     @State private var signInPending = false
+    /// The computer whose name and emoji are being changed.
+    @State private var renaming: String?
 
     private enum Field { case address, password }
 
@@ -428,8 +430,9 @@ struct ConnectView: View {
         return Button { model.open(c.origin) } label: {
             HStack(spacing: 10) {
                 Circle().fill(c.online ? Color.green : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
+                if let e = settings.emoji[c.origin] { Text(e).font(.system(size: 17)) }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(c.name).font(.system(size: 13, weight: .medium))
+                    Text(settings.names[c.origin] ?? c.name).font(.system(size: 13, weight: .medium))
                     Text(!c.online ? "Offline" : saved ? "Ready to connect" : "Needs the password once")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
@@ -443,7 +446,12 @@ struct ConnectView: View {
         .disabled(model.connecting || model.countdown > 0)
         .help(c.origin)
         .contextMenu {
+            Button("Rename…") { renaming = c.origin }
             Button("Remove from List") { model.removeFromList(c.origin) }
+        }
+        .popover(isPresented: Binding(get: { renaming == c.origin }, set: { if !$0 { renaming = nil } }),
+                 arrowEdge: .trailing) {
+            RenameComputer(origin: c.origin, original: c.name) { renaming = nil }
         }
     }
 
@@ -562,6 +570,76 @@ struct ConnectView: View {
                 }
             }
         }
+    }
+}
+
+/// A name and an emoji for a computer in the list, kept on this Mac only.
+private struct RenameComputer: View {
+    let origin: String
+    let original: String
+    let close: () -> Void
+    @ObservedObject private var settings = Settings.shared
+    @State private var name = ""
+    @State private var emoji = ""
+    @FocusState private var focus: Field?
+
+    private enum Field { case name, emoji }
+    private static let picks = ["💻", "🖥️", "🐧", "🏠", "🏢", "🧪", "🎮", "🚀", "🌙", "🔥"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                TextField("", text: $emoji, prompt: Text(Image(systemName: "face.smiling")))
+                    .font(.system(size: 18)).multilineTextAlignment(.center).frame(width: 40)
+                    .focused($focus, equals: .emoji).help("Any emoji: type or paste one, or press fn E")
+                TextField("", text: $name, prompt: Text(original))
+                    .textFieldStyle(.roundedBorder).focused($focus, equals: .name).onSubmit(save)
+            }
+            HStack(spacing: 2) {
+                ForEach(Self.picks, id: \.self) { e in
+                    Button { emoji = e } label: {
+                        Text(e).font(.system(size: 16)).frame(width: 24, height: 24)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(Color.accentColor.opacity(emoji == e ? 0.25 : 0)))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button {
+                    focus = .emoji
+                    NSApp.orderFrontCharacterPalette(nil)
+                } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
+                .buttonStyle(.plain).help("All emoji")
+            }
+            Text("Only on this Mac. The Linux computer keeps its own name.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            HStack {
+                Button("Reset") {
+                    settings.label(origin, name: nil, emoji: nil)
+                    close()
+                }
+                .disabled(settings.names[origin] == nil && settings.emoji[origin] == nil)
+                .help("Back to “\(original)”, without an emoji")
+                Spacer()
+                Button("Cancel", role: .cancel, action: close).keyboardShortcut(.cancelAction)
+                Button("Save", action: save).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(14)
+        .frame(width: 330)
+        .onAppear {
+            name = settings.names[origin] ?? original
+            emoji = settings.emoji[origin] ?? ""
+            focus = .name
+        }
+        .onChange(of: emoji) { _, typed in
+            let e = ComputerLabel.emoji(typed) ?? ""
+            if e != typed { emoji = e }                  // one emoji; a new one replaces it
+        }
+    }
+
+    private func save() {
+        let n = ComputerLabel.name(name)
+        settings.label(origin, name: n == original ? nil : n, emoji: ComputerLabel.emoji(emoji))
+        close()
     }
 }
 

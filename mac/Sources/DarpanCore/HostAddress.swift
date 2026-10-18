@@ -73,6 +73,36 @@ public struct HostAddress: Hashable, CustomStringConvertible {
     }
 }
 
+/// The name and emoji the viewer gives a computer. They're kept only on this Mac: the Linux
+/// computer and the tailnet keep their own names.
+public enum ComputerLabel {
+    public static let maxName = 40
+
+    /// The name as typed, tidied: trimmed, runs of white space made one space, at most `maxName`
+    /// characters. Nil when nothing is left (the computer's own name then shows).
+    public static func name(_ typed: String) -> String? {
+        let s = typed.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return s.isEmpty ? nil : String(s.prefix(maxName))
+    }
+
+    /// The last emoji in what was typed or pasted, so a new pick replaces the old one; nil if there's none.
+    public static func emoji(_ typed: String) -> String? {
+        typed.last(where: isEmoji).map(String.init)
+    }
+
+    /// A character that shows as an emoji: emoji presentation by default, or made one by a variation
+    /// selector, a keycap or a sequence. Plain digits, `#` and `*` are emoji too in Unicode's data, but not here.
+    static func isEmoji(_ c: Character) -> Bool {
+        guard let first = c.unicodeScalars.first else { return false }
+        return first.properties.isEmojiPresentation || (first.properties.isEmoji && c.unicodeScalars.count > 1)
+    }
+
+    /// What a window or a list shows: the emoji (if any), then the name given here or the computer's own.
+    public static func title(name: String?, emoji: String?, original: String) -> String {
+        [emoji, name ?? original].compactMap { $0 }.joined(separator: " ")
+    }
+}
+
 /// Monotonic clock in milliseconds (mach absolute time, the same base as CoreAnimation and
 /// CoreVideo host time).
 public enum Clock {
