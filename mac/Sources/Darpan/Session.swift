@@ -23,6 +23,8 @@ final class Session: NSObject {
     /// nil: leave the Keychain as it is (test runs with DARPAN_PASSWORD).
     private let remember: Bool?
     private let settings = Settings.shared
+    /// This computer's own settings (Quality, Scaling, Sound, the keys…): other windows don't share them.
+    private let computer: ComputerSettings
     private let content = ViewerContentView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800))
     private var video: VideoView { content.video }
     private var keyboard: KeyboardCapture!
@@ -39,7 +41,7 @@ final class Session: NSObject {
     private var ended = false
     private var sized = false
     /// With several computers open, only the one in front plays its sound.
-    var playsSound = true { didSet { if playsSound != oldValue { applySound(settings.sound) } } }
+    var playsSound = true { didSet { if playsSound != oldValue { applySound(computer.prefs.sound) } } }
     /// The window follows the picture's size (the host may switch to this Mac's last resolution just
     /// after `ok`) until it's resized by hand or a resolution is chosen here; then it's yours.
     private var followPicture = true
@@ -65,6 +67,7 @@ final class Session: NSObject {
         self.remember = remember
         self.owner = owner
         self.proxy = proxy
+        computer = Settings.shared.computer(address.origin)
         ownName = address.shortName
         window = NSWindow(contentRect: content.frame, styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: true)
@@ -95,6 +98,7 @@ final class Session: NSObject {
     #if DEBUG
     var debugContent: ViewerContentView { content }
     var debugModel: ViewerModel { model }
+    var debugComputer: ComputerSettings { computer }
     var debugFiles: FilesModel? { files?.model }
     func debugToolbar(_ item: ToolbarView.Item) {
         content.toolbar.expand()
@@ -164,7 +168,8 @@ final class Session: NSObject {
             self?.content.toasts.show("Remote clipboard set")
         }
 
-        settings.$scale.sink { [weak self] in self?.applyScaleMode($0) }.store(in: &bag)
+        let prefs = computer.$prefs
+        prefs.map(\.scale).removeDuplicates().sink { [weak self] in self?.applyScaleMode($0) }.store(in: &bag)
         model.setFitScale = { [weak self] scale in               // a new size for this computer: at once
             guard let self else { return }
             self.settings.setFitScale(self.address.origin, scale)
@@ -173,26 +178,26 @@ final class Session: NSObject {
         settings.$names.combineLatest(settings.$emoji).dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { if let self { self.window.title = self.settings.title(self.address.origin, original: self.ownName) } }
         }.store(in: &bag)
-        settings.$fps.combineLatest(settings.$quality, settings.$fullGPU)
+        prefs.map { ($0.fps, $0.quality, $0.fullGPU) }.removeDuplicates(by: ==)
             .sink { [weak self] fps, kbps, full in self?.client.setVideo(fps: fps, bitrate: kbps, fullGPU: full) }.store(in: &bag)
-        settings.$command.sink { [weak self] in self?.keyboard.translator.command = $0 }.store(in: &bag)
-        settings.$scrollSpeed.combineLatest(settings.$invertScroll).sink { [weak self] speed, invert in
+        prefs.map(\.command).removeDuplicates().sink { [weak self] in self?.keyboard.translator.command = $0 }.store(in: &bag)
+        prefs.map { ($0.scrollSpeed, $0.invertScroll) }.removeDuplicates(by: ==).sink { [weak self] speed, invert in
             self?.video.wheel.speed = speed
             self?.video.wheel.invert = invert
         }.store(in: &bag)
-        settings.$sound.sink { [weak self] on in
+        prefs.map(\.sound).removeDuplicates().sink { [weak self] on in
             guard let self else { return }
             self.content.toolbar.soundOn = on
             self.applySound(on)
         }.store(in: &bag)
-        settings.$showStats.sink { [weak self] on in
+        prefs.map(\.showStats).removeDuplicates().sink { [weak self] on in
             guard let self else { return }
             self.content.stats.isHidden = !on
             self.content.toolbar.statsOn = on
             if on { _ = self.client.takeStats() }        // start a fresh interval
             DispatchQueue.main.async { self.updateTicker() }
         }.store(in: &bag)
-        settings.$captureSystemKeys.dropFirst().sink { [weak self] on in
+        prefs.map(\.captureSystemKeys).removeDuplicates().dropFirst().sink { [weak self] on in
             if on && !KeyboardCapture.accessibilityTrusted { KeyboardCapture.requestAccessibility() }
             DispatchQueue.main.async { self?.updateTap() }
         }.store(in: &bag)
@@ -388,14 +393,14 @@ final class Session: NSObject {
         let target = client.targetKbps.map { ($0 / 100).rounded() * 100 }
         if model.targetKbps != target { model.targetKbps = target }
         if NSApp.isActive && window.isKeyWindow { clipboard.poll() }   // the Mac's clipboard goes to the computer in front
-        guard settings.showStats || logStats else { return }
+        guard computer.prefs.showStats || logStats else { return }
         let s = client.takeStats()
         var text = Self.statsText(s)
         let a = player.buffer.stats
         if player.buffer.idleMs < 2000 {
             text += String(format: "\naudio buffer %.0f ms (target %.0f)  underruns %d", a.depth * 1000, a.target * 1000, a.underruns)
         }
-        if settings.showStats { content.stats.text = text }
+        if computer.prefs.showStats { content.stats.text = text }
         if logStats && ticks % 20 == 0, client.proxy != nil {
             Tailnet.shared.path(to: address.host) { p in
                 FileHandle.standardError.write(Data("tailnet path: \(p ?? "unknown")\n".utf8))
@@ -420,7 +425,7 @@ final class Session: NSObject {
     }
 
     private func updateTap() {
-        let want = !ended && settings.captureSystemKeys && keyboard.captureAll && isConnected && window.isKeyWindow
+        let want = !ended && computer.prefs.captureSystemKeys && keyboard.captureAll && isConnected && window.isKeyWindow
         if want { keyboard.startTap() } else { keyboard.stopTap() }
     }
 
@@ -433,16 +438,16 @@ final class Session: NSObject {
         case .display:
             client.send(Msg.modes)
             model.windowPixels = video.pixelSize
-            togglePanel(item, button, DisplayPanel(model: model, settings: settings))
+            togglePanel(item, button, DisplayPanel(model: model, computer: computer))
         case .keys:
             model.accessibilityTrusted = KeyboardCapture.accessibilityTrusted
-            togglePanel(item, button, KeysPanel(model: model, settings: settings))
+            togglePanel(item, button, KeysPanel(model: model, computer: computer))
         case .upload:
             openFiles()
         case .sound:
-            settings.sound.toggle()
+            computer.prefs.sound.toggle()
         case .stats:
-            settings.showStats.toggle()
+            computer.prefs.showStats.toggle()
         case .disconnect:
             end()
         }
@@ -538,14 +543,14 @@ final class Session: NSObject {
     // MARK: - menu actions (the viewer window's delegate is in the responder chain)
 
     @objc func disconnect(_ sender: Any?) { end() }
-    @objc func setFitScale(_ sender: Any?) { settings.scale = .fit }
-    @objc func setActualScale(_ sender: Any?) { settings.scale = .actual }
-    @objc func toggleStats(_ sender: Any?) { settings.showStats.toggle() }
-    @objc func toggleSound(_ sender: Any?) { settings.sound.toggle() }
-    @objc func toggleSystemShortcuts(_ sender: Any?) { settings.captureSystemKeys.toggle() }
-    @objc func chooseQuality(_ sender: NSMenuItem) { settings.quality = sender.tag }
-    @objc func chooseFrameRate(_ sender: NSMenuItem) { settings.fps = sender.tag }
-    @objc func chooseCommandKey(_ sender: NSMenuItem) { settings.command = sender.tag == 0 ? .ctrl : .super }
+    @objc func setFitScale(_ sender: Any?) { computer.prefs.scale = .fit }
+    @objc func setActualScale(_ sender: Any?) { computer.prefs.scale = .actual }
+    @objc func toggleStats(_ sender: Any?) { computer.prefs.showStats.toggle() }
+    @objc func toggleSound(_ sender: Any?) { computer.prefs.sound.toggle() }
+    @objc func toggleSystemShortcuts(_ sender: Any?) { computer.prefs.captureSystemKeys.toggle() }
+    @objc func chooseQuality(_ sender: NSMenuItem) { computer.prefs.quality = sender.tag }
+    @objc func chooseFrameRate(_ sender: NSMenuItem) { computer.prefs.fps = sender.tag }
+    @objc func chooseCommandKey(_ sender: NSMenuItem) { computer.prefs.command = sender.tag == 0 ? .ctrl : .super }
 
     @objc func toggleKeyboardCapture(_ sender: Any?) {
         releaseInput()
@@ -633,14 +638,14 @@ extension Session: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         let live = isConnected
         switch item.action {
-        case #selector(setFitScale(_:)): item.state = settings.scale == .fit ? .on : .off
-        case #selector(setActualScale(_:)): item.state = settings.scale == .actual ? .on : .off
-        case #selector(toggleStats(_:)): item.state = settings.showStats ? .on : .off
-        case #selector(toggleSound(_:)): item.state = settings.sound ? .on : .off
-        case #selector(chooseQuality(_:)): item.state = settings.quality == item.tag ? .on : .off
-        case #selector(chooseFrameRate(_:)): item.state = settings.fps == item.tag ? .on : .off
-        case #selector(chooseCommandKey(_:)): item.state = (item.tag == 0) == (settings.command == .ctrl) ? .on : .off
-        case #selector(toggleSystemShortcuts(_:)): item.state = settings.captureSystemKeys ? .on : .off
+        case #selector(setFitScale(_:)): item.state = computer.prefs.scale == .fit ? .on : .off
+        case #selector(setActualScale(_:)): item.state = computer.prefs.scale == .actual ? .on : .off
+        case #selector(toggleStats(_:)): item.state = computer.prefs.showStats ? .on : .off
+        case #selector(toggleSound(_:)): item.state = computer.prefs.sound ? .on : .off
+        case #selector(chooseQuality(_:)): item.state = computer.prefs.quality == item.tag ? .on : .off
+        case #selector(chooseFrameRate(_:)): item.state = computer.prefs.fps == item.tag ? .on : .off
+        case #selector(chooseCommandKey(_:)): item.state = (item.tag == 0) == (computer.prefs.command == .ctrl) ? .on : .off
+        case #selector(toggleSystemShortcuts(_:)): item.state = computer.prefs.captureSystemKeys ? .on : .off
         case #selector(toggleKeyboardCapture(_:)):
             item.title = keyboard.captureAll ? "Release Keyboard" : "Capture Keyboard"
         case #selector(sendKeyCombo(_:)), #selector(chooseResolution(_:)), #selector(typeClipboard(_:)),
@@ -713,7 +718,7 @@ extension Session: ClientDelegate {
             clipboard.received(text, initial: initial)
         case .modes(let m):
             model.modes = m
-            applyScaleMode(settings.scale)
+            applyScaleMode(computer.prefs.scale)
             requestFitSoon()
         case .notice(let text, let error):
             content.toasts.show(text, error: error, ttl: error ? 8 : 3.5)

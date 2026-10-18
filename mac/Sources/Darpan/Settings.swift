@@ -13,36 +13,36 @@ enum NetworkMode: String, CaseIterable {
     case system
 }
 
+/// One computer's viewer settings (Quality, Scaling, Sound, the keys…), shared by its windows and panels.
+/// A change is kept for that computer only: with several open, each window's choices stay its own.
+final class ComputerSettings: ObservableObject {
+    @Published var prefs: ViewerPrefs { didSet { if prefs != oldValue { store(prefs.plist) } } }
+    private let store: ([String: Any]) -> Void
+
+    fileprivate init(_ prefs: ViewerPrefs, store: @escaping ([String: Any]) -> Void) {
+        self.prefs = prefs
+        self.store = store
+    }
+}
+
 /// Viewer preferences (UserDefaults) and the list of computers connected to before.
 final class Settings: ObservableObject {
     static let shared = Settings()
 
-    /// Bitrates (kbit/s): the host encodes at the chosen one from the first frame and goes lower only while
-    /// the network can't carry it. The same four as the browser.
+    /// The four quality choices, by name (`ViewerPrefs.qualities`).
     static let qualities: [(name: String, kbps: Int)] =
-        [("Faster Speed", 6000), ("Balanced", 15000), ("Higher Quality", 30000), ("Max", 50000)]
-    static let defaultQuality = 15000
-    static let frameRates = [30, 60, 120]
+        Array(zip(["Faster Speed", "Balanced", "Higher Quality", "Max"], ViewerPrefs.qualities))
+    static let frameRates = ViewerPrefs.frameRates
 
     private let d = UserDefaults.standard
+    /// Each computer's settings, made on first use (one object per computer, whatever opens it).
+    private var computers: [String: ComputerSettings] = [:]
 
-    @Published var scale: ScaleMode { didSet { d.set(scale.rawValue, forKey: "scale") } }
     /// Computers (origins) whose desktop doesn't fit the window: a resolution was picked for them. Every
     /// other one that can make its desktop any size makes it exactly its window's size (the sharpest).
     @Published private(set) var fitOff: Set<String> { didSet { d.set(Array(fitOff).sorted(), forKey: "fitOff") } }
     /// The scale (%) chosen for each computer's fitted desktop; none: by this Mac's screen (200 % on Retina).
     @Published private(set) var fitScales: [String: Int] { didSet { d.set(fitScales, forKey: "fitScales") } }
-    /// The chosen bitrate in kbit/s (one of `qualities`).
-    @Published var quality: Int { didSet { d.set(quality, forKey: "quality") } }
-    @Published var fps: Int { didSet { d.set(fps, forKey: "fps") } }
-    /// Let the Linux computer use more of its GPU (NVENC through CUDA), for sharper fast scrolling.
-    @Published var fullGPU: Bool { didSet { d.set(fullGPU, forKey: "fullGPU") } }
-    @Published var command: CommandKey { didSet { d.set(command.rawValue, forKey: "command") } }
-    @Published var scrollSpeed: Double { didSet { d.set(scrollSpeed, forKey: "scrollSpeed") } }
-    @Published var invertScroll: Bool { didSet { d.set(invertScroll, forKey: "invertScroll") } }
-    @Published var showStats: Bool { didSet { d.set(showStats, forKey: "showStats") } }
-    /// ⌘Tab, ⌘Space, Mission Control… go to the remote too (needs Accessibility permission).
-    @Published var captureSystemKeys: Bool { didSet { d.set(captureSystemKeys, forKey: "captureSystemKeys") } }
     /// Where the toolbar sits: its centre as a fraction of the window width, its top as a fraction
     /// of the height. Top right by default, clear of the notch and of the remote's window buttons.
     @Published var toolbarX: Double { didSet { d.set(toolbarX, forKey: "toolbarX") } }
@@ -52,8 +52,6 @@ final class Settings: ObservableObject {
     @Published var welcomed: Bool { didSet { d.set(welcomed, forKey: "welcomed") } }
     /// The first-connection tip about the toolbar has been closed.
     @Published var toolbarTipSeen: Bool { didSet { d.set(toolbarTipSeen, forKey: "toolbarTipSeen") } }
-    /// Play the remote computer's sound.
-    @Published var sound: Bool { didSet { d.set(sound, forKey: "sound") } }
     /// How to reach the tailnet: the node built into the app, or whatever this Mac provides
     /// (the Tailscale app, another VPN, a LAN).
     @Published var network: NetworkMode { didSet { d.set(network.rawValue, forKey: "network") } }
@@ -66,41 +64,40 @@ final class Settings: ObservableObject {
     @Published private(set) var emoji: [String: String] { didSet { d.set(emoji, forKey: "emoji") } }
 
     private init() {
-        d.register(defaults: ["quality": Self.defaultQuality, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true, "checkUpdates": true])
-        scale = ScaleMode(rawValue: d.string(forKey: "scale") ?? "") ?? .fit
+        d.register(defaults: ["toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "checkUpdates": true])
         fitOff = Set(d.stringArray(forKey: "fitOff") ?? [])
         fitScales = d.dictionary(forKey: "fitScales") as? [String: Int] ?? [:]
-        quality = Self.migrated(quality: d.integer(forKey: "quality"))
-        let f = d.integer(forKey: "fps")
-        fps = Self.frameRates.contains(f) ? f : 60
-        fullGPU = d.bool(forKey: "fullGPU")
-        command = CommandKey(rawValue: d.string(forKey: "command") ?? "") ?? .ctrl
-        scrollSpeed = min(3, max(0.25, d.double(forKey: "scrollSpeed")))
-        invertScroll = d.bool(forKey: "invertScroll")
-        showStats = d.bool(forKey: "showStats")
-        captureSystemKeys = d.bool(forKey: "captureSystemKeys")
         toolbarX = min(1, max(0, d.double(forKey: "toolbarX")))
         toolbarY = min(1, max(0, d.double(forKey: "toolbarY")))
         remember = d.bool(forKey: "remember")
         welcomed = d.bool(forKey: "welcomed")
         toolbarTipSeen = d.bool(forKey: "toolbarTipSeen")
-        sound = d.bool(forKey: "sound")
         network = NetworkMode(rawValue: d.string(forKey: "network") ?? "") ?? .builtIn
         checkUpdates = d.bool(forKey: "checkUpdates")
         hosts = (d.stringArray(forKey: "hosts") ?? []).filter { (try? HostAddress(parsing: $0)) != nil }
         names = d.dictionary(forKey: "names") as? [String: String] ?? [:]
         emoji = d.dictionary(forKey: "emoji") as? [String: String] ?? [:]
+        if d.object(forKey: "computers") == nil {   // up to 1.4.3 one set for all: it goes to every computer known
+            var global: [String: Any] = [:]
+            for k in ViewerPrefs.keys { global[k] = d.object(forKey: k) }
+            let known = Set(hosts).union(names.keys).union(emoji.keys).union(fitOff).union(fitScales.keys)
+            d.set(ViewerPrefs.migrate(global: global, to: known), forKey: "computers")
+        }
     }
 
-    /// A saved quality from before the four choices → the nearest new one (the old Auto and
-    /// 10 Mbit/s become Balanced).
-    static func migrated(quality q: Int) -> Int {
-        switch q {
-        case 6000, 15000, 30000, 50000: return q
-        case 3000: return 6000
-        case 20000: return 30000
-        default: return defaultQuality          // 0 (Auto), 10000, and anything unknown
-        }
+    /// A computer's own settings; one it has none for starts from the defaults.
+    func computer(_ origin: String) -> ComputerSettings {
+        if let c = computers[origin] { return c }
+        let stored = (d.dictionary(forKey: "computers")?[origin] as? [String: Any]) ?? [:]
+        let c = ComputerSettings(ViewerPrefs(plist: stored)) { [weak self] values in self?.store(origin, values) }
+        computers[origin] = c
+        return c
+    }
+
+    private func store(_ origin: String, _ values: [String: Any]?) {
+        var all = d.dictionary(forKey: "computers") ?? [:]
+        all[origin] = values
+        d.set(all, forKey: "computers")
     }
 
     func noteHost(_ origin: String) {
@@ -110,6 +107,10 @@ final class Settings: ObservableObject {
     func forgetHost(_ origin: String) {
         hosts.removeAll { $0 == origin }
         label(origin, name: nil, emoji: nil)
+        fitOff.remove(origin)
+        fitScales[origin] = nil
+        computers[origin] = nil
+        store(origin, nil)
     }
 
     /// Whether a computer's desktop fits its window, when the computer can do that.

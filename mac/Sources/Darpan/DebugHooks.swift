@@ -102,15 +102,15 @@ enum DebugHooks {
             } else {
                 say("no menu item \"\(rest)\"")
             }
-        case "scale": Settings.shared.scale = a.count > 1 && a[1] == "actual" ? .actual : .fit
+        case "scale": s?.debugComputer.prefs.scale = a.count > 1 && a[1] == "actual" ? .actual : .fit
         case "sleep":                                     // as if the Mac were going to sleep, or waking
             NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: NSWorkspace.shared)
         case "wake":
             NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: NSWorkspace.shared)
-        case "stats": Settings.shared.showStats = a.count > 1 && a[1] == "on"
-        case "fps": Settings.shared.fps = Int(num(1))
-        case "quality": Settings.shared.quality = Int(num(1))
-        case "command": Settings.shared.command = a.count > 1 && a[1] == "super" ? .super : .ctrl
+        case "stats": s?.debugComputer.prefs.showStats = a.count > 1 && a[1] == "on"
+        case "fps": s?.debugComputer.prefs.fps = Int(num(1))
+        case "quality": s?.debugComputer.prefs.quality = Int(num(1))
+        case "command": s?.debugComputer.prefs.command = a.count > 1 && a[1] == "super" ? .super : .ctrl
         case "res":
             s?.debugModel.setResolution(a.count > 2 ? DisplayMode(Int(num(1)), Int(num(2))) : nil)
         case "size": w?.setContentSize(NSSize(width: num(1), height: num(2)))
@@ -208,7 +208,7 @@ enum DebugHooks {
     /// The display panel as the session would show it, drawn off screen (nothing appears on the screen).
     @MainActor private static func panel(_ s: Session?, to path: String) {
         guard let s else { return say("no session") }
-        let host = NSHostingView(rootView: DisplayPanel(model: s.debugModel, settings: Settings.shared))
+        let host = NSHostingView(rootView: DisplayPanel(model: s.debugModel, computer: s.debugComputer))
         host.appearance = NSAppearance(named: .darkAqua)
         host.frame = NSRect(origin: .zero, size: host.fittingSize)
         host.wantsLayer = true

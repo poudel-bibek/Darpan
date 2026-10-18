@@ -78,13 +78,14 @@ private struct PanelSection<Content: View>: View {
 
 struct DisplayPanel: View {
     @ObservedObject var model: ViewerModel
-    @ObservedObject var settings: Settings
+    /// This window's computer: its choices are its own.
+    @ObservedObject var computer: ComputerSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let st = model.stream {
-                InEffectSection(e: InEffect(stream: st, targetKbps: model.targetKbps, chosenKbps: settings.quality,
-                                            fullGPU: settings.fullGPU, decodesFullColour: DecoderCaps.fullColour),
+                InEffectSection(e: InEffect(stream: st, targetKbps: model.targetKbps, chosenKbps: computer.prefs.quality,
+                                            fullGPU: computer.prefs.fullGPU, decodesFullColour: DecoderCaps.fullColour),
                                 notice: model.notice)
             }
             PanelSection(title: "Remote resolution") {
@@ -126,7 +127,7 @@ struct DisplayPanel: View {
             }
             if model.modes?.fitted == nil {                   // (a fitted desktop is one pixel per pixel anyway)
                 PanelSection(title: "Scaling") {
-                    Picker("Scaling", selection: $settings.scale) {
+                    Picker("Scaling", selection: $computer.prefs.scale) {
                         Text("Fit").tag(ScaleMode.fit)
                         Text("Actual size").tag(ScaleMode.actual)
                     }
@@ -134,16 +135,16 @@ struct DisplayPanel: View {
                 }
             }
             PanelSection(title: "Quality") {
-                QualityPicker(selection: $settings.quality)
+                QualityPicker(selection: $computer.prefs.quality)
             }
             PanelSection(title: "Frame rate") {
-                Picker("Frame rate", selection: $settings.fps) {
+                Picker("Frame rate", selection: $computer.prefs.fps) {
                     ForEach(Settings.frameRates, id: \.self) { Text("\($0)").tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden()
             }
             PanelSection(title: "Encoding") {
-                Toggle("Use more of the Linux computer’s GPU", isOn: $settings.fullGPU)
+                Toggle("Use more of the Linux computer’s GPU", isOn: $computer.prefs.fullGPU)
                     .toggleStyle(.switch).controlSize(.small).font(.system(size: 12))
                 Text("Sharper when scrolling fast.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -156,7 +157,7 @@ struct DisplayPanel: View {
 
 struct KeysPanel: View {
     @ObservedObject var model: ViewerModel
-    @ObservedObject var settings: Settings
+    @ObservedObject var computer: ComputerSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -168,15 +169,15 @@ struct KeysPanel: View {
                 }
             }
             PanelSection(title: "⌘ Command sends") {
-                Picker("⌘ Command sends", selection: $settings.command) {
+                Picker("⌘ Command sends", selection: $computer.prefs.command) {
                     Text("Ctrl").tag(CommandKey.ctrl)
                     Text("Super").tag(CommandKey.super)
                 }
                 .pickerStyle(.segmented).labelsHidden()
             }
             PanelSection(title: "System shortcuts") {
-                Toggle("Send ⌘Tab, ⌘Space, Mission Control… too", isOn: $settings.captureSystemKeys)
-                if settings.captureSystemKeys && !model.accessibilityTrusted {
+                Toggle("Send ⌘Tab, ⌘Space, Mission Control… too", isOn: $computer.prefs.captureSystemKeys)
+                if computer.prefs.captureSystemKeys && !model.accessibilityTrusted {
                     Text("Allow Darpan in System Settings → Privacy & Security → Accessibility.")
                         .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Button("Open Accessibility Settings") {
@@ -188,8 +189,8 @@ struct KeysPanel: View {
             }
             PanelSection(title: "Scrolling") {
                 HStack {
-                    Slider(value: $settings.scrollSpeed, in: 0.25...3, step: 0.25).accessibilityLabel("Scroll speed")
-                    Toggle("Reverse", isOn: $settings.invertScroll)
+                    Slider(value: $computer.prefs.scrollSpeed, in: 0.25...3, step: 0.25).accessibilityLabel("Scroll speed")
+                    Toggle("Reverse", isOn: $computer.prefs.invertScroll)
                 }
             }
         }

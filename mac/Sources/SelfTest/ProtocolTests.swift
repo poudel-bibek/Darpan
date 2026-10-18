@@ -80,6 +80,29 @@ func protocolTests() {
         eq(fitted.int("scale"), 200, "res.fit scale")
     }
 
+    section("per-computer settings") {
+        eq(ViewerPrefs(plist: [:]), ViewerPrefs(), "nothing stored: the defaults")
+        let d = ViewerPrefs()
+        check(d.scale == .fit && d.quality == 15000 && d.fps == 60 && !d.fullGPU && d.command == .ctrl && d.scrollSpeed == 1
+              && !d.invertScroll && !d.showStats && !d.captureSystemKeys && d.sound, "the defaults: Balanced, 60 fps, sound on")
+        var p = ViewerPrefs()
+        p.scale = .actual; p.quality = 50000; p.fps = 120; p.fullGPU = true; p.command = .super; p.scrollSpeed = 2.5
+        p.invertScroll = true; p.showStats = true; p.captureSystemKeys = true; p.sound = false
+        eq(ViewerPrefs(plist: p.plist), p, "kept and read back")
+        eq(Set(p.plist.keys), Set(ViewerPrefs.keys), "every setting is stored")
+        let odd = ViewerPrefs(plist: ["fps": 45, "scrollSpeed": 9.0, "quality": 3000, "command": "hyper", "scale": "zoom"])
+        check(odd.fps == 60 && odd.scrollSpeed == 3 && odd.quality == 6000 && odd.command == .ctrl && odd.scale == .fit,
+              "out of range: the nearest allowed, or the default")
+        eq(ViewerPrefs(plist: ["quality": 0]).quality, 15000, "the old Auto: Balanced")
+        let stored = ViewerPrefs(plist: ["quality": NSNumber(value: 30000), "sound": NSNumber(value: false),
+                                         "scrollSpeed": NSNumber(value: 1.5), "fullGPU": NSNumber(value: true)])
+        check(stored.quality == 30000 && !stored.sound && stored.scrollSpeed == 1.5 && stored.fullGPU, "values as the preferences return them")
+        let up = ViewerPrefs.migrate(global: ["quality": 50000, "sound": false], to: ["https://a.example.ts.net", "https://b.example.ts.net"])
+        check(up.count == 2 && up.values.allSatisfy { ViewerPrefs(plist: $0).quality == 50000 && !ViewerPrefs(plist: $0).sound },
+              "upgrading: today's settings for each computer known")
+        eq(ViewerPrefs.migrate(global: ["quality": 50000], to: [String]()).count, 0, "no computers known: nothing to copy")
+    }
+
     section("host addresses") {
         func parse(_ s: String) -> HostAddress? { try? HostAddress(parsing: s) }
         let a = parse("  workstation.example.ts.net  ")
