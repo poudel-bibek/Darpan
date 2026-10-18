@@ -131,6 +131,10 @@ public final class Client {
         public let native: DisplayMode?
         public let modes: [DisplayMode]
         public let changed: Bool
+        /// The GNOME scales (%) the host can draw a desktop of any size at (`res.fit`); empty: it can't.
+        public var fitScales: [Int] = []
+        /// The fit in effect, if any.
+        public var fitted: Fit?
     }
 
     public struct HostStats: Equatable {
@@ -575,8 +579,15 @@ public final class Client {
             clipSeen = true
             emit(.clipboard(text, initial: initial))
         case "modes":
-            emit(.modes(Modes(output: m.string("output"), current: m.mode("current"), native: m.mode("native"),
-                              modes: m.modes("modes"), changed: m.bool("changed") ?? false)))
+            var modes = Modes(output: m.string("output"), current: m.mode("current"), native: m.mode("native"),
+                              modes: m.modes("modes"), changed: m.bool("changed") ?? false)
+            modes.fitScales = ((m["fit_scales"] as? [Any]) ?? []).compactMap { ($0 as? NSNumber)?.intValue }
+                .filter { (50...400).contains($0) }
+            if let f = m["fitted"] as? [Any], f.count == 3, let size = Incoming.mode(Array(f.prefix(2))),
+               let scale = (f[2] as? NSNumber)?.intValue {
+                modes.fitted = Fit(size.w, size.h, scale: scale)
+            }
+            emit(.modes(modes))
         case "screen":
             if let w = m.int("w"), let h = m.int("h"), w > 0, h > 0 { emit(.screen(DisplayMode(w, h))) }
         case "notice":

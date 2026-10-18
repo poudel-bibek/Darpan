@@ -26,6 +26,11 @@ final class Settings: ObservableObject {
     private let d = UserDefaults.standard
 
     @Published var scale: ScaleMode { didSet { d.set(scale.rawValue, forKey: "scale") } }
+    /// When the host can make its desktop any size: make it exactly this window's (the sharpest).
+    /// Off once a resolution is picked from the list.
+    @Published var fitWindow: Bool { didSet { d.set(fitWindow, forKey: "fitWindow") } }
+    /// Its scale in % (100 or 200); 0: by this Mac's screen (200 % on Retina).
+    @Published var fitScale: Int { didSet { d.set(fitScale, forKey: "fitScale") } }
     /// Maximum bitrate in kbit/s (one of `qualities`).
     @Published var quality: Int { didSet { d.set(quality, forKey: "quality") } }
     @Published var fps: Int { didSet { d.set(fps, forKey: "fps") } }
@@ -57,8 +62,10 @@ final class Settings: ObservableObject {
     @Published private(set) var hosts: [String] { didSet { d.set(hosts, forKey: "hosts") } }
 
     private init() {
-        d.register(defaults: ["quality": Self.defaultQuality, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true, "checkUpdates": true])
+        d.register(defaults: ["quality": Self.defaultQuality, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true, "checkUpdates": true, "fitWindow": true])
         scale = ScaleMode(rawValue: d.string(forKey: "scale") ?? "") ?? .fit
+        fitWindow = d.bool(forKey: "fitWindow")
+        fitScale = d.integer(forKey: "fitScale")
         quality = Self.migrated(quality: d.integer(forKey: "quality"))
         let f = d.integer(forKey: "fps")
         fps = Self.frameRates.contains(f) ? f : 60

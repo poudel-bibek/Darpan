@@ -45,6 +45,11 @@ final class Session: NSObject {
     /// Full-screen transitions resize the window too; only a resize the user starts counts.
     private var fullScreenMoving = false
     private var resizingByHand = false
+    /// The last `res.fit` sent: never sent twice (a failed one isn't retried in a loop, and another viewer's
+    /// choice isn't fought), only a new size, a new scale, "This window" again or a new host session asks
+    /// again. And the request waiting for the window to settle (each size is a mode switch on the Linux side).
+    private var fitAsked: Fit?
+    private var fitWork: DispatchWorkItem?
     private var uploadToasts: [String: ToastStack.Toast] = [:]
     private let proxy: SOCKSProxy?
     private var caps: [String] = []
@@ -138,7 +143,15 @@ final class Session: NSObject {
             guard let self else { return }
             self.client.send(mode.map { Msg.res(w: $0.w, h: $0.h) } ?? Msg.resNative)
             self.followPicture = false                  // a resolution chosen here scales into this window
+            self.settings.fitWindow = false             // and the desktop stops following the window
+            self.fitAsked = nil
             self.content.toasts.show("Changing resolution…", ttl: 1.5)
+        }
+        model.fitThisWindow = { [weak self] in
+            guard let self else { return }
+            self.settings.fitWindow = true
+            self.fitAsked = nil
+            self.requestFit()
         }
         model.sendCombo = { [weak self] codes in self?.keyboard.combo(codes) }
         model.setRemoteClipboard = { [weak self] text in
@@ -147,6 +160,9 @@ final class Session: NSObject {
         }
 
         settings.$scale.sink { [weak self] in self?.video.scaleMode = $0 }.store(in: &bag)
+        settings.$fitScale.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.requestFit() }       // a new size on this window: at once
+        }.store(in: &bag)
         settings.$fps.combineLatest(settings.$quality, settings.$fullGPU)
             .sink { [weak self] fps, kbps, full in self?.client.setVideo(fps: fps, bitrate: kbps, fullGPU: full) }.store(in: &bag)
         settings.$command.sink { [weak self] in self?.keyboard.translator.command = $0 }.store(in: &bag)
@@ -204,7 +220,13 @@ final class Session: NSObject {
             [weak self] _ in
             self?.fullScreenMoving = false
             self?.followPictureNow()                       // the picture may have changed meanwhile
+            self?.requestFitSoon()
         })
+        // The desktop follows this window's size, once it has settled (not during a live resize or a
+        // full-screen transition: each size is a mode switch on the Linux side).
+        for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didEnterFullScreenNotification] {
+            observers.append(nc.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in self?.requestFitSoon() })
+        }
     }
 
     // MARK: - window
@@ -254,6 +276,30 @@ final class Session: NSObject {
         guard followPicture, s.width > 0, !window.styleMask.contains(.fullScreen) else { return }
         let picture = DisplayMode(Int(s.width), Int(s.height))
         if picture != sizedFor { sizeWindow(for: picture) }
+    }
+
+    private func requestFitSoon(after delay: TimeInterval = 1) {
+        fitWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.requestFit() }
+        fitWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: w)
+    }
+
+    /// Asks the host for a desktop exactly this window's size (device pixels) when it can make one and
+    /// that's chosen here, unless it's what's in effect or already asked for.
+    private func requestFit() {
+        fitWork?.cancel()
+        fitWork = nil
+        guard settings.fitWindow, isConnected, let m = model.modes, !m.fitScales.isEmpty,
+              !window.inLiveResize, !fullScreenMoving,
+              let scale = Fit.scale(chosen: settings.fitScale, backingScale: window.backingScaleFactor, offered: m.fitScales)
+        else { return }
+        model.fitScale = scale
+        guard let want = Fit.request(pixels: video.pixelSize, scale: scale), !want.isAnswered(by: m.fitted),
+              want != fitAsked else { return }
+        fitAsked = want
+        followPicture = false                          // from now on the picture follows the window
+        client.send(Msg.resFit(want))
     }
 
     /// Everything the host believes is pressed is released there too.
@@ -476,7 +522,7 @@ final class Session: NSObject {
     }
 
     @objc func chooseResolution(_ sender: NSMenuItem) {
-        model.setResolution(sender.representedObject as? DisplayMode)
+        if let r = sender.representedObject as? ViewerModel.Resolution { model.choose(r) }
     }
 
     @objc func sendClipboardToRemote(_ sender: Any?) {
@@ -538,7 +584,7 @@ final class Session: NSObject {
         for r in rows {
             let item = NSMenuItem(title: r.detail.isEmpty ? r.title : "\(r.title) (\(r.detail))",
                                   action: #selector(chooseResolution(_:)), keyEquivalent: "")
-            item.representedObject = r.mode
+            item.representedObject = r.choice
             item.state = r.current ? .on : .off
             menu.addItem(item)
         }
@@ -615,6 +661,7 @@ extension Session: ClientDelegate {
             caps = w.caps
             if files != nil { client.requestFiles() }        // a new session: a new token
             if !wasConnected { sizeWindow(for: w.screen) }
+            fitAsked = nil                                    // a new host session: ask again if need be
         case .stream(let s):
             video.streamSize = CGSize(width: s.width, height: s.height)
             followPictureNow()
@@ -626,6 +673,7 @@ extension Session: ClientDelegate {
             clipboard.received(text, initial: initial)
         case .modes(let m):
             model.modes = m
+            requestFitSoon()
         case .notice(let text, let error):
             content.toasts.show(text, error: error, ttl: error ? 8 : 3.5)
         case .upload(let u):

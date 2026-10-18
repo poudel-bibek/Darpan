@@ -38,6 +38,7 @@ public enum Msg {
 
     public static func res(w: Int, h: Int) -> String { #"{"t":"res","w":\#(w),"h":\#(h)}"# }
     public static let resNative = #"{"t":"res","native":true}"#
+    public static func resFit(_ f: Fit) -> String { #"{"t":"res","fit":[\#(f.w),\#(f.h)],"scale":\#(f.scale)}"# }
     public static let modes = #"{"t":"modes"}"#
     public static let rel = #"{"t":"rel"}"#
     public static let kf = #"{"t":"kf"}"#
