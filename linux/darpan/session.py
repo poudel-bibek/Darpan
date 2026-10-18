@@ -1367,15 +1367,19 @@ class Hub:
             async with self._screen:
                 if m.get("native"):
                     await self.screen.restore()
+                elif m.get("fit"):          # the desktop exactly the viewer's size, at its scale
+                    choice = {"fit": [int(m["fit"][0]), int(m["fit"][1])], "scale": int(m.get("scale", 200))}
+                    await self.screen.fit(*choice["fit"], choice["scale"])
                 else:
-                    await self.screen.set_mode(int(m["w"]), int(m["h"]))
+                    choice = [int(m["w"]), int(m["h"])]
+                    await self.screen.set_mode(*choice)
             saved = self._saved_resolutions()
             if m.get("native"):
                 saved.pop(_kind(session), None)
             else:
-                saved[_kind(session)] = [int(m["w"]), int(m["h"])]
+                saved[_kind(session)] = choice
             config.write_private(self.res_file, json.dumps(saved))
-        except (ValueError, KeyError, RuntimeError) as e:
+        except (ValueError, KeyError, TypeError, IndexError, RuntimeError) as e:
             session.ws.send_json({"t": "notice", "level": "error", "text": "resolution change failed: %s" % e})
         await self.refresh_modes(broadcast=True)
 
@@ -1403,8 +1407,11 @@ class Hub:
             async with self._screen:
                 if self.sessions != {session}:
                     return
-                await self.screen.set_mode(int(mode[0]), int(mode[1]))
-        except (ValueError, TypeError, IndexError, RuntimeError) as e:    # e.g. another monitor now
+                if isinstance(mode, dict):
+                    await self.screen.fit(int(mode["fit"][0]), int(mode["fit"][1]), int(mode["scale"]))
+                else:
+                    await self.screen.set_mode(int(mode[0]), int(mode[1]))
+        except (ValueError, TypeError, IndexError, KeyError, RuntimeError) as e:   # e.g. another monitor now
             log.info("last resolution of %s not restored: %s", _kind(session), e)
             return
         await self.refresh_modes(broadcast=True)

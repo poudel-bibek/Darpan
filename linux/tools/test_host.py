@@ -24,6 +24,30 @@ import tempfile
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Stand-ins for the tools a fit uses, all logging to one file so the order shows: nvidia-settings answers the
+# MetaMode query as an NVIDIA driver would, gsettings keeps GNOME's scale in a file, xrandr is the real one.
+FAKE_NVIDIA_SETTINGS = r'''#!/usr/bin/env python3
+import os, sys
+if "-q" in sys.argv:
+    print("id=50, switchable=yes, source=RandR :: DPY-1: 1920x1080_60 @1920x1080 +0+0 {ViewPortIn=1920x1080, ViewPortOut=1920x1080+0+0}")
+else:
+    open(os.environ["DARPAN_FAKE_TOOL_LOG"], "a").write("nvidia-settings " + " ".join(sys.argv[1:]) + "\n")
+    if "ViewPortIn=1234x" in " ".join(sys.argv):     # a size the driver refuses
+        sys.exit("ERROR: Error assigning value")
+'''
+FAKE_GSETTINGS = r'''#!/usr/bin/env python3
+import os, sys
+log = os.environ["DARPAN_FAKE_TOOL_LOG"]
+if sys.argv[1] == "get":
+    print("uint32 " + (open(log + ".scale").read() if os.path.exists(log + ".scale") else "0"))
+else:
+    open(log + ".scale", "w").write(sys.argv[-1])
+    open(log, "a").write("gsettings " + " ".join(sys.argv[1:]) + "\n")
+'''
+FAKE_XRANDR = r'''#!/bin/sh
+case "$*" in --query*) ;; *) echo "xrandr $*" >> "$DARPAN_FAKE_TOOL_LOG" ;; esac
+exec REAL_XRANDR "$@"
+'''
 FAKE_PW_RECORD = r'''#!/usr/bin/env python3
 # Stand-in for pw-record in tests: writes a WAV header, then paced 48 kHz stereo s16 PCM on stdout:
 # 1 s of a 1 kHz tone, 0.3 s of digital silence, repeated. Logs its arguments and when it's started.
@@ -1469,6 +1493,62 @@ async def run(args, tmp, probe_log):
     session_mod.RESTORE_AFTER_S = real_after
     ok("on shutdown the resolution goes back at once", len(restored) == 1 and restored[0] - stop_at < 0.1,
        "%d restore(s), %.2f s after the stop" % (len(restored), restored[0] - stop_at if restored else -1))
+
+    # fit: the desktop exactly the viewer's size at 200 %: GNOME's scale first (it reads it only when the monitors
+    # change), then NVIDIA's MetaMode with the desktop fitted into the monitor's own mode; native undoes both,
+    # the scale first again, and clears the scaling; so does a mode, even the one the screen already reports
+    c = await WS.connect("127.0.0.1", args.port)
+    _, h = await c.recv()
+    c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py fit"})
+    _, before = await pump(c, 1.5, "modes")
+    await pump(c, 1.0)                          # (modes again: the visits above left a restore pending)
+    c.send({"t": "res", "fit": [1600, 1000], "scale": 200})
+    _, fitted = await pump(c, 2.0, "modes")
+    c.send({"t": "res", "fit": [1600, 1000], "scale": 200})    # the same again (a reconnect): nothing switches
+    await pump(c, 1.0, "modes")
+    c.send({"t": "res", "fit": [5000, 3001], "scale": 200})     # too big for H.264, and odd: 4096 a side, even
+    _, big = await pump(c, 2.0, "modes")
+    c.send({"t": "res", "native": True})
+    _, after = await pump(c, 2.0, "modes")
+    c.send({"t": "res", "fit": [2000, 1200], "scale": 200})
+    await pump(c, 2.0, "modes")
+    c.send({"t": "res", "w": 1920, "h": 1080})                   # RandR's current mode: still a switch, to undo the fit
+    _, moded = await pump(c, 2.0, "modes")
+    c.send({"t": "res", "fit": [1234, 800], "scale": 200})      # refused by the driver: not 200 % on the old desktop
+    _, refused = await pump(c, 2.0, "notice")
+    c.w.close()
+    tools = [l.strip() for l in open(os.path.join(tmp, "tools.log"))] if os.path.exists(os.path.join(tmp, "tools.log")) else []
+    order = [l for l in tools if not l.startswith("xrandr --output screen --mode 1920x1080 --rate") or "--transform none" in l]
+    want = ["gsettings set org.gnome.desktop.interface scaling-factor 2",
+            "nvidia-settings --assign CurrentMetaMode=DPY-1: nvidia-auto-select @1600x1000 +0+0 "
+            "{ViewPortIn=1600x1000, ViewPortOut=1728x1080+96+0}",
+            "gsettings set org.gnome.desktop.interface scaling-factor 0"]
+    seq = [l for l in order if l.startswith(("gsettings", "nvidia-settings")) and "1234x" not in l][:5]
+    once = sum("@1600x1000" in l for l in tools) == 1
+    undone = [l for l in tools if l.startswith("gsettings")][-2:] == [
+        "gsettings set org.gnome.desktop.interface scaling-factor 2", "gsettings set org.gnome.desktop.interface scaling-factor 0"]
+    got = len(seq) == 5 and [seq[0], seq[1], seq[4]] == want and seq[2] == want[0] and seq[3].startswith(
+        "nvidia-settings --assign CurrentMetaMode=DPY-1: nvidia-auto-select @4096x2458 +0+0 {ViewPortIn=4096x2458,")
+    cleared = any(l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tools)
+    tail = tools[next((k for k, l in enumerate(tools) if "@2000x1200" in l), len(tools)):]
+    unfit = ("gsettings set org.gnome.desktop.interface scaling-factor 0" in tail and any(
+        l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tail))
+    # two displays: no fit offered (a MetaMode names every display; assigning one would turn the other off)
+    import darpan.screen as screen_mod
+    real_run = screen_mod._run
+
+    async def two_displays(display, *cmd):
+        return ("id=50 :: DPY-1: 2560x1440_60 @2560x1440 +0+0 {ViewPortIn=2560x1440, ViewPortOut=2560x1440+0+0}, "
+                "DPY-2: 1920x1080_60 @1920x1080 +2560+0 {ViewPortIn=1920x1080, ViewPortOut=1920x1080+0+0}")
+    screen_mod._run = two_displays
+    two = await screen_mod.Screen(":0")._metamode()
+    screen_mod._run = real_run
+    ok("two displays: no fit offered", two is None, repr(two))
+    ok("fit: GNOME's scale, then the desktop size; native or a mode undoes both", before and before.get("fit_scales") == [100, 200]
+       and fitted and fitted.get("fitted") == [1600, 1000, 200] and after and "fitted" not in after and got and cleared
+       and big and big.get("fitted") == [4096, 2458, 200] and once and undone and refused is not None
+       and moded and "fitted" not in moded and unfit,
+       "%s | %s | %s | %s" % (before and before.get("fit_scales"), fitted and fitted.get("fitted"), big and big.get("fitted"), seq))
     return all(r for _, r in results), results
 
 
@@ -1497,11 +1577,14 @@ def main():
             time.sleep(0.1)
     fakebin = os.path.join(tmp, "bin")
     os.makedirs(fakebin)
-    with open(os.path.join(fakebin, "pw-record"), "w") as f:
-        f.write(FAKE_PW_RECORD)
-    os.chmod(os.path.join(fakebin, "pw-record"), 0o755)
+    for tool, text in (("pw-record", FAKE_PW_RECORD), ("nvidia-settings", FAKE_NVIDIA_SETTINGS),
+                       ("gsettings", FAKE_GSETTINGS), ("xrandr", FAKE_XRANDR.replace("REAL_XRANDR", shutil.which("xrandr")))):
+        with open(os.path.join(fakebin, tool), "w") as f:
+            f.write(text)
+        os.chmod(os.path.join(fakebin, tool), 0o755)
     env = dict(os.environ, DISPLAY=args.display, XDG_CONFIG_HOME=os.path.join(tmp, "config"),
                PATH=fakebin + os.pathsep + os.environ.get("PATH", ""), DARPAN_FAKE_PW_LOG=os.path.join(tmp, "pw.log"),
+               DARPAN_FAKE_TOOL_LOG=os.path.join(tmp, "tools.log"),
                XDG_STATE_HOME=os.path.join(tmp, "state"), XDG_DATA_HOME=os.path.join(tmp, "data"),
                XDG_RUNTIME_DIR=os.path.join(tmp, "run"), HOME=tmp, PYTHONPATH=args.root)
     os.makedirs(env["XDG_RUNTIME_DIR"], mode=0o700)
@@ -1517,7 +1600,7 @@ def main():
         cmd = [sys.executable, "-m", "darpan", "serve", "--port", str(args.port), "-v"]
         if args.socket_activate:   # exercise the sd_listen_fds path (darpan.socket in production)
             keep = ["DISPLAY", "HOME", "PATH", "PYTHONPATH", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME",
-                    "XDG_RUNTIME_DIR", "DARPAN_FAKE_PW_LOG"]   # it starts children with a clean environment
+                    "XDG_RUNTIME_DIR", "DARPAN_FAKE_PW_LOG", "DARPAN_FAKE_TOOL_LOG"]   # it starts children with a clean environment
             cmd = ["systemd-socket-activate", "-l", "127.0.0.1:%d" % args.port] + [a for k in keep for a in ("-E", k)] + cmd
         host = subprocess.Popen(cmd, env=env,
                                 stdout=host_log, stderr=subprocess.STDOUT, cwd=args.root)
