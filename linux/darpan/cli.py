@@ -44,7 +44,7 @@ def _serve(args):
         await asyncio.sleep(0.3)
         for s in list(hub.sessions):
             await s._close()
-        await hub.session_ended()
+        await hub.session_ended(now=True)   # put the resolution back before we go, not 10 s later
         ctl.close()
         await server.close()
 
