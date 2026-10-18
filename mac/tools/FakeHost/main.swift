@@ -112,7 +112,7 @@ let tone: [Data] = {
 func modesMessage() -> String {
     var m: [String: Any] = ["t": "modes", "output": "FAKE-1", "current": [size.0, size.1], "native": [native.0, native.1],
                             "modes": modes.map { [$0.0, $0.1] }, "changed": size != native]
-    if canFit { m["fit_scales"] = [100, 200] }
+    if canFit { m["fit_scales"] = [100, 125, 150, 175, 200] }
     if let f = fitted { m["fitted"] = f }
     return json(m)
 }
