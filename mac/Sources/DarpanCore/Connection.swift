@@ -101,20 +101,21 @@ public final class WebSocket {
                         completion: .contentProcessed { _ in completion?() })
     }
 
-    /// Sends a close frame (so the host ends the session at once), then tears down.
-    /// No `.closed` event follows a local close.
-    public func close(code: UInt16 = 1000) {
-        guard markFinished() else { return }
+    /// Sends a close frame (so the host ends the session at once), then tears down; `sent` runs once the
+    /// frame is out, or at once when there's nothing to send it on. No `.closed` event follows a local close.
+    public func close(code: UInt16 = 1000, sent: (() -> Void)? = nil) {
+        guard markFinished() else { sent?(); return }
         connection.stateUpdateHandler = nil
         guard connection.state == .ready else {
             connection.cancel()
+            sent?()
             return
         }
         let meta = NWProtocolWebSocket.Metadata(opcode: .close)
         meta.closeCode = code >= 4000 ? .privateCode(code) : .protocolCode(.normalClosure)
         let ctx = NWConnection.ContentContext(identifier: "close", metadata: [meta])
         let c = connection
-        c.send(content: nil, contentContext: ctx, isComplete: true, completion: .contentProcessed { _ in c.cancel() })
+        c.send(content: nil, contentContext: ctx, isComplete: true, completion: .contentProcessed { _ in c.cancel(); sent?() })
         queue.asyncAfter(deadline: .now() + 1) { c.cancel() }   // in case the send never completes
     }
 

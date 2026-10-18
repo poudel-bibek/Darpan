@@ -341,13 +341,15 @@ public final class Client {
     /// The Mac is going to sleep: end the connection cleanly, so the host gets its desktop back at once
     /// instead of after 30 s without a reply, and don't reconnect until `wake()`. While asleep the Mac
     /// wakes for a moment about every 15 min, with the network up (a dark wake); those connect nothing.
-    public func sleep() {
+    /// Also a first connection still signing in: it goes on after the wake. `sent` runs (on the client's
+    /// queue) once the goodbye is out, or at once when there was nothing to close.
+    public func sleep(sent: @escaping () -> Void = {}) {
         queue.async {
-            guard self.everConnected, !self.asleep else { return }
+            guard !self.asleep, self.everConnected || self.socket != nil else { return sent() }
             self.asleep = true
             self.generation += 1                    // the closing socket and any scheduled reconnect are stale
-            self.teardown()
-            self.publish(.reconnecting(restarting: false))
+            self.teardown(sent: sent)
+            if self.everConnected { self.publish(.reconnecting(restarting: false)) }
         }
     }
 
@@ -358,7 +360,7 @@ public final class Client {
             if self.asleep {
                 self.asleep = false
                 self.retry = 0
-                self.open(initial: false)
+                self.open(initial: !self.everConnected)
                 return
             }
             guard self.authed else { return }
@@ -513,9 +515,9 @@ public final class Client {
         }
     }
 
-    /// Drops the socket and everything that belongs to a session.
-    private func teardown() {
-        socket?.close()
+    /// Drops the socket and everything that belongs to a session; `sent` once its close frame is out.
+    private func teardown(sent: (() -> Void)? = nil) {
+        if let s = socket { s.close(sent: sent) } else { sent?() }
         socket = nil
         lock.lock()
         live = nil

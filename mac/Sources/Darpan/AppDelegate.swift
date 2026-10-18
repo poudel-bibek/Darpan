@@ -68,8 +68,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var debugConnectModel: ConnectModel { connectWindow.model }
     #endif
 
+    /// macOS waits for this handler, not for what it starts: the goodbye goes out before it returns
+    /// (half a second at most), so the host ends the session now rather than after 30 s.
     @objc private func willSleep(_ n: Notification) {
-        session?.client.sleep()
+        guard let s = session else { return }
+        let sent = DispatchSemaphore(value: 0)
+        s.client.sleep { sent.signal() }
+        _ = sent.wait(timeout: .now() + 0.5)
     }
 
     /// A real wake: the system with its display on, or the screens coming on. Not a dark wake (the
