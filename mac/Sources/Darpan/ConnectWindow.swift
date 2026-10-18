@@ -455,6 +455,7 @@ struct ConnectView: View {
         .contextMenu {
             Button("Rename…") { renaming = c.origin }
             Button("Remove from List") { model.removeFromList(c.origin) }
+                .disabled(model.connectedOrigins.contains(c.origin))   // (its window keeps its settings: disconnect first)
         }
         .popover(isPresented: Binding(get: { renaming == c.origin }, set: { if !$0 { renaming = nil } }),
                  arrowEdge: .trailing) {
