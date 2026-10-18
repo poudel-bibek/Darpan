@@ -15,6 +15,7 @@ import hmac
 import json
 import os
 import pwd
+import re
 import shutil
 import signal
 import struct
@@ -25,15 +26,19 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Stand-ins for the tools a fit uses, all logging to one file so the order shows: nvidia-settings answers the
-# MetaMode query as an NVIDIA driver would, gsettings keeps GNOME's scale in a file, xrandr is the real one.
+# MetaMode query as an NVIDIA driver would, gsettings keeps GNOME's scale in a file, xrandr is the real one but
+# reports the desktop as big as the last MetaMode made it (until a mode change), as on NVIDIA.
 FAKE_NVIDIA_SETTINGS = r'''#!/usr/bin/env python3
-import os, sys
+import os, re, sys
 if "-q" in sys.argv:
     print("id=50, switchable=yes, source=RandR :: DPY-1: 1920x1080_60 @1920x1080 +0+0 {ViewPortIn=1920x1080, ViewPortOut=1920x1080+0+0}")
 else:
     open(os.environ["DARPAN_FAKE_TOOL_LOG"], "a").write("nvidia-settings " + " ".join(sys.argv[1:]) + "\n")
     if "ViewPortIn=1234x" in " ".join(sys.argv):     # a size the driver refuses
         sys.exit("ERROR: Error assigning value")
+    m = re.search(r"ViewPortIn=(\d+)x(\d+)", " ".join(sys.argv))
+    if m:
+        open(os.environ["DARPAN_FAKE_TOOL_LOG"] + ".screen", "w").write("%s x %s" % m.groups())
 '''
 FAKE_GSETTINGS = r'''#!/usr/bin/env python3
 import os, sys
@@ -45,7 +50,12 @@ else:
     open(log, "a").write("gsettings " + " ".join(sys.argv[1:]) + "\n")
 '''
 FAKE_XRANDR = r'''#!/bin/sh
-case "$*" in --query*) ;; *) echo "xrandr $*" >> "$DARPAN_FAKE_TOOL_LOG" ;; esac
+case "$*" in
+--query*) if [ -f "$DARPAN_FAKE_TOOL_LOG.screen" ]; then
+    REAL_XRANDR "$@" | sed "1s/current [0-9]* x [0-9]*/current $(cat "$DARPAN_FAKE_TOOL_LOG.screen")/"; exit
+  fi ;;
+*) echo "xrandr $*" >> "$DARPAN_FAKE_TOOL_LOG"; rm -f "$DARPAN_FAKE_TOOL_LOG.screen" ;;
+esac
 exec REAL_XRANDR "$@"
 '''
 FAKE_PW_RECORD = r'''#!/usr/bin/env python3
@@ -1515,6 +1525,14 @@ async def run(args, tmp, probe_log):
     await pump(c, 2.0, "modes")
     c.send({"t": "res", "w": 1920, "h": 1080})                   # RandR's current mode: still a switch, to undo the fit
     _, moded = await pump(c, 2.0, "modes")
+    # GNOME reads its scale only when the desktop changes size: a scale change that keeps the size takes a step
+    # to another size first (else the shell keeps the old scale and apps take the new one: menus cut off)
+    c.send({"t": "res", "fit": [1920, 1080], "scale": 200})     # the size the desktop is already
+    _, same = await pump(c, 2.0, "modes")
+    c.send({"t": "res", "fit": [1920, 1080], "scale": 100})     # the same size, another scale
+    _, rescaled = await pump(c, 2.0, "modes")
+    c.send({"t": "res", "native": True})                        # back to a mode of the same size
+    await pump(c, 2.0, "modes")
     c.send({"t": "res", "fit": [1234, 800], "scale": 200})      # refused by the driver: not 200 % on the old desktop
     _, refused = await pump(c, 2.0, "notice")
     c.w.close()
@@ -1532,6 +1550,11 @@ async def run(args, tmp, probe_log):
         "nvidia-settings --assign CurrentMetaMode=DPY-1: nvidia-auto-select @4096x2458 +0+0 {ViewPortIn=4096x2458,")
     cleared = any(l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tools)
     tail = tools[next((k for k, l in enumerate(tools) if "@2000x1200" in l), len(tools)):]
+    steps = tools[max(0, next((k for k, l in enumerate(tools) if "@1920x1078" in l), len(tools)) - 1):]
+    steps = [("s" + l.split()[-1]) if l.startswith("gsettings") else "mode" if l.startswith("xrandr --output")
+             else re.search(r"@\d+x\d+", l).group() for l in steps[:next((k for k, l in enumerate(steps) if "1234x" in l),
+                                                                      len(steps))]]
+    stepped = steps[:9] == ["s2", "@1920x1078", "@1920x1080", "s1", "@1920x1078", "@1920x1080", "s0", "@1920x1078", "mode"]
     unfit = ("gsettings set org.gnome.desktop.interface scaling-factor 0" in tail and any(
         l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tail))
     # two displays: no fit offered (a MetaMode names every display; assigning one would turn the other off)
@@ -1545,6 +1568,9 @@ async def run(args, tmp, probe_log):
     two = await screen_mod.Screen(":0")._metamode()
     screen_mod._run = real_run
     ok("two displays: no fit offered", two is None, repr(two))
+    ok("fit at the size the desktop already is: a step to another size, so GNOME reads the scale",
+       stepped and same and same.get("fitted") == [1920, 1080, 200] and rescaled and rescaled.get("fitted") == [1920, 1080, 100],
+       "%s | %s | %s" % (steps, same and same.get("fitted"), rescaled and rescaled.get("fitted")))
     ok("fit: GNOME's scale, then the desktop size; native or a mode undoes both", before and before.get("fit_scales") == [100, 200]
        and fitted and fitted.get("fitted") == [1600, 1000, 200] and after and "fitted" not in after and got and cleared
        and big and big.get("fitted") == [4096, 2458, 200] and once and undone and refused is not None
