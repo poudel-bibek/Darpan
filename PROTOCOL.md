@@ -192,8 +192,8 @@ itself, using the real shape from the host:
 * `{"t":"cur","id":0}` means the pointer is hidden.
 * The host sends each image to a session at most once: clients must cache images by id for the
   whole session.
-* Image and hotspot are in **host screen pixels**; scale them by the same factor used to
-  display the video.
+* Image and hotspot are in **the stream's pixels** (the host scales them when it scales the picture,
+  as at a fit of 125-175 %); scale them by the same factor used to display the video.
 
 ---
 
@@ -286,17 +286,20 @@ overwrites anything: ` (1)` is added instead.
 Host → client after `ok` and whenever it changes:
 ```json
 {"t":"modes","output":"DP-0","current":[2560,1440],"native":[2560,1440],
- "modes":[[2560,1440],[1920,1080],[1280,720]],"changed":false,"fit_scales":[100,200]}
+ "modes":[[2560,1440],[1920,1080],[1280,720]],"changed":false,"fit_scales":[100,125,150,175,200]}
 ```
 `native` is the mode the monitor had before any client changed it; `changed` is true while a
 client-selected mode is active. Client → host:
 
 * `{"t":"res","w":1920,"h":1080}` — switch the host monitor to one of `modes`.
-* `{"t":"res","fit":[3024,1890],"scale":200}` — make the desktop exactly this size, in device pixels (the
-  viewer's view area), drawn at `scale` % (GNOME's 100 or 200). The monitor keeps its own mode; the GPU
-  scales the desktop onto it. Offered when `modes` has `fit_scales` (an NVIDIA host with nvidia-settings);
-  while it's in effect, `modes` has `"fitted":[w,h,scale]`. Sizes are rounded down to even numbers, and a
-  side over 4096 (H.264's limit) scales both down together; `fitted` and `screen` say what it made.
+* `{"t":"res","fit":[3024,1890],"scale":200}` — make the desktop as seen exactly this size, in device pixels
+  (the viewer's view area), drawn at `scale` %, one of `fit_scales`. 100 and 200 are GNOME's own scales, one
+  desktop pixel per pixel. 125, 150 and 175 draw at 200 % on a desktop 200/`scale` times as big, which the host
+  scales down to this size before encoding. The monitor keeps its own mode; the GPU scales the desktop onto it.
+  Offered when `modes` has `fit_scales` (an NVIDIA host with nvidia-settings, one monitor); while it's in
+  effect, `modes` has `"fitted":[w,h,scale]`. Sizes are rounded down to even numbers, and a side over 4096
+  (H.264's limit) scales both down together; `fitted`, `screen` and `stream` say what it made. Input
+  coordinates stay in the stream's pixels.
 * `{"t":"res","native":true}` — restore the original mode (and scale).
 * `{"t":"modes"}` — ask for a fresh `modes` message.
 
@@ -308,7 +311,8 @@ and a new `stream`.
 ## 9. Other host → client messages
 
 * `{"t":"screen","w":3840,"h":2160}` — host screen size changed (a new `stream` follows
-  if streaming).
+  if streaming). It's the size the viewer sees: at a fit of 125-175 %, the scaled size, not the bigger
+  desktop behind it. `ok.screen` is the same.
 * `{"t":"notice","level":"info|warn|error","text":"…"}` — show to the user.
 * `{"t":"bye","reason":"…"}` — sent right before the host closes the socket. Show the reason, but
   act on the close code that follows (4003: stay disconnected; 4004: reconnect).

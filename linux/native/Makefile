@@ -7,7 +7,7 @@ CFLAGS  ?= -O2 -g0 -pipe
 CFLAGS  += -std=c11 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers \
            -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE -Ithird_party/include
 LDFLAGS += -pie -Wl,-z,relro,-z,now -Wl,--as-needed
-LDLIBS  := -l:libX11.so.6 -l:libXext.so.6 -l:libXdamage.so.1 -ldl
+LDLIBS  := -l:libX11.so.6 -l:libXext.so.6 -l:libXdamage.so.1 -l:libXrender.so.1 -ldl
 
 darpan-capture: capture.c vkenc.c vkenc.h rgb2nv12.h
 	$(CC) $(CFLAGS) -o $@ capture.c vkenc.c $(LDFLAGS) $(LDLIBS)

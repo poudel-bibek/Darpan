@@ -87,8 +87,9 @@ def driver_restart_needed():
 
 
 class _Source:
-    def __init__(self, display, fps, kbps, credits, on_start, on_frame, on_exit):
+    def __init__(self, display, fps, kbps, credits, on_start, on_frame, on_exit, size=None):
         self.display, self.fps_, self.kbps, self.credits = display, fps, kbps, credits
+        self.size = size                 # (w, h) to scale the screen to, or None (as it is)
         self.on_start, self.on_frame, self.on_exit = on_start, on_frame, on_exit
         self.stopped = False
         self.api = None                  # how it encodes: "vulkan", "cuda" or "software"
@@ -111,6 +112,8 @@ class NvencCapture(_Source):
             args += ["--display", self.display]
         if self.c444:
             args += ["--chroma", "444"]
+        if self.size:
+            args += ["--size", "%dx%d" % self.size]
         self.proc = await asyncio.create_subprocess_exec(
             *args, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=None,
             limit=1 << 20, env=dict(os.environ, DARPAN_NVENC_CUDA="1") if self.cuda else None)
@@ -219,10 +222,11 @@ class X264Capture(_Source):
         self.Gst = Gst
         self.loop = asyncio.get_running_loop()
         disp = ('display-name="%s" ' % self.display) if self.display else ""
+        scale = ("! videoscale method=bilinear n-threads=4 ! video/x-raw,width=%d,height=%d " % self.size) if self.size else ""
         desc = (
             "ximagesrc %s use-damage=false show-pointer=false ! video/x-raw,framerate=%d/1 "
             "! queue max-size-buffers=1 leaky=downstream ! videoconvert n-threads=4 name=conv "
-            "! video/x-raw,format=I420 "
+            "! video/x-raw,format=I420 " + scale +
             "! x264enc name=enc tune=zerolatency speed-preset=superfast bitrate=%d vbv-buf-capacity=300 "
             "key-int-max=0 bframes=0 threads=4 "
             "! video/x-h264,stream-format=byte-stream,alignment=au,profile=high "
