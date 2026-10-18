@@ -47,6 +47,11 @@ final class Session: NSObject {
     /// Full-screen transitions resize the window too; only a resize the user starts counts.
     private var fullScreenMoving = false
     private var resizingByHand = false
+    /// The last `res.fit` sent: never sent twice (a failed one isn't retried in a loop, and another viewer's
+    /// choice isn't fought), only a new size, a new scale, "This window" again or a new host session asks
+    /// again. And the request waiting for the window to settle (each size is a mode switch on the Linux side).
+    private var fitAsked: Fit?
+    private var fitWork: DispatchWorkItem?
     private var uploadToasts: [String: ToastStack.Toast] = [:]
     private let proxy: SOCKSProxy?
     private var caps: [String] = []
@@ -143,7 +148,15 @@ final class Session: NSObject {
             guard let self else { return }
             self.client.send(mode.map { Msg.res(w: $0.w, h: $0.h) } ?? Msg.resNative)
             self.followPicture = false                  // a resolution chosen here scales into this window
+            self.settings.setFits(self.address.origin, false)   // and this computer's desktop stops following the window
+            self.fitAsked = nil
             self.content.toasts.show("Changing resolution…", ttl: 1.5)
+        }
+        model.fitThisWindow = { [weak self] in
+            guard let self else { return }
+            self.settings.setFits(self.address.origin, true)
+            self.fitAsked = nil
+            self.requestFit()
         }
         model.sendCombo = { [weak self] codes in self?.keyboard.combo(codes) }
         model.setRemoteClipboard = { [weak self] text in
@@ -151,7 +164,12 @@ final class Session: NSObject {
             self?.content.toasts.show("Remote clipboard set")
         }
 
-        settings.$scale.sink { [weak self] in self?.video.scaleMode = $0 }.store(in: &bag)
+        settings.$scale.sink { [weak self] in self?.applyScaleMode($0) }.store(in: &bag)
+        model.setFitScale = { [weak self] scale in               // a new size for this computer: at once
+            guard let self else { return }
+            self.settings.setFitScale(self.address.origin, scale)
+            self.requestFit()
+        }
         settings.$names.combineLatest(settings.$emoji).dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { if let self { self.window.title = self.settings.title(self.address.origin, original: self.ownName) } }
         }.store(in: &bag)
@@ -216,7 +234,15 @@ final class Session: NSObject {
             [weak self] _ in
             self?.fullScreenMoving = false
             self?.followPictureNow()                       // the picture may have changed meanwhile
+            self?.requestFitSoon()
         })
+        // The desktop follows this window's size, once it has settled (not during a live resize or a
+        // full-screen transition: each size is a mode switch on the Linux side).
+        // (A move to a screen of another density changes the pixels without a resize.)
+        for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didEnterFullScreenNotification,
+                     NSWindow.didChangeBackingPropertiesNotification] {
+            observers.append(nc.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in self?.requestFitSoon() })
+        }
     }
 
     // MARK: - window
@@ -274,9 +300,42 @@ final class Session: NSObject {
     /// The window takes the picture's size, while it follows it (not in full screen: then on the way out).
     private func followPictureNow() {
         let s = video.streamSize
-        guard followPicture, s.width > 0, !window.styleMask.contains(.fullScreen) else { return }
+        // (Not to a fit: the picture follows the window then, and one the host had to shrink, over 4096 a
+        // side, would shrink the window.)
+        guard followPicture, model.modes?.fitted == nil, s.width > 0, !window.styleMask.contains(.fullScreen) else { return }
         let picture = DisplayMode(Int(s.width), Int(s.height))
         if picture != sizedFor { sizeWindow(for: picture) }
+    }
+
+    /// A fitted desktop is drawn to fill the window: one pixel per pixel when it's the window's size, and
+    /// scaled up when the host had to make it smaller (over 4096 a side), never small with borders.
+    private func applyScaleMode(_ chosen: ScaleMode) {
+        video.scaleMode = model.modes?.fitted != nil ? .fit : chosen
+    }
+
+    private func requestFitSoon(after delay: TimeInterval = 1) {
+        fitWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.requestFit() }
+        fitWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: w)
+    }
+
+    /// Asks the host for a desktop exactly this window's size (device pixels) when it can make one and
+    /// that's chosen here, unless it's what's in effect or already asked for.
+    private func requestFit() {
+        fitWork?.cancel()
+        fitWork = nil
+        guard settings.fits(address.origin), isConnected, let m = model.modes, !m.fitScales.isEmpty,
+              !window.inLiveResize, !fullScreenMoving,
+              let scale = Fit.scale(chosen: settings.fitScale(address.origin), backingScale: window.backingScaleFactor,
+                                    offered: m.fitScales)
+        else { return }
+        model.fitScale = scale
+        guard let want = Fit.request(pixels: video.pixelSize, scale: scale), !want.isAnswered(by: m.fitted),
+              want != fitAsked else { return }
+        fitAsked = want
+        followPicture = false                          // from now on the picture follows the window
+        client.send(Msg.resFit(want))
     }
 
     /// Everything the host believes is pressed is released there too.
@@ -501,7 +560,7 @@ final class Session: NSObject {
     }
 
     @objc func chooseResolution(_ sender: NSMenuItem) {
-        model.setResolution(sender.representedObject as? DisplayMode)
+        if let r = sender.representedObject as? ViewerModel.Resolution { model.choose(r) }
     }
 
     @objc func sendClipboardToRemote(_ sender: Any?) {
@@ -563,7 +622,7 @@ final class Session: NSObject {
         for r in rows {
             let item = NSMenuItem(title: r.detail.isEmpty ? r.title : "\(r.title) (\(r.detail))",
                                   action: #selector(chooseResolution(_:)), keyEquivalent: "")
-            item.representedObject = r.mode
+            item.representedObject = r.choice
             item.state = r.current ? .on : .off
             menu.addItem(item)
         }
@@ -641,6 +700,7 @@ extension Session: ClientDelegate {
             caps = w.caps
             if files != nil { client.requestFiles() }        // a new session: a new token
             if !wasConnected { sizeWindow(for: w.screen) }
+            fitAsked = nil                                    // a new host session: ask again if need be
         case .stream(let s):
             video.streamSize = CGSize(width: s.width, height: s.height)
             model.stream = s
@@ -653,6 +713,8 @@ extension Session: ClientDelegate {
             clipboard.received(text, initial: initial)
         case .modes(let m):
             model.modes = m
+            applyScaleMode(settings.scale)
+            requestFitSoon()
         case .notice(let text, let error):
             content.toasts.show(text, error: error, ttl: error ? 8 : 3.5)
             // Why More GPU or full colour went (or came back): the display panel shows it next to what's in effect.

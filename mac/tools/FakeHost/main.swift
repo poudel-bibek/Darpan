@@ -5,6 +5,7 @@
 //   swift run FakeHost [--port 47491] [--password <pw>] [--size 1920x1080] [--max-sessions 2]
 //                      [--name workstation] [--image desktop.png]   (a still picture instead of the pattern)
 //                      [--restore 1920x1200[@8]]   (switch 0.5 s or 8 s after `ok`, like a host restoring a resolution)
+//                      [--fit] [--fit-max 2000]   (a desktop of any size, like an NVIDIA host; shrunk over 4096 or this)
 //   DARPAN_URL=http://localhost:47491 DARPAN_PASSWORD=<pw> swift run Darpan
 //
 // Commands on stdin: clip <text> · notice <text> · error <text> · kick · restart · drop ·
@@ -23,6 +24,9 @@ var maxSessions = 2
 var hostName = "fakehost"
 var restore: (Int, Int)?            // --restore WxH[@s]: switch 0.5 s (or s) after `ok`, as a host restoring a device's last resolution
 var restoreAfter = 0.5
+var canFit = false                  // --fit: a desktop of any size (`fit_scales`, `res.fit`), like an NVIDIA host
+var fitted: [Int]?                  // [w, h, scale] while a fit is in effect
+var fitMax = 4096                   // --fit-max: a smaller limit, to test a fit the host had to shrink
 var args = CommandLine.arguments.dropFirst().makeIterator()
 while let a = args.next() {
     switch a {
@@ -33,6 +37,8 @@ while let a = args.next() {
         if p.count == 2 { size = (p[0], p[1]) }
     case "--max-sessions": maxSessions = Int(args.next() ?? "") ?? maxSessions
     case "--name": hostName = args.next() ?? hostName
+    case "--fit": canFit = true
+    case "--fit-max": fitMax = Int(args.next() ?? "") ?? fitMax
     case "--restore":
         let spec = (args.next() ?? "").split(separator: "@")
         let p = (spec.first ?? "").split(separator: "x").compactMap { Int($0) }
@@ -104,8 +110,11 @@ let tone: [Data] = {
 }()
 
 func modesMessage() -> String {
-    json(["t": "modes", "output": "FAKE-1", "current": [size.0, size.1], "native": [native.0, native.1],
-          "modes": modes.map { [$0.0, $0.1] }, "changed": size != native])
+    var m: [String: Any] = ["t": "modes", "output": "FAKE-1", "current": [size.0, size.1], "native": [native.0, native.1],
+                            "modes": modes.map { [$0.0, $0.1] }, "changed": size != native]
+    if canFit { m["fit_scales"] = [100, 200] }
+    if let f = fitted { m["fitted"] = f }
+    return json(m)
 }
 
 final class Session {
@@ -278,7 +287,14 @@ final class Session {
             log("clip \(s.prefix(80).debugDescription) (\(s.utf8.count) bytes)")
             for o in sessions where o !== self { o.sendText(json(["t": "clip", "text": s])) }
         case "res":
-            if m["native"] as? Bool == true { setSize(native) } else if let w = m["w"] as? Int, let h = m["h"] as? Int {
+            if canFit, let f = m["fit"] as? [Int], f.count == 2 {   // the host's rounding: 4096 a side at most, even sizes
+                let k = min(1, Double(fitMax) / Double(max(f[0], f[1]))), scale = m["scale"] as? Int ?? 200
+                let w = Int(Double(f[0]) * k) / 2 * 2, h = Int(Double(f[1]) * k) / 2 * 2
+                log("fit \(f[0])×\(f[1]) at \(scale) % → \(w)×\(h)")
+                fitted = [w, h, scale]
+                if (w, h) == size { for x in sessions { x.sendText(modesMessage()) } } else { setSize((w, h)) }
+            } else if m["native"] as? Bool == true { fitted = nil; setSize(native) } else if let w = m["w"] as? Int, let h = m["h"] as? Int {
+                fitted = nil
                 if modes.contains(where: { $0 == (w, h) }) { setSize((w, h)) } else {
                     sendText(json(["t": "notice", "level": "error", "text": "resolution change failed: no mode \(w)x\(h)"]))
                 }

@@ -286,13 +286,18 @@ overwrites anything: ` (1)` is added instead.
 Host → client after `ok` and whenever it changes:
 ```json
 {"t":"modes","output":"DP-0","current":[2560,1440],"native":[2560,1440],
- "modes":[[2560,1440],[1920,1080],[1280,720]],"changed":false}
+ "modes":[[2560,1440],[1920,1080],[1280,720]],"changed":false,"fit_scales":[100,200]}
 ```
 `native` is the mode the monitor had before any client changed it; `changed` is true while a
 client-selected mode is active. Client → host:
 
 * `{"t":"res","w":1920,"h":1080}` — switch the host monitor to one of `modes`.
-* `{"t":"res","native":true}` — restore the original mode.
+* `{"t":"res","fit":[3024,1890],"scale":200}` — make the desktop exactly this size, in device pixels (the
+  viewer's view area), drawn at `scale` % (GNOME's 100 or 200). The monitor keeps its own mode; the GPU
+  scales the desktop onto it. Offered when `modes` has `fit_scales` (an NVIDIA host with nvidia-settings);
+  while it's in effect, `modes` has `"fitted":[w,h,scale]`. Sizes are rounded down to even numbers, and a
+  side over 4096 (H.264's limit) scales both down together; `fitted` and `screen` say what it made.
+* `{"t":"res","native":true}` — restore the original mode (and scale).
 * `{"t":"modes"}` — ask for a fresh `modes` message.
 
 The host restores the original mode automatically when the last session ends. It remembers the last `res`

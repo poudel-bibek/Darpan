@@ -9,6 +9,8 @@ final class ViewerModel: ObservableObject {
     /// Device pixels of the video area, for "Fit this window".
     @Published var windowPixels: CGSize = .zero
     @Published var accessibilityTrusted = KeyboardCapture.accessibilityTrusted
+    /// The scale a fit is drawn at now (the viewer's choice, or by this Mac's screen).
+    @Published var fitScale = 200
     /// The latest `stream`, and the host's bitrate target to 0.1 Mbit/s: what the display panel says is in effect.
     @Published var stream: Client.StreamInfo?
     @Published var targetKbps: Double?
@@ -16,6 +18,8 @@ final class ViewerModel: ObservableObject {
     @Published var notice: String?
 
     var setResolution: (DisplayMode?) -> Void = { _ in }     // nil: native
+    var fitThisWindow: () -> Void = {}
+    var setFitScale: (Int) -> Void = { _ in }
     var sendCombo: ([String]) -> Void = { _ in }
     var setRemoteClipboard: (String) -> Void = { _ in }
 
@@ -26,17 +30,34 @@ final class ViewerModel: ObservableObject {
         ("Desk ←", ["ControlLeft", "AltLeft", "ArrowLeft"]), ("Desk →", ["ControlLeft", "AltLeft", "ArrowRight"]),
     ]
 
-    /// Rows of the resolution list: Native, a mode that fills the window, then every mode.
-    var resolutionRows: [(title: String, detail: String, mode: DisplayMode?, current: Bool)] {
+    enum Resolution { case window, native, mode(DisplayMode) }
+
+    /// Rows of the resolution list: this window exactly (a host that can make its desktop any size),
+    /// Native, the mode that best fills the window (one that can't), then every mode.
+    var resolutionRows: [(title: String, detail: String, choice: Resolution, current: Bool)] {
         guard let m = modes, !m.modes.isEmpty else { return [] }
-        var rows: [(String, String, DisplayMode?, Bool)] = [("Native", m.native?.description ?? "", nil, m.current == m.native)]
-        if let best = DisplayMode.bestFor(window: windowPixels, among: m.modes), best != m.native {
-            rows.append(("Fit this window", best.description, best, false))
+        let fitted = m.fitted != nil
+        var rows: [(String, String, Resolution, Bool)] = []
+        if !m.fitScales.isEmpty {
+            let f = Fit.request(pixels: windowPixels, scale: 0)
+            rows.append(("This window", m.fitted?.description ?? f?.description ?? "", .window, fitted))
+        }
+        rows.append(("Native", m.native?.description ?? "", .native, !fitted && m.current == m.native))
+        if m.fitScales.isEmpty, let best = DisplayMode.bestFor(window: windowPixels, among: m.modes), best != m.native {
+            rows.append(("Fit this window", best.description, .mode(best), false))
         }
         for mode in m.modes where mode != m.native {
-            rows.append((mode.description, "", mode, mode == m.current))
+            rows.append((mode.description, "", .mode(mode), !fitted && mode == m.current))
         }
         return rows
+    }
+
+    func choose(_ r: Resolution) {
+        switch r {
+        case .window: fitThisWindow()
+        case .native: setResolution(nil)
+        case .mode(let m): setResolution(m)
+        }
     }
 }
 
@@ -75,7 +96,7 @@ struct DisplayPanel: View {
                         VStack(spacing: 1) {
                             ForEach(rows.indices, id: \.self) { i in
                                 let r = rows[i]
-                                Button { model.setResolution(r.mode) } label: {
+                                Button { model.choose(r.choice) } label: {
                                     HStack {
                                         Image(systemName: "checkmark").opacity(r.current ? 1 : 0).font(.system(size: 11, weight: .bold))
                                         Text(r.title)
@@ -93,12 +114,24 @@ struct DisplayPanel: View {
                     .frame(height: min(196, CGFloat(rows.count) * 28))
                 }
             }
-            PanelSection(title: "Scaling") {
-                Picker("Scaling", selection: $settings.scale) {
-                    Text("Fit").tag(ScaleMode.fit)
-                    Text("Actual size").tag(ScaleMode.actual)
+            if let offered = model.modes?.fitScales, offered.count > 1 {
+                PanelSection(title: "Size") {
+                    Picker("Size", selection: Binding(get: { model.fitScale }, set: { model.setFitScale($0) })) {
+                        ForEach(offered, id: \.self) { Text("\($0) %").tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden()
+                    .disabled(model.modes?.fitted == nil)
+                    .help("How large the Linux desktop draws things in this window (200 % looks like a Retina screen)")
                 }
-                .pickerStyle(.segmented).labelsHidden()
+            }
+            if model.modes?.fitted == nil {                   // (a fitted desktop is one pixel per pixel anyway)
+                PanelSection(title: "Scaling") {
+                    Picker("Scaling", selection: $settings.scale) {
+                        Text("Fit").tag(ScaleMode.fit)
+                        Text("Actual size").tag(ScaleMode.actual)
+                    }
+                    .pickerStyle(.segmented).labelsHidden()
+                }
             }
             PanelSection(title: "Quality") {
                 QualityPicker(selection: $settings.quality)

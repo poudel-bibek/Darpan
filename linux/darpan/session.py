@@ -58,6 +58,7 @@ MAX_KBPS = 200000                           # the highest bitrate a viewer may c
 NEED_MIB = {"gpu": 512, "nvenc": 192, "444": 256}   # free GPU memory before More GPU (~280 MiB), the GPU at
                                                     # all, or 4:4:4 is tried again
 RECHECK_S = 30.0                            # how often, while one of them is off for lack of it
+RESTORE_AFTER_S = 10.0                      # the resolution goes back this long after the last viewer leaves
 
 
 class RateControl:
@@ -1001,6 +1002,8 @@ class Hub:
         self._restore_keymap = None
         self._typing = asyncio.Lock()
         self._screen = asyncio.Lock()     # set_mode / restore never interleave
+        self._restoring = None            # the pending put-it-back, after the last viewer left ...
+        self._restore_at = 0.0            # ... at this time (each departure pushes it out)
         self.unauthed_by = collections.Counter()
         self.audio_ok = audio.available()
         self.audio_pre_skip = None
@@ -1197,7 +1200,9 @@ class Hub:
                 except Exception:
                     log.exception("tick failed")
 
-    async def session_ended(self):
+    async def session_ended(self, now=False):
+        """The last viewer left: the resolution goes back a little later, or with `now` (the host is stopping and
+        a pending restore would be cancelled with it), at once."""
         if self.sessions or not self.x:
             return
         if self._repeat_off:
@@ -1207,6 +1212,19 @@ class Hub:
                 os.unlink(self.repeat_marker)
             except FileNotFoundError:
                 pass
+        self._restore_at = time.monotonic() + (0 if now else RESTORE_AFTER_S)
+        if now and self._restoring and not self._restoring.done():
+            self._restoring.cancel()
+        if now or not self._restoring or self._restoring.done():
+            self._restoring = asyncio.get_running_loop().create_task(self._restore_later())
+        if now:
+            await self._restoring
+
+    async def _restore_later(self):
+        # A little later, not at once: a quick reconnect (the Mac waking up, a dropped link, a short look) finds the
+        # screen as it left it, instead of two mode switches that make the desktop rearrange its windows.
+        while (wait := self._restore_at - time.monotonic()) > 0:
+            await asyncio.sleep(wait)
         async with self._screen:
             if self.sessions:             # someone connected while we waited
                 return
@@ -1349,15 +1367,19 @@ class Hub:
             async with self._screen:
                 if m.get("native"):
                     await self.screen.restore()
+                elif m.get("fit"):          # the desktop exactly the viewer's size, at its scale
+                    choice = {"fit": [int(m["fit"][0]), int(m["fit"][1])], "scale": int(m.get("scale", 200))}
+                    await self.screen.fit(*choice["fit"], choice["scale"])
                 else:
-                    await self.screen.set_mode(int(m["w"]), int(m["h"]))
+                    choice = [int(m["w"]), int(m["h"])]
+                    await self.screen.set_mode(*choice)
             saved = self._saved_resolutions()
             if m.get("native"):
                 saved.pop(_kind(session), None)
             else:
-                saved[_kind(session)] = [int(m["w"]), int(m["h"])]
+                saved[_kind(session)] = choice
             config.write_private(self.res_file, json.dumps(saved))
-        except (ValueError, KeyError, RuntimeError) as e:
+        except (ValueError, KeyError, TypeError, IndexError, RuntimeError) as e:
             session.ws.send_json({"t": "notice", "level": "error", "text": "resolution change failed: %s" % e})
         await self.refresh_modes(broadcast=True)
 
@@ -1372,14 +1394,24 @@ class Hub:
     async def restore_resolution(self, session):
         """A device gets back the resolution it chose last time, unless someone else is watching."""
         mode = self._saved_resolutions().get(_kind(session))
-        if not mode or self.login_screen:
+        if self.login_screen:
+            return
+        if not mode:                      # no choice of its own: not the last viewer's either, if it's still up
+            if self._restoring and not self._restoring.done():
+                async with self._screen:
+                    if self.sessions == {session} and os.path.exists(self.screen.state_file):
+                        await self.screen.restore()
+                await self.refresh_modes(broadcast=True)
             return
         try:
             async with self._screen:
                 if self.sessions != {session}:
                     return
-                await self.screen.set_mode(int(mode[0]), int(mode[1]))
-        except (ValueError, TypeError, IndexError, RuntimeError) as e:    # e.g. another monitor now
+                if isinstance(mode, dict):
+                    await self.screen.fit(int(mode["fit"][0]), int(mode["fit"][1]), int(mode["scale"]))
+                else:
+                    await self.screen.set_mode(int(mode[0]), int(mode[1]))
+        except (ValueError, TypeError, IndexError, KeyError, RuntimeError) as e:   # e.g. another monitor now
             log.info("last resolution of %s not restored: %s", _kind(session), e)
             return
         await self.refresh_modes(broadcast=True)
