@@ -19,7 +19,7 @@ log = logging.getLogger("darpan.screen")
 
 _MODE_RE = re.compile(r"^\s+(\d+)x(\d+)\s+(.*)$")
 _OUT_RE = re.compile(r"^(\S+) connected( primary)?(?: (\d+)x(\d+)\+\d+\+\d+)?")
-_VMODE_RE = re.compile(r"^\s+(\S+)\s+\((0x[0-9a-f]+)\)\s+([\d.]+)MHz(.*)$")   # xrandr --verbose (any name)
+_VMODE_RE = re.compile(r"^\s+(.+?)\s+\((0x[0-9a-f]+)\)\s+([\d.]+)MHz(.*)$")  # xrandr --verbose (any name, spaces too)
 _SIZE_RE = re.compile(r"\s(?:width|height)\s+(\d+)\s.*\stotal\s+(\d+)")       # its h: and v: lines
 SCALE_KEY = ("org.gnome.desktop.interface", "scaling-factor")   # GNOME on X11: 1 or 2 (0 = automatic)
 FIT_SCALES = [100, 125, 150, 175, 200]  # 125-175: GNOME draws at 200 % on a desktop that much bigger,
@@ -114,6 +114,17 @@ def _pick(modes, w, h, rate):
     """The xid of the w×h mode mutter keeps whose refresh is nearest rate, or None."""
     sized = [m for m in modes if (m[1], m[2]) == (w, h)]
     return min(sized, key=lambda m: abs(m[3] - rate))[0] if sized else None
+
+
+async def _switch(display, output, xid, w, h, rate):
+    """To the mode by its xid, or by size and rate without one, or when the xid is refused (after the last output,
+    `xrandr --verbose` also lists modes attached to none, and one of those can't be set on this output)."""
+    if xid:
+        try:
+            return await _xrandr(display, "--output", output, "--mode", xid, "--transform", "none")
+        except RuntimeError as e:
+            log.warning("mode %s refused (%s): by size and rate instead", xid, e)
+    await _xrandr(display, "--output", output, "--mode", "%dx%d" % (w, h), "--rate", "%.2f" % rate, "--transform", "none")
 
 
 def _screen_size(text):
@@ -302,8 +313,7 @@ class Screen:
             await self._step(text, w, h)
         self.scaled = None
         log.info("switching %s to %dx%d@%.2f (%s)", name, w, h, rate, xid)
-        mode = ["--mode", xid] if xid else ["--mode", "%dx%d" % (w, h), "--rate", "%.2f" % rate]
-        await _xrandr(self.display, "--output", name, *mode, "--transform", "none")   # (a fit's scaling, if any)
+        await _switch(self.display, name, xid, w, h, rate)   # (--transform none: a fit's scaling, if there was one)
         self.fitted = None
 
     async def restore(self):
@@ -323,8 +333,7 @@ class Screen:
             xid = _pick(_mutter_modes(await _xrandr(self.display, "--verbose"), orig["output"])[0],
                         orig["w"], orig["h"], orig["rate"])
             log.info("restoring %s to %dx%d@%.2f (%s)", orig["output"], orig["w"], orig["h"], orig["rate"], xid)
-            mode = ["--mode", xid] if xid else ["--mode", "%dx%d" % (orig["w"], orig["h"]), "--rate", "%.2f" % orig["rate"]]
-            await _xrandr(self.display, "--output", orig["output"], *mode, "--transform", "none")
+            await _switch(self.display, orig["output"], xid, orig["w"], orig["h"], orig["rate"])
         except RuntimeError as e:
             log.warning("restore failed: %s", e)
             try:  # fall back to the monitor's preferred mode
