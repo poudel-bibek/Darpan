@@ -29,6 +29,9 @@ class Clipboard:
         except asyncio.TimeoutError:
             await _reap(p)
             return None
+        except asyncio.CancelledError:       # the session or the host going: no xclip left behind
+            await asyncio.shield(_reap(p))
+            raise
         except (FileNotFoundError, OSError):
             return None
         if p.returncode or len(out) > MAX:
@@ -46,5 +49,8 @@ class Clipboard:
         except asyncio.TimeoutError:
             await _reap(p)
             log.warning("clipboard write timed out")
+        except asyncio.CancelledError:
+            await asyncio.shield(_reap(p))
+            raise
         except (FileNotFoundError, OSError) as e:
             log.warning("clipboard write failed: %s", e)

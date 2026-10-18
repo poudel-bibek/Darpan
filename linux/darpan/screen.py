@@ -36,8 +36,14 @@ async def _run(display, *cmd):
         raise RuntimeError("%s isn't installed" % cmd[0])
     try:
         out, err = await asyncio.wait_for(proc.communicate(), 10)
-    except asyncio.TimeoutError:
-        proc.kill()
+    except (asyncio.TimeoutError, asyncio.CancelledError) as e:   # (cancelled: the host stopping)
+        try:
+            proc.kill()
+        except ProcessLookupError:           # it had just finished
+            pass
+        await asyncio.shield(proc.wait())    # its pipes closed while the event loop still runs
+        if isinstance(e, asyncio.CancelledError):
+            raise
         raise RuntimeError("%s timed out" % cmd[0])
     if proc.returncode:
         raise RuntimeError("%s failed: %s" % (" ".join(cmd), err.decode(errors="replace").strip()))
