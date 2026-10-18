@@ -51,7 +51,7 @@ else:
 '''
 FAKE_XRANDR = r'''#!/bin/sh
 case "$*" in
---query*) if [ -f "$DARPAN_FAKE_TOOL_LOG.screen" ]; then
+--query*|--verbose*) if [ -f "$DARPAN_FAKE_TOOL_LOG.screen" ]; then
     REAL_XRANDR "$@" | sed "1s/current [0-9]* x [0-9]*/current $(cat "$DARPAN_FAKE_TOOL_LOG.screen")/"; exit
   fi ;;
 *) echo "xrandr $*" >> "$DARPAN_FAKE_TOOL_LOG"; rm -f "$DARPAN_FAKE_TOOL_LOG.screen" ;;
@@ -1550,7 +1550,7 @@ async def run(args, tmp, probe_log):
         "nvidia-settings --assign CurrentMetaMode=DPY-1: 1920x1080_60 @1920x1080 +0+0 {ViewPortIn=1920x1080, ViewPortOut=1920x1080+0+0}")
     got = len(seq) == 5 and [seq[0], seq[1], seq[4]] == want and seq[2] == want[0] and seq[3].startswith(
         "nvidia-settings --assign CurrentMetaMode=DPY-1: nvidia-auto-select @4096x2458 +0+0 {ViewPortIn=4096x2458,")
-    cleared = any(l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tools)
+    cleared = any(re.fullmatch(r"xrandr --output screen --mode 0x[0-9a-f]+ --transform none", l) for l in tools)
     tail = tools[next((k for k, l in enumerate(tools) if "@2000x1200" in l), len(tools)):]
     steps = tools[max(0, next((k for k, l in enumerate(tools) if "@1920x1078" in l), len(tools)) - 1):]
     steps = [("s" + l.split()[-1]) if l.startswith("gsettings") else "mode" if l.startswith("xrandr --output")
@@ -1558,7 +1558,7 @@ async def run(args, tmp, probe_log):
                                                                       len(steps))]]
     stepped = steps[:9] == ["s2", "@1920x1078", "@1920x1080", "s1", "@1920x1078", "@1920x1080", "s0", "@1920x1078", "mode"]
     unfit = ("gsettings set org.gnome.desktop.interface scaling-factor 0" in tail and any(
-        l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tail))
+        re.fullmatch(r"xrandr --output screen --mode 0x[0-9a-f]+ --transform none", l) for l in tail))
     # two displays: no fit offered (a MetaMode names every display; assigning one would turn the other off)
     import darpan.screen as screen_mod
     real_run = screen_mod._run
@@ -1570,6 +1570,32 @@ async def run(args, tmp, probe_log):
     two = await screen_mod.Screen(":0")._metamode()
     screen_mod._run = real_run
     ok("two displays: no fit offered", two is None, repr(two))
+    # a mode GNOME knows: a laptop panel had two 60 Hz modes 0.0001 Hz apart; mutter keeps the first listed (one
+    # without sync flags would replace it), and xrandr --rate picked the other: no monitor in GNOME, and the shell
+    # crashed at the next click on the top bar
+    panel = """Screen 0: minimum 8 x 8, current 2560 x 1600, maximum 32767 x 32767
+eDP-2 connected primary 2560x1600+0+0 (0x48) normal (normal left inverted right x axis y axis) 344mm x 215mm
+\tIdentifier: 0x42
+  2560x1600 (0x46) 777.322MHz -HSync -VSync +preferred
+        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock 285.78KHz
+        v: height 1600 start 1603 end 1609 total 1732           clock 165.00Hz
+  2560x1600 (0x47) 282.670MHz +HSync -VSync +preferred
+        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock 103.92KHz
+        v: height 1600 start 1603 end 1609 total 1732           clock  60.00Hz
+  2560x1600 (0x48) 268.634MHz +HSync -VSync *current
+        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock  98.76KHz
+        v: height 1600 start 1603 end 1609 total 1646           clock  60.00Hz
+  1920x1440 (0x4b) 234.006MHz -HSync +VSync
+        h: width  1920 start 2048 end 2256 total 2600 skew    0 clock  90.00KHz
+        v: height 1440 start 1441 end 1444 total 1500           clock  60.00Hz
+HDMI-1 disconnected (normal left inverted right x axis y axis)
+"""
+    kept, cur = screen_mod._mutter_modes(panel, "eDP-2")
+    flagless = screen_mod._mutter_modes(panel.replace("(0x48) 268.634MHz +HSync -VSync", "(0x48) 268.634MHz"), "eDP-2")[0]
+    picks = [screen_mod._pick(kept, 2560, 1600, 60.0), screen_mod._pick(kept, 2560, 1600, 165.0),
+             screen_mod._pick(kept, 1920, 1440, 60.0), screen_mod._pick(flagless, 2560, 1600, 60.0)]
+    ok("modes are picked as GNOME keeps them (of two alike to a thousandth of a Hz, its own)",
+       picks == ["0x47", "0x46", "0x4b", "0x48"] and cur == "0x48" and len(kept) == 3, "%s, current %s, %d kept" % (picks, cur, len(kept)))
     ok("fit at the size the desktop already is: a step to another size, so GNOME reads the scale",
        stepped and same and same.get("fitted") == [1920, 1080, 200] and rescaled and rescaled.get("fitted") == [1920, 1080, 100],
        "%s | %s | %s" % (steps, same and same.get("fitted"), rescaled and rescaled.get("fitted")))
