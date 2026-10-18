@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import struct
 
 from . import config
 
@@ -18,6 +19,8 @@ log = logging.getLogger("darpan.screen")
 
 _MODE_RE = re.compile(r"^\s+(\d+)x(\d+)\s+(.*)$")
 _OUT_RE = re.compile(r"^(\S+) connected( primary)?(?: (\d+)x(\d+)\+\d+\+\d+)?")
+_VMODE_RE = re.compile(r"^\s+(\d+)x(\d+)(i?)\s+\((0x[0-9a-f]+)\)\s+([\d.]+)MHz(.*)$")   # xrandr --verbose
+_TOTAL_RE = re.compile(r"\stotal\s+(\d+)")
 SCALE_KEY = ("org.gnome.desktop.interface", "scaling-factor")   # GNOME on X11: 1 or 2 (0 = automatic)
 FIT_SCALES = [100, 200]
 FIT_MAX = 4096                   # a side, at most: H.264 on NVENC goes no bigger
@@ -59,6 +62,56 @@ def _native(text, output):
                 return wh
             largest = max(largest or wh, wh, key=lambda m: m[0] * m[1])
     return largest
+
+
+def _f32(v):
+    return struct.unpack("f", struct.pack("f", v))[0]
+
+
+def _mutter_modes(verbose, output):
+    """The output's modes as GNOME's mutter keeps them, from `xrandr --verbose`: ([(xid, w, h, refresh)], the
+    current mode's xid). Mutter (meta-monitor.c, GNOME 46 and later) names a mode WxH@<refresh to 3 decimals>,
+    computed in single precision, and keeps one per name: the first listed, unless a later one has exactly the
+    flags of the preferred mode (the output's first) and another name than it. A monitor left on a mode it
+    dropped has no logical monitor in GNOME, and a click on the top bar then crashes the shell (a laptop panel
+    with two 60 Hz modes 0.0001 Hz apart did that)."""
+    kept, order, current, mine, preferred = {}, [], None, False, None
+    lines = verbose.splitlines()
+    for i, line in enumerate(lines):
+        m = _OUT_RE.match(line)
+        if m or not line.startswith((" ", "\t")):
+            mine = bool(m) and m.group(1) == output
+            continue
+        mm = _VMODE_RE.match(line) if mine else None
+        if not mm:
+            continue
+        w, h, xid, rest = int(mm.group(1)), int(mm.group(2)), mm.group(4), mm.group(6)
+        if "*current" in rest:
+            current = xid
+        totals = [_TOTAL_RE.search(l) for l in lines[i + 1:i + 3]]
+        if len(totals) < 2 or not all(totals):
+            continue
+        ht, vt = float(totals[0].group(1)), float(totals[1].group(1))
+        if "DoubleScan" in rest:
+            vt *= 2
+        if "Interlace" in rest:
+            vt /= 2
+        refresh = _f32(_f32(round(float(mm.group(5)) * 1e6)) / _f32(_f32(ht) * _f32(vt))) if ht and vt else 0.0
+        name = "%dx%d%s@%.3f" % (w, h, "i" if "Interlace" in rest else "", refresh)
+        flags = set(rest.split()) - {"*current", "+preferred"}
+        if preferred is None:
+            preferred = (name, flags)
+        if name not in kept:
+            order.append(name)
+        if name not in kept or (flags == preferred[1] and name != preferred[0]):
+            kept[name] = (xid, w, h, refresh)
+    return [kept[n] for n in order], current
+
+
+def _pick(modes, w, h, rate):
+    """The xid of the w×h mode mutter keeps whose refresh is nearest rate, or None."""
+    sized = [m for m in modes if (m[1], m[2]) == (w, h)]
+    return min(sized, key=lambda m: abs(m[3] - rate))[0] if sized else None
 
 
 def _screen_size(text):
@@ -230,16 +283,18 @@ class Screen:
         rates = [r for rs in match for r in rs]
         # ~60 Hz is plenty for a remote view and lets the compositor do less work.
         rate = min(rates, key=lambda r: abs(r - 60))
-        if not self.fitted and (w, h) == tuple(current[:2]) and abs(rate - current[2]) < 0.05:
+        vmodes, vcurrent = _mutter_modes(await _xrandr(self.display, "--verbose"), name)
+        xid = _pick(vmodes, w, h, rate)          # the one GNOME knows, of modes alike to a thousandth of a Hz
+        if not self.fitted and (xid == vcurrent if xid else (w, h) == tuple(current[:2]) and abs(rate - current[2]) < 0.05):
             log.info("%s already at %dx%d@%.2f", name, w, h, rate)   # e.g. a reconnect before the old mode came back
             return
         orig = self._remember(name, current)
         if self.fitted:
             await self._unscale(orig)
             await self._step(text, w, h)
-        log.info("switching %s to %dx%d@%.2f", name, w, h, rate)
-        await _xrandr(self.display, "--output", name, "--mode", "%dx%d" % (w, h), "--rate", "%.2f" % rate,
-                      "--transform", "none")      # (a fit's scaling, if there was one)
+        log.info("switching %s to %dx%d@%.2f (%s)", name, w, h, rate, xid)
+        mode = ["--mode", xid] if xid else ["--mode", "%dx%d" % (w, h), "--rate", "%.2f" % rate]
+        await _xrandr(self.display, "--output", name, *mode, "--transform", "none")   # (a fit's scaling, if any)
         self.fitted = None
 
     async def restore(self):
@@ -256,8 +311,10 @@ class Screen:
         try:
             if "scaling" in orig:                # it was fitted
                 await self._step(await _xrandr(self.display, "--query"), orig["w"], orig["h"])
-            await _xrandr(self.display, "--output", orig["output"], "--mode", "%dx%d" % (orig["w"], orig["h"]),
-                          "--rate", "%.2f" % orig["rate"], "--transform", "none")
+            xid = _pick(_mutter_modes(await _xrandr(self.display, "--verbose"), orig["output"])[0],
+                        orig["w"], orig["h"], orig["rate"])
+            mode = ["--mode", xid] if xid else ["--mode", "%dx%d" % (orig["w"], orig["h"]), "--rate", "%.2f" % orig["rate"]]
+            await _xrandr(self.display, "--output", orig["output"], *mode, "--transform", "none")
         except RuntimeError as e:
             log.warning("restore failed: %s", e)
             try:  # fall back to the monitor's preferred mode
