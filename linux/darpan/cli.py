@@ -45,6 +45,8 @@ def _serve(args):
         for s in list(hub.sessions):
             await s._close()
         await hub.session_ended(now=True)   # put the resolution back before we go, not 10 s later
+        if hub.screen:
+            await hub.screen.settle()        # (and the desktop icons it rescales)
         ctl.close()
         await server.close()
 
