@@ -178,7 +178,7 @@ class Screen:
     def __init__(self, display):
         self.display = display
         self.state_file = os.path.join(config.state_dir(), "screen.json")
-        self._fits = None                # can the desktop be any size here (NVIDIA)? Asked once
+        self._fits = None                # how the desktop can be any size here ("nvidia", "randr" or False); asked once
         self.fitted = None               # [w, h, scale] while a fit is in effect
         self.scaled = None               # (w, h): what the capture scales the desktop to (125-175 %), else None
 
@@ -201,7 +201,7 @@ class Screen:
         out = {"output": name, "current": list(current[:2]) if current else None,
                "native": native, "modes": lst[:24], "changed": os.path.exists(self.state_file)}
         if self._fits is None:
-            self._fits = await self._metamode() is not None
+            self._fits = await self._kind() or False
         if self._fits:
             out["fit_scales"] = FIT_SCALES
         if self.fitted:
@@ -218,6 +218,19 @@ class Screen:
         # one display only: a MetaMode names every display, and assigning one with fewer turns the rest off
         # (several monitors is a project of its own)
         return meta if re.match(r"^[\w-]+:", meta) and len(re.findall(r"(?:^|,\s*)[\w-]+:\s", meta)) == 1 else None
+
+    async def _kind(self):
+        """How this computer makes its desktop any size: "nvidia" (a MetaMode, when NVIDIA drives the screen),
+        "randr" (xrandr's own scaling, when another driver does: Intel's on a hybrid laptop), or None. One
+        monitor only either way."""
+        if await self._metamode():
+            return "nvidia"
+        try:
+            text, providers = await _xrandr(self.display, "--query"), await _xrandr(self.display, "--listproviders")
+        except RuntimeError:
+            return None
+        one = sum(1 for line in text.splitlines() if _OUT_RE.match(line)) == 1
+        return "randr" if one and re.search(r"Source Output.*name:(?!NVIDIA)", providers) else None
 
     def _remember(self, name, current, **more):
         """Write down what to restore, before the first change; more (e.g. GNOME's scale) when first changed."""
@@ -239,6 +252,14 @@ class Screen:
                    "+0+0 {ViewPortIn=%dx%d, ViewPortOut=%dx%d+%d+%d}" % (meta.split(":", 1)[0], w, h, w, h, ow, oh,
                                                                       (native[0] - ow) // 2, (native[1] - oh) // 2))
 
+    async def _scale_to(self, meta, mode, name, native, w, h, step=False):
+        """The desktop w×h: NVIDIA's MetaMode, or xrandr scaling it onto `mode`. A step goes 2 px off first (up for
+        xrandr, which must stay no smaller than the mode)."""
+        if meta:
+            await self._assign(meta, native, w, h - 2 if step else h)
+        else:
+            await _xrandr(self.display, "--output", name, "--mode", mode[0], "--scale-from", "%dx%d" % (w, h + 2 if step else h))
+
     async def fit(self, w, h, scale):
         """The desktop as seen exactly w×h, drawn at scale %: 100 and 200 one pixel for one, 125-175 at 200 % on a
         desktop 200/scale times bigger, which the capture scales down to w×h. The monitor keeps its own mode and
@@ -255,27 +276,44 @@ class Screen:
         text = await _xrandr(self.display, "--query")
         name, current, _ = _parse(text)
         native, meta = _native(text, name), await self._metamode()
-        if not name or not current or not native or not meta:
-            raise RuntimeError("this computer can't fit its desktop to a window (it needs NVIDIA's nvidia-settings)")
+        mode = None                              # without NVIDIA: the monitor mode xrandr scales the desktop onto
+        if not meta and name and await self._kind() == "randr":
+            # GNOME keeps a scaled desktop only if the mode is no bigger in either direction (else it puts the
+            # screen back to the mode's size a second later): the biggest such mode, near 60 Hz
+            inside = [m for m in _mutter_modes(await _xrandr(self.display, "--verbose"), name)[0] if m[1] <= dw and m[2] <= dh]
+            if not inside:
+                raise ValueError("no mode of %s fits inside %dx%d" % (name, dw, dh))
+            mode = max(inside, key=lambda m: (m[1] * m[2], -abs(m[3] - 60)))
+            native = mode[1:3]
+        if not name or not current or not native or not (meta or mode):
+            raise RuntimeError("this computer can't fit its desktop to a window (it needs one monitor, and "
+                               "NVIDIA's nvidia-settings or a driver that scales)")
         scaling = int((await _run(None, "gsettings", "get", *SCALE_KEY)).split()[-1])
         orig = self._remember(name, current, scaling=scaling)
         want = 1 if scale == 100 else 2
         k = min(native[0] / dw, native[1] / dh)
         ow, oh = int(dw * k) // 2 * 2, int(dh * k) // 2 * 2
-        log.info("fitting %s to %dx%d at %d %% (a %dx%d desktop; its own %dx%d shows it %dx%d)",
-                 name, w, h, scale, dw, dh, *native, ow, oh)
+        if mode:
+            log.info("fitting %s to %dx%d at %d %% (a %dx%d desktop, scaled onto its %dx%d mode %s)",
+                     name, w, h, scale, dw, dh, mode[1], mode[2], mode[0])
+        else:
+            log.info("fitting %s to %dx%d at %d %% (a %dx%d desktop; its own %dx%d shows it %dx%d)",
+                     name, w, h, scale, dw, dh, *native, ow, oh)
         await _run(None, "gsettings", "set", *SCALE_KEY, str(want))
         was = self.scaled, self.fitted           # both before the desktop changes (the pointer reads them meanwhile)
         self.scaled, self.fitted = (w, h) if (dw, dh) != (w, h) else None, [w, h, scale]
         try:
             if want != scaling and _screen_size(text) == (dw, dh):  # (else the shell keeps its scale, apps don't:
-                await self._assign(meta, native, dw, dh - 2)       # menus come out cut off)
-            await self._assign(meta, native, dw, dh)
+                await self._scale_to(meta, mode, name, native, dw, dh, step=True)   # menus come out cut off)
+            await self._scale_to(meta, mode, name, native, dw, dh)
         except RuntimeError:
             self.scaled, self.fitted = was
             await self._unscale(orig)            # not 200 % on the old desktop
             try:                                 # and the desktop as it was (a step may have changed it)
-                await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=" + meta)
+                if meta:
+                    await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=" + meta)
+                else:
+                    await _switch(self.display, name, None, *current)
             except RuntimeError as e:
                 log.warning("desktop not put back: %s", e)
             raise
@@ -296,6 +334,8 @@ class Screen:
             native, meta = _native(text, name), await self._metamode()
             if native and meta:
                 await self._assign(meta, native, w, h - 2)
+            elif name and await self._kind() == "randr":
+                await _xrandr(self.display, "--output", name, "--scale-from", "%dx%d" % (w, h + 2))
 
     async def set_mode(self, w, h):
         text = await _xrandr(self.display, "--query")

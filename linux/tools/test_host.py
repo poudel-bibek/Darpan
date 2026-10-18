@@ -1649,6 +1649,56 @@ HDMI-1 disconnected (normal left inverted right x axis y axis)
     ok("modes are picked as GNOME keeps them (of two alike to a thousandth of a Hz, its own)",
        picks == ["0x47", "0x46", "0x4b", "0x48", "0x46", "0x45", "0x44"] and cur == "0x48" and len(kept) == 3,
        "%s, current %s, %d kept" % (picks, cur, len(kept)))
+    # fit on a screen another driver drives (Intel's, on a hybrid laptop): xrandr scales the desktop onto the biggest
+    # mode no bigger than it either way (GNOME puts a screen smaller than its mode back a second later)
+    laptop_verbose = panel.replace("  1920x1440 (0x4b)", "  1920x1200 (0x4c) 154.000MHz +HSync -VSync\n"
+        "        h: width  1920 start 1968 end 2000 total 2080 skew    0 clock  74.04KHz\n"
+        "        v: height 1200 start 1203 end 1209 total 1235           clock  59.95Hz\n  1920x1440 (0x4b)")
+    laptop_query = ("Screen 0: minimum 320 x 200, current 1920 x 1440, maximum 16384 x 16384\n"
+                    "eDP-2 connected primary 1920x1440+0+0 (normal left inverted right x axis y axis) 344mm x 215mm\n"
+                    "   2560x1600    165.00 +  60.00 +  60.00\n   1920x1200     59.95\n   1920x1440     60.00*\n"
+                    "HDMI-1 disconnected (normal left inverted right x axis y axis)\n")
+    ran = []
+
+    async def laptop(display, *cmd):
+        ran.append(" ".join(cmd))
+        if cmd[0] == "nvidia-settings":
+            raise RuntimeError("nvidia-settings failed: ERROR: No targets match target specification")
+        if cmd[:2] == ("gsettings", "get"):
+            return "uint32 0"
+        if cmd[0] == "xrandr":
+            return {"--query": laptop_query, "--verbose": laptop_verbose,
+                    "--listproviders": "Providers: number : 2\nProvider 0: id: 0x45 cap: 0x9, Source Output, Sink Offload "
+                    "crtcs: 4 outputs: 3 associated providers: 1 name:modesetting\nProvider 1: id: 0x209 cap: 0x2, "
+                    "Sink Output crtcs: 4 outputs: 8 associated providers: 1 name:NVIDIA-G0"}.get(cmd[1], "")
+        return ""
+    real_run, screen_mod._run = screen_mod._run, laptop
+    state_was = os.environ.get("XDG_STATE_HOME")
+    os.environ["XDG_STATE_HOME"] = os.path.join(tmp, "randr-state")          # (its own screen.json)
+    try:
+        lap = screen_mod.Screen(":0")
+        offered = (await lap.query()).get("fit_scales")
+        await lap.fit(3158, 1322, 200)                          # the Mac's window: wider, but shorter than the panel
+        short = [c for c in ran if c.startswith(("xrandr --output", "gsettings set"))]
+        ran.clear()
+        await lap.fit(3360, 2100, 200)                          # full screen: bigger than the panel both ways
+        full = [c for c in ran if c.startswith("xrandr --output")]
+        try:
+            await lap.fit(640, 480, 100)                        # smaller than every mode
+            tiny = "fitted"
+        except ValueError as e:
+            tiny = str(e)
+    finally:
+        screen_mod._run = real_run
+        if state_was is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = state_was
+    ok("fit without NVIDIA: xrandr scales the desktop onto a mode no bigger than it (Intel's driver)",
+       offered == [100, 125, 150, 175, 200] and short == ["gsettings set org.gnome.desktop.interface scaling-factor 2",
+       "xrandr --output eDP-2 --mode 0x4c --scale-from 3158x1322"] and full == ["xrandr --output eDP-2 --mode 0x47 --scale-from 3360x2100"]
+       and lap.fitted == [3360, 2100, 200] and "no mode of eDP-2 fits inside 640x480" in tiny,
+       "%s | %s | %s | %s" % (offered, short, full, tiny))
     ok("fit at the size the desktop already is: a step to another size, so GNOME reads the scale",
        stepped and same and same.get("fitted") == [1920, 1080, 200] and rescaled and rescaled.get("fitted") == [1920, 1080, 100],
        "%s | %s | %s" % (steps, same and same.get("fitted"), rescaled and rescaled.get("fitted")))

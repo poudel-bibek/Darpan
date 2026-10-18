@@ -296,7 +296,8 @@ client-selected mode is active. Client → host:
   (the viewer's view area), drawn at `scale` %, one of `fit_scales`. 100 and 200 are GNOME's own scales, one
   desktop pixel per pixel. 125, 150 and 175 draw at 200 % on a desktop 200/`scale` times as big, which the host
   scales down to this size before encoding. The monitor keeps its own mode; the GPU scales the desktop onto it.
-  Offered when `modes` has `fit_scales` (an NVIDIA host with nvidia-settings, one monitor); while it's in
+  Offered when `modes` has `fit_scales`: one monitor, driven by NVIDIA (its MetaMode, via nvidia-settings) or by
+  another driver that scales (xrandr's `--scale-from`, e.g. Intel's on a hybrid laptop); while it's in
   effect, `modes` has `"fitted":[w,h,scale]`. Sizes are rounded down to even numbers, and a side over 4096
   (H.264's limit) scales both down together; `fitted`, `screen` and `stream` say what it made. Input
   coordinates stay in the stream's pixels.
