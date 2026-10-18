@@ -1599,11 +1599,11 @@ async def run(args, tmp, probe_log):
     # this user's on this display only, never the real desktop's (a stand-in on a display nobody uses)
     icons = "/usr/share/gnome-shell/extensions/ding-stand-in/app/ding.js"
     nap = [sys.executable, "-c", "import time; time.sleep(30)"]
-    mine = subprocess.Popen(nap + [icons, "-E"], env=dict(os.environ, DISPLAY=":987"))
+    mine = subprocess.Popen(nap + [icons, "-E"], env=dict(os.environ, DISPLAY=":987"))      # (the host's ":987.0")
     other = subprocess.Popen(nap + [icons, "-E"], env=dict(os.environ, DISPLAY=":988"))     # another display's
     lookalike = subprocess.Popen(nap + ["/tmp/ding.js"], env=dict(os.environ, DISPLAY=":987"))
     await asyncio.sleep(0.3)
-    await screen_mod._restart_desktop_icons(":987", delay=0)
+    await screen_mod._restart_desktop_icons(":987.0", delay=0)
     ends = []
     for p in (mine, other, lookalike):
         try:
@@ -1615,6 +1615,15 @@ async def run(args, tmp, probe_log):
             p.kill()
             p.wait()
     ok("after a scale change, the desktop icons on this display start again, nothing else", ends == [True, False, False], ends)
+    ran_late = []
+
+    async def pending():
+        await asyncio.sleep(0.2)
+        ran_late.append(True)
+    stopping = screen_mod.Screen(":0")
+    stopping._icons = asyncio.ensure_future(pending())
+    await stopping.settle()
+    ok("a host stopping still restarts the desktop icons it rescaled", ran_late == [True], ran_late)
     # a mode its output refuses (xrandr --verbose lists modes attached to no output after the last one): by size and rate
     calls = []
 

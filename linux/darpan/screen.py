@@ -143,7 +143,8 @@ async def _restart_desktop_icons(display, delay=ICONS_AFTER_S):
     right-click menu comes out sized for the old scale and cut off. Its extension starts it again at once when
     it ends, with the scale in effect, so end it: this user's, on this display only."""
     await asyncio.sleep(delay)
-    on = re.compile(rb"(?:^|\0)DISPLAY=" + re.escape(display.encode()) + rb"(?:\.0)?(?:\0|$)")
+    base = re.sub(r"\.\d+$", "", display)    # ":0.0" and ":0" are the same display
+    on = re.compile(rb"(?:^|\0)DISPLAY=" + re.escape(base.encode()) + rb"(?:\.\d+)?(?:\0|$)")
     for pid in os.listdir("/proc"):
         try:
             if not pid.isdigit() or os.stat("/proc/" + pid).st_uid != os.getuid():
@@ -158,6 +159,8 @@ async def _restart_desktop_icons(display, delay=ICONS_AFTER_S):
             log.info("desktop icons restarted for the new scale (pid %s)", pid)
         except OSError:                  # gone meanwhile, or not ours
             pass
+        except Exception:
+            log.exception("desktop icons not restarted")
 
 
 def _screen_size(text):
@@ -358,6 +361,12 @@ class Screen:
                     self._rescaled()
             except (RuntimeError, ValueError, IndexError) as e:
                 log.warning("GNOME's scale not restored: %s", e)
+
+    async def settle(self):
+        """Before the host stops: a pending desktop icons restart still happens (else a restore at shutdown would
+        leave their menu at the old scale until the next change)."""
+        if self._icons and not self._icons.done():
+            await self._icons
 
     def _rescaled(self):
         """GNOME's scale is changing: the desktop icons start again a little later, once it has (one restart for
