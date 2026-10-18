@@ -37,7 +37,10 @@ async def _run(display, *cmd):
     try:
         out, err = await asyncio.wait_for(proc.communicate(), 10)
     except (asyncio.TimeoutError, asyncio.CancelledError) as e:   # (cancelled: the host stopping)
-        proc.kill()
+        try:
+            proc.kill()
+        except ProcessLookupError:           # it had just finished
+            pass
         await asyncio.shield(proc.wait())    # its pipes closed while the event loop still runs
         if isinstance(e, asyncio.CancelledError):
             raise
