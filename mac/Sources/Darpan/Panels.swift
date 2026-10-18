@@ -19,6 +19,7 @@ final class ViewerModel: ObservableObject {
 
     var setResolution: (DisplayMode?) -> Void = { _ in }     // nil: native
     var fitThisWindow: () -> Void = {}
+    var setFitScale: (Int) -> Void = { _ in }
     var sendCombo: ([String]) -> Void = { _ in }
     var setRemoteClipboard: (String) -> Void = { _ in }
 
@@ -115,7 +116,7 @@ struct DisplayPanel: View {
             }
             if let offered = model.modes?.fitScales, offered.count > 1 {
                 PanelSection(title: "Size") {
-                    Picker("Size", selection: Binding(get: { model.fitScale }, set: { settings.fitScale = $0 })) {
+                    Picker("Size", selection: Binding(get: { model.fitScale }, set: { model.setFitScale($0) })) {
                         ForEach(offered, id: \.self) { Text("\($0) %").tag($0) }
                     }
                     .pickerStyle(.segmented).labelsHidden()

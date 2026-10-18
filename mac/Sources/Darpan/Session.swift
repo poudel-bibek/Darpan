@@ -146,13 +146,13 @@ final class Session: NSObject {
             guard let self else { return }
             self.client.send(mode.map { Msg.res(w: $0.w, h: $0.h) } ?? Msg.resNative)
             self.followPicture = false                  // a resolution chosen here scales into this window
-            self.settings.fitWindow = false             // and the desktop stops following the window
+            self.settings.setFits(self.address.origin, false)   // and this computer's desktop stops following the window
             self.fitAsked = nil
             self.content.toasts.show("Changing resolution…", ttl: 1.5)
         }
         model.fitThisWindow = { [weak self] in
             guard let self else { return }
-            self.settings.fitWindow = true
+            self.settings.setFits(self.address.origin, true)
             self.fitAsked = nil
             self.requestFit()
         }
@@ -162,10 +162,12 @@ final class Session: NSObject {
             self?.content.toasts.show("Remote clipboard set")
         }
 
-        settings.$scale.sink { [weak self] in self?.video.scaleMode = $0 }.store(in: &bag)
-        settings.$fitScale.dropFirst().sink { [weak self] _ in
-            DispatchQueue.main.async { self?.requestFit() }       // a new size on this window: at once
-        }.store(in: &bag)
+        settings.$scale.sink { [weak self] in self?.applyScaleMode($0) }.store(in: &bag)
+        model.setFitScale = { [weak self] scale in               // a new size for this computer: at once
+            guard let self else { return }
+            self.settings.setFitScale(self.address.origin, scale)
+            self.requestFit()
+        }
         settings.$names.combineLatest(settings.$emoji).dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { if let self { self.window.title = self.settings.title(self.address.origin, original: self.ownName) } }
         }.store(in: &bag)
@@ -288,6 +290,12 @@ final class Session: NSObject {
         if picture != sizedFor { sizeWindow(for: picture) }
     }
 
+    /// A fitted desktop is drawn to fill the window: one pixel per pixel when it's the window's size, and
+    /// scaled up when the host had to make it smaller (over 4096 a side), never small with borders.
+    private func applyScaleMode(_ chosen: ScaleMode) {
+        video.scaleMode = model.modes?.fitted != nil ? .fit : chosen
+    }
+
     private func requestFitSoon(after delay: TimeInterval = 1) {
         fitWork?.cancel()
         let w = DispatchWorkItem { [weak self] in self?.requestFit() }
@@ -300,9 +308,10 @@ final class Session: NSObject {
     private func requestFit() {
         fitWork?.cancel()
         fitWork = nil
-        guard settings.fitWindow, isConnected, let m = model.modes, !m.fitScales.isEmpty,
+        guard settings.fits(address.origin), isConnected, let m = model.modes, !m.fitScales.isEmpty,
               !window.inLiveResize, !fullScreenMoving,
-              let scale = Fit.scale(chosen: settings.fitScale, backingScale: window.backingScaleFactor, offered: m.fitScales)
+              let scale = Fit.scale(chosen: settings.fitScale(address.origin), backingScale: window.backingScaleFactor,
+                                    offered: m.fitScales)
         else { return }
         model.fitScale = scale
         guard let want = Fit.request(pixels: video.pixelSize, scale: scale), !want.isAnswered(by: m.fitted),
@@ -687,6 +696,7 @@ extension Session: ClientDelegate {
             clipboard.received(text, initial: initial)
         case .modes(let m):
             model.modes = m
+            applyScaleMode(settings.scale)
             requestFitSoon()
         case .notice(let text, let error):
             content.toasts.show(text, error: error, ttl: error ? 8 : 3.5)

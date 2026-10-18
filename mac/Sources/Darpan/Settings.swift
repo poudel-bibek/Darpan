@@ -27,11 +27,11 @@ final class Settings: ObservableObject {
     private let d = UserDefaults.standard
 
     @Published var scale: ScaleMode { didSet { d.set(scale.rawValue, forKey: "scale") } }
-    /// When the host can make its desktop any size: make it exactly this window's (the sharpest).
-    /// Off once a resolution is picked from the list.
-    @Published var fitWindow: Bool { didSet { d.set(fitWindow, forKey: "fitWindow") } }
-    /// Its scale in % (100 or 200); 0: by this Mac's screen (200 % on Retina).
-    @Published var fitScale: Int { didSet { d.set(fitScale, forKey: "fitScale") } }
+    /// Computers (origins) whose desktop doesn't fit the window: a resolution was picked for them. Every
+    /// other one that can make its desktop any size makes it exactly its window's size (the sharpest).
+    @Published private(set) var fitOff: Set<String> { didSet { d.set(Array(fitOff).sorted(), forKey: "fitOff") } }
+    /// The scale (%) chosen for each computer's fitted desktop; none: by this Mac's screen (200 % on Retina).
+    @Published private(set) var fitScales: [String: Int] { didSet { d.set(fitScales, forKey: "fitScales") } }
     /// The chosen bitrate in kbit/s (one of `qualities`).
     @Published var quality: Int { didSet { d.set(quality, forKey: "quality") } }
     @Published var fps: Int { didSet { d.set(fps, forKey: "fps") } }
@@ -66,10 +66,10 @@ final class Settings: ObservableObject {
     @Published private(set) var emoji: [String: String] { didSet { d.set(emoji, forKey: "emoji") } }
 
     private init() {
-        d.register(defaults: ["quality": Self.defaultQuality, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true, "checkUpdates": true, "fitWindow": true])
+        d.register(defaults: ["quality": Self.defaultQuality, "fps": 60, "scrollSpeed": 1.0, "toolbarX": 0.84, "toolbarY": 0.05, "remember": true, "sound": true, "checkUpdates": true])
         scale = ScaleMode(rawValue: d.string(forKey: "scale") ?? "") ?? .fit
-        fitWindow = d.bool(forKey: "fitWindow")
-        fitScale = d.integer(forKey: "fitScale")
+        fitOff = Set(d.stringArray(forKey: "fitOff") ?? [])
+        fitScales = d.dictionary(forKey: "fitScales") as? [String: Int] ?? [:]
         quality = Self.migrated(quality: d.integer(forKey: "quality"))
         let f = d.integer(forKey: "fps")
         fps = Self.frameRates.contains(f) ? f : 60
@@ -110,6 +110,20 @@ final class Settings: ObservableObject {
     func forgetHost(_ origin: String) {
         hosts.removeAll { $0 == origin }
         label(origin, name: nil, emoji: nil)
+    }
+
+    /// Whether a computer's desktop fits its window, when the computer can do that.
+    func fits(_ origin: String) -> Bool { !fitOff.contains(origin) }
+
+    func setFits(_ origin: String, _ on: Bool) {
+        if on { fitOff.remove(origin) } else { fitOff.insert(origin) }
+    }
+
+    /// The scale chosen for a computer's fitted desktop, in %; 0: by this Mac's screen.
+    func fitScale(_ origin: String) -> Int { fitScales[origin] ?? 0 }
+
+    func setFitScale(_ origin: String, _ scale: Int) {
+        if fitScales[origin] != scale { fitScales[origin] = scale }
     }
 
     /// Gives a computer a name and an emoji on this Mac; nil for either brings back none.
