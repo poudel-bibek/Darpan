@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import signal
 import struct
 
 from . import config
@@ -133,6 +134,32 @@ async def _switch(display, output, xid, w, h, rate):
     await _xrandr(display, "--output", output, "--mode", "%dx%d" % (w, h), "--rate", "%.2f" % rate, "--transform", "none")
 
 
+_ICONS_RE = re.compile(rb"/extensions/[^/\0]*ding[^/\0]*/app/ding\.js(?:\0|$)")   # Ubuntu's desktop icons
+ICONS_AFTER_S = 2.0              # after a scale change: once GNOME and the settings daemon have taken it
+
+
+async def _restart_desktop_icons(display, delay=ICONS_AFTER_S):
+    """Ubuntu's desktop icons (the DING extension's own process) don't follow a change of GNOME's scale: their
+    right-click menu comes out sized for the old scale and cut off. Its extension starts it again at once when
+    it ends, with the scale in effect, so end it: this user's, on this display only."""
+    await asyncio.sleep(delay)
+    on = re.compile(rb"(?:^|\0)DISPLAY=" + re.escape(display.encode()) + rb"(?:\.0)?(?:\0|$)")
+    for pid in os.listdir("/proc"):
+        try:
+            if not pid.isdigit() or os.stat("/proc/" + pid).st_uid != os.getuid():
+                continue
+            with open("/proc/%s/cmdline" % pid, "rb") as f:
+                if not _ICONS_RE.search(f.read()):
+                    continue
+            with open("/proc/%s/environ" % pid, "rb") as f:
+                if not on.search(f.read()):
+                    continue
+            os.kill(int(pid), signal.SIGTERM)
+            log.info("desktop icons restarted for the new scale (pid %s)", pid)
+        except OSError:                  # gone meanwhile, or not ours
+            pass
+
+
 def _screen_size(text):
     """The desktop's size ("Screen 0: minimum 8 x 8, current 3360 x 2100, …"), or None."""
     m = re.search(r"current (\d+) x (\d+)", text)
@@ -181,6 +208,7 @@ class Screen:
         self._fits = None                # how the desktop can be any size here ("nvidia", "randr" or False); asked once
         self.fitted = None               # [w, h, scale] while a fit is in effect
         self.scaled = None               # (w, h): what the capture scales the desktop to (125-175 %), else None
+        self._icons = None               # the pending desktop icons restart (see _restart_desktop_icons)
 
     async def query(self):
         name, current, modes = _parse(await _xrandr(self.display, "--query"))
@@ -317,14 +345,26 @@ class Screen:
             except RuntimeError as e:
                 log.warning("desktop not put back: %s", e)
             raise
+        if want != scaling:
+            self._rescaled()
 
     async def _unscale(self, orig):
         """GNOME's own scale again, before a mode change makes it read it."""
         if "scaling" in orig:
             try:
+                was = int((await _run(None, "gsettings", "get", *SCALE_KEY)).split()[-1])
                 await _run(None, "gsettings", "set", *SCALE_KEY, str(orig["scaling"]))
-            except RuntimeError as e:
+                if was != orig["scaling"]:
+                    self._rescaled()
+            except (RuntimeError, ValueError, IndexError) as e:
                 log.warning("GNOME's scale not restored: %s", e)
+
+    def _rescaled(self):
+        """GNOME's scale is changing: the desktop icons start again a little later, once it has (one restart for
+        changes in quick succession)."""
+        if self._icons:
+            self._icons.cancel()
+        self._icons = asyncio.ensure_future(_restart_desktop_icons(self.display or os.environ.get("DISPLAY", "")))
 
     async def _step(self, text, w, h):
         """Before a mode change that leaves a fitted desktop the size it is: a step to another size, so GNOME
