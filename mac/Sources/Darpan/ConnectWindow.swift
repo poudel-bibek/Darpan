@@ -5,6 +5,8 @@ import SwiftUI
 protocol ConnectHandler: AnyObject {
     func connect(to address: HostAddress, proxy: SOCKSProxy?, password: String?, saved: SavedKey?, remember: Bool?)
     func cancelConnect()
+    /// Brings a connected computer's window to the front.
+    func show(_ origin: String)
 }
 
 /// State of the connect window.
@@ -12,6 +14,8 @@ final class ConnectModel: ObservableObject {
     @Published var address = "" { didSet { if address != oldValue { refreshSavedKey() } } }
     @Published var password = ""
     @Published private(set) var connecting = false
+    /// Computers with a window of their own right now (several can be open at once).
+    @Published var connectedOrigins: Set<String> = []
     @Published private(set) var message = ""
     @Published private(set) var isError = false
     @Published private(set) var hasSavedKey = false
@@ -144,6 +148,7 @@ final class ConnectModel: ObservableObject {
 
     /// A click in the computer list: connect at once if its sign-in is saved, else ask for the password.
     func open(_ origin: String) {
+        if connectedOrigins.contains(origin) { return handler?.show(origin) ?? () }
         address = origin
         password = ""
         if Keychain.contains(origin) {
@@ -167,12 +172,13 @@ final class ConnectModel: ObservableObject {
     }
 
     /// The session ended (or never started). `failure` nil: the user disconnected or cancelled.
-    func ended(_ failure: Client.Failure?, wasConnected: Bool) {
+    /// `name`: which computer, when others are still open.
+    func ended(_ failure: Client.Failure?, wasConnected: Bool, name: String? = nil) {
         connecting = false
         launched = false
         refreshSavedKey()
         guard let failure else {
-            show(wasConnected ? "Disconnected." : "", error: false)
+            show(!wasConnected ? "" : name.map { "Disconnected from \($0)." } ?? "Disconnected.", error: false)
             return
         }
         self.failure = failure
@@ -433,7 +439,8 @@ struct ConnectView: View {
                 if let e = settings.emoji[c.origin] { Text(e).font(.system(size: 17)) }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(settings.names[c.origin] ?? c.name).font(.system(size: 13, weight: .medium))
-                    Text(!c.online ? "Offline" : saved ? "Ready to connect" : "Needs the password once")
+                    Text(model.connectedOrigins.contains(c.origin) ? "Connected" : !c.online ? "Offline"
+                         : saved ? "Ready to connect" : "Needs the password once")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()

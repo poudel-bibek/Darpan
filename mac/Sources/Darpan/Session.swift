@@ -38,6 +38,8 @@ final class Session: NSObject {
     private var ticks = 0
     private var ended = false
     private var sized = false
+    /// With several computers open, only the one in front plays its sound.
+    var playsSound = true { didSet { if playsSound != oldValue { applySound(settings.sound) } } }
     /// The window follows the picture's size (the host may switch to this Mac's last resolution just
     /// after `ok`) until it's resized by hand or a resolution is chosen here; then it's yours.
     private var followPicture = true
@@ -181,8 +183,7 @@ final class Session: NSObject {
         settings.$sound.sink { [weak self] on in
             guard let self else { return }
             self.content.toolbar.soundOn = on
-            self.client.setAudio(on, sink: self.player)
-            if !on { self.player.stop() }
+            self.applySound(on)
         }.store(in: &bag)
         settings.$showStats.sink { [weak self] on in
             guard let self else { return }
@@ -199,13 +200,18 @@ final class Session: NSObject {
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) {
             [weak self] _ in
-            guard let self, self.isConnected else { return }
+            guard let self, self.isConnected, self.window.isKeyWindow else { return }
             self.clipboard.poll()                        // something may have been copied in another app
             self.model.accessibilityTrusted = KeyboardCapture.accessibilityTrusted
             self.updateTap()
         })
         observers.append(nc.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) {
             [weak self] _ in self?.releaseInput()
+        })
+        observers.append(nc.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) {
+            [weak self] _ in
+            guard let self, self.isConnected else { return }
+            self.clipboard.poll()                        // what was copied meanwhile (in another app, or from another computer)
         })
         observers.append(nc.addObserver(forName: NSWindow.willStartLiveResizeNotification, object: window, queue: .main) {
             [weak self] _ in
@@ -253,6 +259,13 @@ final class Session: NSObject {
         }
     }
 
+    /// Sound from this computer: when it's on, and this session is the one in front.
+    private func applySound(_ setting: Bool) {
+        let on = setting && playsSound
+        client.setAudio(on, sink: player)
+        if !on { player.stop() }
+    }
+
     /// One remote pixel per device pixel if that fits on screen, otherwise as large as fits.
     private func sizeWindow(for mode: DisplayMode?) {
         guard let screen = window.screen ?? NSScreen.main else { return }
@@ -270,6 +283,10 @@ final class Session: NSObject {
         guard window.isVisible else {
             window.setContentSize(size)
             window.center()
+            // Another computer's window right there: this one a step down and to the right.
+            while NSApp.windows.contains(where: { $0 !== window && $0.isVisible && $0.frame.origin == window.frame.origin }) {
+                window.setFrameOrigin(NSPoint(x: window.frame.minX + 28, y: window.frame.minY - 28))
+            }
             return
         }
         // Already on screen: the new size around the same centre, kept on the screen.
@@ -370,7 +387,7 @@ final class Session: NSObject {
         content.toolbar.quality = Quality(ms: client.quality)
         let target = client.targetKbps.map { ($0 / 100).rounded() * 100 }
         if model.targetKbps != target { model.targetKbps = target }
-        if NSApp.isActive { clipboard.poll() }
+        if NSApp.isActive && window.isKeyWindow { clipboard.poll() }   // the Mac's clipboard goes to the computer in front
         guard settings.showStats || logStats else { return }
         let s = client.takeStats()
         var text = Self.statsText(s)
