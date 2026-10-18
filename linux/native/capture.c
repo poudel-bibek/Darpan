@@ -45,6 +45,7 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/XShm.h>
 #include <X11/extensions/Xdamage.h>
+#include <X11/extensions/Xrender.h>
 
 #include "vkenc.h"
 #include "ffnvcodec/dynlink_cuda.h"
@@ -603,7 +604,10 @@ static int on_x_gone(Display *d) {
 typedef struct {
     Display *dpy;
     Window root;
-    int w, h;
+    int w, h;                // what's captured: the screen, or --size
+    int sw, sh;              // the screen
+    Pixmap pix;              // --size: the screen scaled into this by the X server (on the GPU), then read back
+    Picture src, dst;
     XImage *img;
     XShmSegmentInfo shm;
     size_t shm_size;
@@ -613,7 +617,7 @@ typedef struct {
     int pinned;
 } Capture;
 
-static int capture_open(Capture *c, const char *display) {
+static int capture_open(Capture *c, const char *display, int size_w, int size_h) {
     XSetErrorHandler(on_x_error);
     XSetIOErrorHandler(on_x_gone);
     c->dpy = XOpenDisplay(display);
@@ -622,8 +626,10 @@ static int capture_open(Capture *c, const char *display) {
     c->root = RootWindow(c->dpy, scr);
     XWindowAttributes wa;
     XGetWindowAttributes(c->dpy, c->root, &wa);
-    c->w = wa.width & ~1;    // 4:2:0 needs even dimensions
-    c->h = wa.height & ~1;
+    c->sw = wa.width & ~1;   // 4:2:0 needs even dimensions
+    c->sh = wa.height & ~1;
+    c->w = size_w > 0 ? size_w & ~1 : c->sw;
+    c->h = size_h > 0 ? size_h & ~1 : c->sh;
     int derr;
     if (!XDamageQueryExtension(c->dpy, &c->damage_event, &derr)) { logf_("X server lacks DAMAGE"); return -1; }
 
@@ -636,6 +642,22 @@ static int capture_open(Capture *c, const char *display) {
         logf_("unsupported visual (bpp %d, masks %lx/%lx/%lx)", c->img->bits_per_pixel,
               vis->red_mask, vis->green_mask, vis->blue_mask);
         return -1;
+    }
+    if (c->w != c->sw || c->h != c->sh) {
+        // A desktop drawn bigger than the stream (a fit at 125-175 %, which GNOME draws at 2x): the X server
+        // scales it down to the stream's size, and only that is read back.
+        int rev, rerr;
+        XRenderPictFormat *fmt = XRenderQueryExtension(c->dpy, &rev, &rerr) ? XRenderFindVisualFormat(c->dpy, vis) : NULL;
+        if (!fmt) { logf_("X server lacks RENDER: can't scale to %dx%d", c->w, c->h); return -1; }
+        XRenderPictureAttributes pa = {.subwindow_mode = IncludeInferiors};
+        c->src = XRenderCreatePicture(c->dpy, c->root, fmt, CPSubwindowMode, &pa);
+        c->pix = XCreatePixmap(c->dpy, c->root, (unsigned)c->w, (unsigned)c->h, (unsigned)DefaultDepth(c->dpy, scr));
+        c->dst = XRenderCreatePicture(c->dpy, c->pix, fmt, 0, NULL);
+        XTransform t = {{{XDoubleToFixed((double)c->sw / c->w), 0, 0},
+                         {0, XDoubleToFixed((double)c->sh / c->h), 0},
+                         {0, 0, XDoubleToFixed(1)}}};
+        XRenderSetPictureTransform(c->dpy, c->src, &t);
+        XRenderSetPictureFilter(c->dpy, c->src, FilterBilinear, NULL, 0);   // measured: as sharp as Lanczos, nearly
     }
     long page = sysconf(_SC_PAGESIZE);
     c->shm_size = ((size_t)c->img->bytes_per_line * (size_t)c->h + (size_t)page - 1) & ~((size_t)page - 1);
@@ -660,12 +682,17 @@ static int capture_open(Capture *c, const char *display) {
     return 0;
 }
 
-// Grabs the whole screen into the shm segment. Returns 0 on success.
+// Grabs the whole screen (scaled, with --size) into the shm segment. Returns 0 on success.
 static int capture_grab(Capture *c) {
     x_error_code = 0;
+    Drawable from = c->root;
+    if (c->pix) {
+        XRenderComposite(c->dpy, PictOpSrc, c->src, None, c->dst, 0, 0, 0, 0, 0, 0, (unsigned)c->w, (unsigned)c->h);
+        from = c->pix;
+    }
     if (c->shm_attached)
-        return !XShmGetImage(c->dpy, c->root, c->img, 0, 0, AllPlanes) || x_error_code ? -1 : 0;
-    XImage *t = XGetImage(c->dpy, c->root, 0, 0, (unsigned)c->w, (unsigned)c->h, AllPlanes, ZPixmap);
+        return !XShmGetImage(c->dpy, from, c->img, 0, 0, AllPlanes) || x_error_code ? -1 : 0;
+    XImage *t = XGetImage(c->dpy, from, 0, 0, (unsigned)c->w, (unsigned)c->h, AllPlanes, ZPixmap);
     if (!t || x_error_code) { if (t) XDestroyImage(t); return -1; }
     for (int y = 0; y < c->h; y++)
         memcpy(c->img->data + (size_t)y * (size_t)c->img->bytes_per_line,
@@ -677,6 +704,9 @@ static int capture_grab(Capture *c) {
 static void capture_close(Capture *c) {
     if (!c->dpy) return;
     if (c->damage) XDamageDestroy(c->dpy, c->damage);
+    if (c->src) XRenderFreePicture(c->dpy, c->src);
+    if (c->dst) XRenderFreePicture(c->dpy, c->dst);
+    if (c->pix) XFreePixmap(c->dpy, c->pix);
     if (c->shm_attached) XShmDetach(c->dpy, &c->shm);
     if (c->img) XDestroyImage(c->img);   // data pointer is the shm segment; XDestroyImage frees the struct
     if (c->shm.shmaddr && c->shm.shmaddr != (void *)-1) shmdt(c->shm.shmaddr);
@@ -694,13 +724,13 @@ static void usage(void) {
     fprintf(stderr,
             "usage: darpan-capture [--display :1] [--fps 60] [--bitrate KBPS] [--credits N]\n"
             "                  [--preset 1-7] [--vbv-frames N] [--gpu N] [--matrix 709|601]\n"
-            "                  [--chroma 420|444] [--probe] [--bench N]\n");
+            "                  [--chroma 420|444] [--size WxH] [--probe] [--bench N]\n");
 }
 
 int main(int argc, char **argv) {
     const char *display = NULL;
     int fps = 60, kbps = 12000, credits = 4, preset = 3, gpu = 0, vbv_frames = 4, matrix601 = 0;
-    int probe = 0, bench = 0, chroma444 = 0;
+    int probe = 0, bench = 0, chroma444 = 0, size_w = 0, size_h = 0;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *v = i + 1 < argc ? argv[i + 1] : NULL;
@@ -716,6 +746,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--matrix")) matrix601 = !strcmp(v, "601");
         else if (!strcmp(a, "--chroma")) chroma444 = !strcmp(v, "444");
         else if (!strcmp(a, "--bench")) bench = atoi(v);
+        else if (!strcmp(a, "--size")) { if (sscanf(v, "%dx%d", &size_w, &size_h) != 2) { usage(); return 2; } }
         else { usage(); return 2; }
         i++;
     }
@@ -751,7 +782,7 @@ int main(int argc, char **argv) {
         return rc;
     }
 
-    if (capture_open(&cap, display)) { emit_info("{\"ev\":\"error\",\"msg\":\"x11 capture init failed\"}"); goto out; }
+    if (capture_open(&cap, display, size_w, size_h)) { emit_info("{\"ev\":\"error\",\"msg\":\"x11 capture init failed\"}"); goto out; }
     enc.w = (uint32_t)cap.w;
     enc.h = (uint32_t)cap.h;
     enc.fps = (uint32_t)fps;
@@ -862,7 +893,7 @@ int main(int argc, char **argv) {
                 dirty = 1;
             } else if (ev.type == ConfigureNotify && ev.xconfigure.window == cap.root) {
                 int nw = ev.xconfigure.width & ~1, nh = ev.xconfigure.height & ~1;
-                if (nw != cap.w || nh != cap.h) {
+                if (nw != cap.sw || nh != cap.sh) {
                     emit_info("{\"ev\":\"resize\",\"w\":%d,\"h\":%d}", nw, nh);
                     rc = 3;
                     goto out;
