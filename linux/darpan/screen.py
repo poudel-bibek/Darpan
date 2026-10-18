@@ -136,7 +136,9 @@ class Screen:
         except RuntimeError:
             return None
         meta = out.strip().split(" :: ", 1)[-1]
-        return meta if re.match(r"^[\w-]+:", meta) else None
+        # one display only: a MetaMode names every display, and assigning one with fewer turns the rest off
+        # (several monitors is a project of its own)
+        return meta if re.match(r"^[\w-]+:", meta) and len(re.findall(r"(?:^|,\s*)[\w-]+:\s", meta)) == 1 else None
 
     def _remember(self, name, current, **more):
         """Write down what to restore, before the first change; more (e.g. GNOME's scale) when first changed."""
@@ -158,20 +160,27 @@ class Screen:
             raise ValueError("can't fit %dx%d at %d %%" % (w, h, scale))
         k = min(1.0, FIT_MAX / max(w, h))            # bigger than the encoder takes: both sides down together
         w, h = int(w * k) // 2 * 2, int(h * k) // 2 * 2   # and even (4:2:0); modes' "fitted" says what it made
+        if self.fitted == [w, h, scale]:
+            log.info("already fitted to %dx%d at %d %%", w, h, scale)   # e.g. a reconnect: no switch, no rearranging
+            return
         text = await _xrandr(self.display, "--query")
         name, current, _ = _parse(text)
         native, meta = _native(text, name), await self._metamode()
         if not name or not current or not native or not meta:
             raise RuntimeError("this computer can't fit its desktop to a window (it needs NVIDIA's nvidia-settings)")
         scaling = int((await _run(None, "gsettings", "get", *SCALE_KEY)).split()[-1])
-        self._remember(name, current, scaling=scaling)
+        orig = self._remember(name, current, scaling=scaling)
         k = min(native[0] / w, native[1] / h)
         ow, oh = int(w * k) // 2 * 2, int(h * k) // 2 * 2
         log.info("fitting %s to %dx%d at %d %% (its own %dx%d shows it %dx%d)", name, w, h, scale, *native, ow, oh)
         await _run(None, "gsettings", "set", *SCALE_KEY, "2" if scale == 200 else "1")
-        await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=%s: nvidia-auto-select @%dx%d +0+0 "
-                   "{ViewPortIn=%dx%d, ViewPortOut=%dx%d+%d+%d}" % (meta.split(":", 1)[0], w, h, w, h, ow, oh,
-                                                                  (native[0] - ow) // 2, (native[1] - oh) // 2))
+        try:
+            await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=%s: nvidia-auto-select @%dx%d "
+                       "+0+0 {ViewPortIn=%dx%d, ViewPortOut=%dx%d+%d+%d}" % (meta.split(":", 1)[0], w, h, w, h, ow, oh,
+                                                                          (native[0] - ow) // 2, (native[1] - oh) // 2))
+        except RuntimeError:
+            await self._unscale(orig)            # not 200 % on the old desktop
+            raise
         self.fitted = [w, h, scale]
 
     async def _unscale(self, orig):
