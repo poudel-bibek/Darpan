@@ -61,6 +61,12 @@ def _native(text, output):
     return largest
 
 
+def _screen_size(text):
+    """The desktop's size ("Screen 0: minimum 8 x 8, current 3360 x 2100, …"), or None."""
+    m = re.search(r"current (\d+) x (\d+)", text)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
 def _parse(text):
     """-> output name, current (w, h, rate) or None, [(w, h, [rates])] for the primary output."""
     outputs = []
@@ -152,10 +158,18 @@ class Screen:
         config.write_private(self.state_file, json.dumps(orig))
         return orig
 
+    async def _assign(self, meta, native, w, h):
+        """NVIDIA's MetaMode for a w×h desktop, scaled onto the monitor's own mode (as large as fits)."""
+        k = min(native[0] / w, native[1] / h)
+        ow, oh = int(w * k) // 2 * 2, int(h * k) // 2 * 2
+        await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=%s: nvidia-auto-select @%dx%d "
+                   "+0+0 {ViewPortIn=%dx%d, ViewPortOut=%dx%d+%d+%d}" % (meta.split(":", 1)[0], w, h, w, h, ow, oh,
+                                                                      (native[0] - ow) // 2, (native[1] - oh) // 2))
+
     async def fit(self, w, h, scale):
         """The desktop exactly w×h, drawn at scale % (100 or 200); the monitor keeps its own mode and NVIDIA
-        scales the desktop onto it (a MetaMode with ViewPortIn). GNOME reads its scale only when the monitors
-        change, so the scale is set first."""
+        scales the desktop onto it (a MetaMode with ViewPortIn). GNOME reads its scale only when the desktop
+        changes size, so the scale is set first, and a desktop that stays the size it is gets a step first."""
         if scale not in FIT_SCALES or not (640 <= w <= 16384 and 480 <= h <= 16384):
             raise ValueError("can't fit %dx%d at %d %%" % (w, h, scale))
         k = min(1.0, FIT_MAX / max(w, h))            # bigger than the encoder takes: both sides down together
@@ -170,16 +184,21 @@ class Screen:
             raise RuntimeError("this computer can't fit its desktop to a window (it needs NVIDIA's nvidia-settings)")
         scaling = int((await _run(None, "gsettings", "get", *SCALE_KEY)).split()[-1])
         orig = self._remember(name, current, scaling=scaling)
+        want = 2 if scale == 200 else 1
         k = min(native[0] / w, native[1] / h)
         ow, oh = int(w * k) // 2 * 2, int(h * k) // 2 * 2
         log.info("fitting %s to %dx%d at %d %% (its own %dx%d shows it %dx%d)", name, w, h, scale, *native, ow, oh)
-        await _run(None, "gsettings", "set", *SCALE_KEY, "2" if scale == 200 else "1")
+        await _run(None, "gsettings", "set", *SCALE_KEY, str(want))
         try:
-            await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=%s: nvidia-auto-select @%dx%d "
-                       "+0+0 {ViewPortIn=%dx%d, ViewPortOut=%dx%d+%d+%d}" % (meta.split(":", 1)[0], w, h, w, h, ow, oh,
-                                                                          (native[0] - ow) // 2, (native[1] - oh) // 2))
+            if want != scaling and _screen_size(text) == (w, h):   # (else the shell keeps its scale, apps don't:
+                await self._assign(meta, native, w, h - 2)        # menus come out cut off)
+            await self._assign(meta, native, w, h)
         except RuntimeError:
             await self._unscale(orig)            # not 200 % on the old desktop
+            try:                                 # and the desktop as it was (a step may have changed it)
+                await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=" + meta)
+            except RuntimeError as e:
+                log.warning("desktop not put back: %s", e)
             raise
         self.fitted = [w, h, scale]
 
@@ -191,8 +210,18 @@ class Screen:
             except RuntimeError as e:
                 log.warning("GNOME's scale not restored: %s", e)
 
+    async def _step(self, text, w, h):
+        """Before a mode change that leaves a fitted desktop the size it is: a step to another size, so GNOME
+        reads the scale just put back (it reads it only when the desktop changes size)."""
+        if _screen_size(text) == (w, h):
+            name = _parse(text)[0]
+            native, meta = _native(text, name), await self._metamode()
+            if native and meta:
+                await self._assign(meta, native, w, h - 2)
+
     async def set_mode(self, w, h):
-        name, current, modes = _parse(await _xrandr(self.display, "--query"))
+        text = await _xrandr(self.display, "--query")
+        name, current, modes = _parse(text)
         if not name or not current:
             raise RuntimeError("no active monitor")
         match = [rates for mw, mh, rates in modes if (mw, mh) == (w, h)]
@@ -207,6 +236,7 @@ class Screen:
         orig = self._remember(name, current)
         if self.fitted:
             await self._unscale(orig)
+            await self._step(text, w, h)
         log.info("switching %s to %dx%d@%.2f", name, w, h, rate)
         await _xrandr(self.display, "--output", name, "--mode", "%dx%d" % (w, h), "--rate", "%.2f" % rate,
                       "--transform", "none")      # (a fit's scaling, if there was one)
@@ -224,6 +254,8 @@ class Screen:
         log.info("restoring %s to %dx%d@%.2f", orig["output"], orig["w"], orig["h"], orig["rate"])
         await self._unscale(orig)
         try:
+            if "scaling" in orig:                # it was fitted
+                await self._step(await _xrandr(self.display, "--query"), orig["w"], orig["h"])
             await _xrandr(self.display, "--output", orig["output"], "--mode", "%dx%d" % (orig["w"], orig["h"]),
                           "--rate", "%.2f" % orig["rate"], "--transform", "none")
         except RuntimeError as e:
