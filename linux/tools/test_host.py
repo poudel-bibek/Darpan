@@ -1591,7 +1591,7 @@ def main():
         cmd = [sys.executable, "-m", "darpan", "serve", "--port", str(args.port), "-v"]
         if args.socket_activate:   # exercise the sd_listen_fds path (darpan.socket in production)
             keep = ["DISPLAY", "HOME", "PATH", "PYTHONPATH", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME",
-                    "XDG_RUNTIME_DIR", "DARPAN_FAKE_PW_LOG"]   # it starts children with a clean environment
+                    "XDG_RUNTIME_DIR", "DARPAN_FAKE_PW_LOG", "DARPAN_FAKE_TOOL_LOG"]   # it starts children with a clean environment
             cmd = ["systemd-socket-activate", "-l", "127.0.0.1:%d" % args.port] + [a for k in keep for a in ("-E", k)] + cmd
         host = subprocess.Popen(cmd, env=env,
                                 stdout=host_log, stderr=subprocess.STDOUT, cwd=args.root)
