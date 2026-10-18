@@ -30,8 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         connectWindow.model.handler = self
         connectWindow.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake(_:)),
-                                                          name: NSWorkspace.didWakeNotification, object: nil)
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(self, selector: #selector(willSleep(_:)), name: NSWorkspace.willSleepNotification, object: nil)
+        ws.addObserver(self, selector: #selector(didWake(_:)), name: NSWorkspace.didWakeNotification, object: nil)
+        ws.addObserver(self, selector: #selector(didWake(_:)), name: NSWorkspace.screensDidWakeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(windowBecameMain(_:)),
                                                name: NSWindow.didBecomeMainNotification, object: nil)
         connectWindow.model.autoConnect(environment: ProcessInfo.processInfo.environment)
@@ -74,7 +76,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var debugConnectModel: ConnectModel { connectWindow.model }
     #endif
 
+    /// macOS waits for this handler, not for what it starts: the goodbyes go out before it returns
+    /// (half a second at most, for all of them), so each host ends its session now rather than after 30 s.
+    @objc private func willSleep(_ n: Notification) {
+        let sent = DispatchGroup()
+        for s in sessions {
+            sent.enter()
+            s.client.sleep { sent.leave() }
+        }
+        _ = sent.wait(timeout: .now() + 0.5)
+    }
+
+    /// A real wake: the system with its display on, or the screens coming on. Not a dark wake (the
+    /// display stays off), so a sleeping Mac doesn't connect for a few seconds every 15 minutes.
     @objc private func didWake(_ n: Notification) {
+        if n.name == NSWorkspace.didWakeNotification && CGDisplayIsAsleep(CGMainDisplayID()) != 0 { return }
         for s in sessions { s.client.wake() }
     }
 

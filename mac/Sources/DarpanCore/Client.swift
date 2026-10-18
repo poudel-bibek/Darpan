@@ -114,6 +114,18 @@ public final class Client {
         public let encoder: String
         /// 444 for full colour (with the `h264-444` capability), else 420.
         public var chroma = 420
+        /// How the host encodes: "vulkan", "cuda" or "software" (nil from hosts before 1.4.1).
+        public var api: String?
+
+        public init(id: UInt16, width: Int, height: Int, fps: Int, encoder: String, chroma: Int = 420, api: String? = nil) {
+            self.id = id
+            self.width = width
+            self.height = height
+            self.fps = fps
+            self.encoder = encoder
+            self.chroma = chroma
+            self.api = api
+        }
     }
 
     public struct Cursor {
@@ -212,6 +224,8 @@ public final class Client {
     private var hostRestarting = false
     private var retry = 0
     private var lastInbound = 0.0
+    /// Closed for the Mac's sleep (`sleep()`); `wake()` reconnects.
+    private var asleep = false
     private var pingTimer: DispatchSourceTimer?
     private var activity: NSObjectProtocol?
 
@@ -329,6 +343,12 @@ public final class Client {
             self.fps = f
             self.bitrate = b
             self.fullGPU = fullGPU
+            if changedBitrate {
+                // The host's last target is for the old choice, and a still screen sends no new stats.
+                self.lock.lock()
+                self.counters.host = nil
+                self.lock.unlock()
+            }
             if self.streaming && (changedFps || changedBitrate || changedGPU) {
                 self.socket?.send(text: Msg.cfg(fps: changedFps ? f : nil, bitrate: changedBitrate ? b : nil,
                                                 fullGPU: changedGPU ? fullGPU : nil))
@@ -336,9 +356,31 @@ public final class Client {
         }
     }
 
-    /// After the Mac wakes: probe at once instead of waiting for the next ping.
+    /// The Mac is going to sleep: end the connection cleanly, so the host gets its desktop back at once
+    /// instead of after 30 s without a reply, and don't reconnect until `wake()`. While asleep the Mac
+    /// wakes for a moment about every 15 min, with the network up (a dark wake); those connect nothing.
+    /// Also a first connection still signing in: it goes on after the wake. `sent` runs (on the client's
+    /// queue) once the goodbye is out, or at once when there was nothing to close.
+    public func sleep(sent: @escaping () -> Void = {}) {
+        queue.async {
+            guard !self.asleep, self.everConnected || self.socket != nil else { return sent() }
+            self.asleep = true
+            self.generation += 1                    // the closing socket and any scheduled reconnect are stale
+            self.teardown(sent: sent)
+            if self.everConnected { self.publish(.reconnecting(restarting: false)) }
+        }
+    }
+
+    /// The Mac is awake again (its screens are on): reconnect after a `sleep()`, or else probe at once
+    /// instead of waiting for the next ping.
     public func wake() {
         queue.async {
+            if self.asleep {
+                self.asleep = false
+                self.retry = 0
+                self.open(initial: !self.everConnected)
+                return
+            }
             guard self.authed else { return }
             self.lastInbound = Clock.nowMs()
             self.ping()
@@ -386,6 +428,12 @@ public final class Client {
         s.hardwareDecoder = c.hardware
         s.framesTotal = c.framesTotal
         return s
+    }
+
+    /// The host's bitrate target from its latest `stats` (kbit/s), without resetting counters.
+    public var targetKbps: Double? {
+        lock.lock(); defer { lock.unlock() }
+        return counters.host?.targetKbps
     }
 
     /// Latest latency estimate for the quality dot, without resetting counters.
@@ -491,9 +539,9 @@ public final class Client {
         }
     }
 
-    /// Drops the socket and everything that belongs to a session.
-    private func teardown() {
-        socket?.close()
+    /// Drops the socket and everything that belongs to a session; `sent` once its close frame is out.
+    private func teardown(sent: (() -> Void)? = nil) {
+        if let s = socket { s.close(sent: sent) } else { sent?() }
         socket = nil
         lock.lock()
         live = nil
@@ -765,6 +813,7 @@ public final class Client {
               w > 0, h > 0 else { return }
         var info = StreamInfo(id: UInt16(id), width: w, height: h, fps: m.int("fps") ?? fps, encoder: m.string("enc") ?? "")
         info.chroma = m.int("chroma") ?? 420
+        info.api = m.string("api")
         stream = info
         decoder.requireKeyFrame()
         needKeySince = Clock.nowMs()

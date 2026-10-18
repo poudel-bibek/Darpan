@@ -17,7 +17,8 @@ enum NetworkMode: String, CaseIterable {
 final class Settings: ObservableObject {
     static let shared = Settings()
 
-    /// Bitrate ceilings (kbit/s); the host still adapts below them. The same four as the browser.
+    /// Bitrates (kbit/s): the host encodes at the chosen one from the first frame and goes lower only while
+    /// the network can't carry it. The same four as the browser.
     static let qualities: [(name: String, kbps: Int)] =
         [("Faster Speed", 6000), ("Balanced", 15000), ("Higher Quality", 30000), ("Max", 50000)]
     static let defaultQuality = 15000
@@ -26,7 +27,7 @@ final class Settings: ObservableObject {
     private let d = UserDefaults.standard
 
     @Published var scale: ScaleMode { didSet { d.set(scale.rawValue, forKey: "scale") } }
-    /// Maximum bitrate in kbit/s (one of `qualities`).
+    /// The chosen bitrate in kbit/s (one of `qualities`).
     @Published var quality: Int { didSet { d.set(quality, forKey: "quality") } }
     @Published var fps: Int { didSet { d.set(fps, forKey: "fps") } }
     /// Let the Linux computer use more of its GPU (NVENC through CUDA), for sharper fast scrolling.

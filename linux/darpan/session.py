@@ -55,6 +55,9 @@ def _desktop_dir():
 
 FULL_COLOUR_KBPS = 25000                    # Higher Quality (30 Mbit/s) and Max get 4:4:4
 MAX_KBPS = 200000                           # the highest bitrate a viewer may choose (darpan-capture's own limit)
+NEED_MIB = {"gpu": 512, "nvenc": 192, "444": 256}   # free GPU memory before More GPU (~280 MiB), the GPU at
+                                                    # all, or 4:4:4 is tried again
+RECHECK_S = 30.0                            # how often, while one of them is off for lack of it
 
 
 class RateControl:
@@ -185,6 +188,12 @@ class Session:
         self.errors = collections.deque()
         self.x264_until = 0.0            # NVENC failed (e.g. VRAM full): software until then, then retry
         self.x264_backoff = 60.0
+        self.short = set()               # "gpu" (More GPU), "nvenc" (the GPU at all), "444" (full colour): off
+                                         # for lack of GPU memory, until it has room again
+        self.recheck_at = 0.0
+        self.recheck_s = RECHECK_S       # doubles each time something that came back has to go again
+        self.came_back = set()
+        self.told = set()                # each kind of "GPU memory is full" notice once a connection
         self.last_kf = 0.0
         self.wd_after = 3.0              # ack watchdog: 3 s, doubling while acks stay away
         self.last_ping = 0.0
@@ -408,7 +417,7 @@ class Session:
         self.params = {"fps": max(1, min(120, fps)), "bitrate": max(0, min(MAX_KBPS, int(m.get("bitrate") or 0))),
                        "gpu": m.get("gpu") == "full"}
         if (self.cap and self.paused_at is not None and self.cap.fps_ == self.params["fps"] and
-                getattr(self.cap, "cuda", None) in (None, self.hub.no_vulkan or self.params["gpu"]) and
+                getattr(self.cap, "cuda", None) in (None, self._cuda()) and
                 getattr(self.cap, "c444", None) in (None, self._full_colour())):
             self._resume()
         else:
@@ -425,6 +434,7 @@ class Session:
             return
         if "gpu" in m and (m["gpu"] == "full") != self.params["gpu"]:
             self.params["gpu"] = m["gpu"] == "full"
+            self.short.discard("gpu")                       # chosen again: try again
             if self.cap and self.paused_at is None and self.cap.encoder == "nvenc":
                 self._task(self._start_capture(restart=True))   # the other encoder; a key frame follows
             # (on the software fallback it applies at the next NVENC retry)
@@ -443,6 +453,8 @@ class Session:
                 self.rc.kbps = self.rc.before_cut = self.rc.cap if b else min(self.rc.kbps, self.rc.cap)
                 if self.cap:
                     self.cap.bitrate(self.rc.kbps)
+            if not self._full_colour():
+                self.short.discard("444")
             if (self.cap and self.paused_at is None and self.cap.encoder == "nvenc" and
                     self.cap.c444 != self._full_colour()):
                 self._task(self._start_capture(restart=True))   # full colour on or off: a key frame follows
@@ -512,7 +524,7 @@ class Session:
         self.withhold = 0
         use_nvenc = hub.encoder and time.monotonic() >= self.x264_until and cfg["encoder"] != "x264"
         cls = capture.NvencCapture if use_nvenc else capture.X264Capture
-        kw = {"preset": cfg["preset"], "gpu": cfg["gpu"], "cuda": hub.no_vulkan or p["gpu"],
+        kw = {"preset": cfg["preset"], "gpu": cfg["gpu"], "cuda": self._cuda(),
               "chroma444": self._full_colour()} if use_nvenc else {}
         fps = p["fps"] if use_nvenc else min(p["fps"], 30)   # software encoding: spare the CPU
         self.stream_id = (self.stream_id % 0xFFFF) + 1
@@ -557,6 +569,10 @@ class Session:
         self.cap.refresh()
         self.cap.credit(self.window)
 
+    def _cuda(self):
+        """NVENC through CUDA: once Vulkan Video failed, or for More GPU while the GPU has the memory for it."""
+        return self.hub.no_vulkan or (self.params["gpu"] and "gpu" not in self.short)
+
     def _full_colour(self):
         """4:4:4 for a viewer that decodes it, at Higher Quality and Max: past 4:2:0's ceiling
         (about 34.7 dB on coloured text at any bitrate) for about 2 ms more encoding a frame."""
@@ -572,6 +588,11 @@ class Session:
                  self.cap.encoder, self.cap.api, "4:4:4" if self.cap.chroma == 444 else "4:2:0", self.params["fps"],
                  self.rc.kbps)
         self.ws.send_json(self._stream_msg(w, h))
+        if self.cap.encoder == "nvenc" and self.cap.chroma != 444 and self._full_colour() and "444" not in self.short:
+            if self._short_of_memory("444"):   # (with room to spare, this GPU just can't encode 4:4:4: say nothing)
+                log.warning("session %s: no GPU memory for full colour — 4:2:0 until there is", self.sid)
+                self._tell("444", "Full colour is off for now: the Linux computer's GPU memory is full. It comes back "
+                           "by itself when there's room.")
 
     def _cap_frame(self, flags, ts, cap_us, enc_us, data):
         if self.paused_at is not None or self.ws.closed:
@@ -596,14 +617,23 @@ class Session:
         now = time.monotonic()
         if reason == "resize":
             delay = 0.3
-        elif reason == "no-nvenc" and self.params["gpu"] and not self.hub.no_vulkan:
-            log.warning("session %s: no GPU memory for the more-GPU encoder — the standard one instead", self.sid)
-            self.params["gpu"] = False             # for this connection; the next one asks again
-            self.ws.send_json({"t": "notice", "level": "info",
-                               "text": "Can't use more of the Linux computer's GPU right now: its memory is full"})
+        elif reason == "no-nvenc" and self._cuda() and not self.hub.no_vulkan:
+            if self._short_of_memory("gpu"):
+                log.warning("session %s: no GPU memory for the more-GPU encoder — the standard one until there is",
+                            self.sid)
+                self._tell("gpu", "Can't use more of the Linux computer's GPU right now: its memory is full. "
+                           "Darpan switches over by itself when there's room.")
+            else:                                  # not memory: CUDA can't do it here, so not on this connection
+                log.warning("session %s: the more-GPU encoder failed — the standard one instead", self.sid)
+                self.params["gpu"] = False
+                self.ws.send_json({"t": "notice", "level": "info",
+                                   "text": "Can't use more of the Linux computer's GPU on this connection"})
             delay = 0
         elif reason == "no-nvenc":
-            self._fall_back_to_x264("NVENC unavailable (GPU memory full?)")
+            self._fall_back_to_x264("NVENC unavailable")
+            if self._short_of_memory("nvenc"):
+                self._tell("nvenc", "The Linux computer's GPU memory is full, so it's encoding on its processor for "
+                           "now. Darpan switches back by itself when there's room.")
             delay = 0
         elif reason == "vulkan":                   # the same NVENC through CUDA, for as long as we run
             log.warning("session %s: Vulkan Video failed — NVENC through CUDA from now on", self.sid)
@@ -626,6 +656,39 @@ class Session:
             if not self.ws.closed:
                 await self._start_capture(restart=True)
         self._task(later())
+
+    def _short_of_memory(self, what):
+        """After a failed encoder start: if the GPU really is short of memory, note it, to look again later (less
+        often each time a comeback fails: training's memory moves, and a host near the line would flap). A
+        failure with memory to spare is something else."""
+        free = capture.gpu_free_mib(self.hub.cfg["gpu"])
+        if free is None or free >= NEED_MIB[what]:
+            return False
+        if what in self.came_back:                       # back, and gone again: look less often
+            self.recheck_s = min(8 * RECHECK_S, 2 * self.recheck_s)
+        self.came_back.discard(what)
+        self.short.add(what)
+        self.recheck_at = time.monotonic() + self.recheck_s
+        return True
+
+    def _tell(self, what, text):
+        if what not in self.told:
+            self.told.add(what)
+            self.ws.send_json({"t": "notice", "level": "info", "text": text})
+
+    def _recheck_gpu(self, now):
+        """More GPU, the GPU itself or full colour went for lack of GPU memory: bring back whatever fits again."""
+        self.recheck_at = now + self.recheck_s
+        free = capture.gpu_free_mib(self.hub.cfg["gpu"])
+        back = {k for k in self.short if free is not None and free >= NEED_MIB[k]}
+        if back:
+            log.info("session %s: GPU memory free again (%d MiB): %s back", self.sid, free,
+                     ", ".join({"gpu": "More GPU", "nvenc": "the GPU", "444": "full colour"}[k] for k in sorted(back)))
+            if "nvenc" in back:
+                self.x264_until = 0.0            # don't wait out the software back-off
+            self.short -= back
+            self.came_back |= back
+            self._task(self._start_capture(restart=True))
 
     def _fall_back_to_x264(self, why):
         log.warning("session %s: %s — software encoding for %d s, then NVENC again", self.sid, why,
@@ -655,6 +718,9 @@ class Session:
         if self.paused_at is not None:
             if now - self.paused_at > 15:
                 self._task(self._stop_capture())
+            return
+        if self.short and now >= self.recheck_at and not self._cap_lock.locked():
+            self._recheck_gpu(now)
             return
         new = self.rc.tick(now)
         if new is not None:
@@ -1322,8 +1388,10 @@ class Hub:
     def status(self):
         return {"sessions": [{"sid": s.sid, "client": s.client, "source": s.source, "user": s.ts_user,
                               "since": int(s.since), "streaming": bool(s.cap and s.paused_at is None),
+                              "paused": s.paused_at is not None,
                               "w": s.w, "h": s.h, "kbps": s.rc.kbps if s.rc else None,
-                              "enc": s.cap.encoder if s.cap else None, "api": s.cap.api if s.cap else None}
+                              "enc": s.cap.encoder if s.cap else None, "api": s.cap.api if s.cap else None,
+                              "chroma": s.cap.chroma if s.cap else None}
                              for s in self.sessions],
                 "encoder": self.encoder, "restart_for_gpu": self.cfg["encoder"] != "x264" and capture.driver_restart_needed(),
                 "url": self.url, "port": self.cfg["port"],

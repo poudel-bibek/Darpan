@@ -1079,21 +1079,77 @@ async def run(args, tmp, probe_log):
     from darpan.session import Session
     sent, tasks = [], []
     fake = types.SimpleNamespace(
-        params={"gpu": True}, hub=types.SimpleNamespace(no_vulkan=False, cfg={"fps": 60}), sid=0, paused_at=1.0,
+        params={"gpu": True}, hub=types.SimpleNamespace(no_vulkan=False, cfg={"fps": 60, "gpu": 0}), sid=0, paused_at=1.0,
         cap=types.SimpleNamespace(fps_=60, cuda=False), errors=collections.deque(), x264_until=0.0, x264_backoff=60.0,
         ws=types.SimpleNamespace(closed=False, send_json=sent.append), _resume=lambda: tasks.append("resume"),
-        _full_colour=lambda: False,
+        _full_colour=lambda: False, short=set(), recheck_at=0.0, recheck_s=30.0, came_back=set(), told=set(),
         _task=lambda c: (c.close(), tasks.append("restart")), _start_capture=lambda restart=False: asyncio.sleep(0))
     fake._fall_back_to_x264 = lambda why: Session._fall_back_to_x264(fake, why)
+    fake._cuda = lambda: Session._cuda(fake)
+    fake._short_of_memory = lambda what: Session._short_of_memory(fake, what)
+    fake._tell = lambda what, text: Session._tell(fake, what, text)
     Session.on_start(fake, {"fps": 60, "gpu": "full"})
     Session.on_start(fake, {"fps": 60, "gpu": "lean"})
     ok("warm resume only on the same route", tasks == ["restart", "resume"], tasks)
+    import darpan.capture as capture_mod
+    real_free = capture_mod.gpu_free_mib
+    free_mib = [100]                                                # a GPU full of training
+    capture_mod.gpu_free_mib = lambda index=0: free_mib[0]
     fake.params, fake.paused_at, tasks[:] = {"gpu": True}, None, []
     Session._cap_exit(fake, "no-nvenc")
-    lean = not fake.params["gpu"] and not fake.x264_until and sent and sent[-1]["t"] == "notice"
+    lean = fake.short == {"gpu"} and fake.params["gpu"] and not fake.x264_until and sent and sent[-1]["t"] == "notice"
     Session._cap_exit(fake, "no-nvenc")
-    ok("more GPU out of memory: lean first, then software", lean and fake.x264_until > 0 and tasks == ["restart"] * 2,
-       "%s %s" % (sent, tasks))
+    ok("more GPU out of memory: lean first, then software", lean and fake.short == {"gpu", "nvenc"} and
+       fake.x264_until > 0 and tasks == ["restart"] * 2, "%s %s" % (sent, tasks))
+
+    # the memory comes back in steps: room for the standard encoder first (without the software back-off), More GPU later
+    free_mib[0], tasks[:] = 300, []
+    Session._recheck_gpu(fake, 100.0)
+    partial = fake.short == {"gpu"} and fake.x264_until == 0.0 and tasks == ["restart"] and not fake._cuda()
+    tasks[:] = []
+    Session._recheck_gpu(fake, 130.0)
+    still = fake.short == {"gpu"} and not tasks and fake.recheck_at == 160.0
+    free_mib[0] = 2000
+    Session._recheck_gpu(fake, 160.0)
+    ok("GPU memory back: the standard encoder at 300 MiB free, More GPU at 2000", partial and still and not fake.short
+       and tasks == ["restart"] and fake._cuda(), "%s %s" % (fake.short, tasks))
+
+    # near the line (training's memory moves): More GPU back, then out again: no second notice, and a look less often
+    free_mib[0], sent[:] = 100, []
+    now0 = time.monotonic()
+    Session._cap_exit(fake, "no-nvenc")
+    ok("flapping near the line: told once, then looked at less often", fake.short == {"gpu"} and not sent and
+       fake.recheck_s == 60.0 and fake.recheck_at >= now0 + 59, "%s %s %.0f" % (fake.short, sent, fake.recheck_s))
+
+    # a failure with memory to spare isn't a shortage: More GPU off for this connection, software with its back-off,
+    # no "comes back by itself", no re-checks
+    free_mib[0], sent[:], tasks[:] = 20000, [], []
+    fake.params, fake.short, fake.x264_until, fake.x264_backoff = {"gpu": True}, set(), 0.0, 60.0
+    Session._cap_exit(fake, "no-nvenc")
+    Session._cap_exit(fake, "no-nvenc")
+    ok("a GPU failure with memory to spare: no memory notice, no re-checks", not fake.params["gpu"] and not fake.short
+       and fake.x264_until > 0 and [m["text"] for m in sent] == ["Can't use more of the Linux computer's GPU on this connection"],
+       "%s %s" % (fake.short, sent))
+
+    # full colour asked for but the stream came up 4:2:0: with the GPU full, say so and look again later; with
+    # plenty free, this GPU just can't encode 4:4:4, so say nothing
+    def came_up_420(free):
+        free_mib[0] = free
+        f2 = types.SimpleNamespace(
+            sid=0, stream_id=1, short=set(), recheck_at=0.0, recheck_s=30.0, came_back=set(), told=set(),
+            params={"fps": 60, "gpu": False}, rc=types.SimpleNamespace(kbps=30000),
+            hub=types.SimpleNamespace(cfg={"gpu": 0}), _full_colour=lambda: True, sent=[],
+            cap=types.SimpleNamespace(encoder="nvenc", api="vulkan", chroma=420))
+        f2.ws = types.SimpleNamespace(send_json=f2.sent.append)
+        f2._short_of_memory = lambda what: Session._short_of_memory(f2, what)
+        f2._tell = lambda what, text: Session._tell(f2, what, text)
+        f2._stream_msg = lambda w, h: {"t": "stream"}
+        Session._cap_started(f2, 2560, 1440, "nvenc")
+        return f2.short, [m["t"] for m in f2.sent]
+    full, roomy = came_up_420(40), came_up_420(20000)
+    capture_mod.gpu_free_mib = real_free
+    ok("full colour off for lack of GPU memory: a notice, then a look again", full == ({"444"}, ["stream", "notice"]) and
+       roomy == (set(), ["stream"]), "%s; with room: %s" % (full, roomy))
 
     # changing the password ends existing sessions
     env = dict(os.environ, XDG_CONFIG_HOME=os.path.join(tmp, "config"), XDG_RUNTIME_DIR=os.path.join(tmp, "run"),

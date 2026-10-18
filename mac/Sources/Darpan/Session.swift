@@ -40,6 +40,13 @@ final class Session: NSObject {
     private var sized = false
     /// With several computers open, only the one in front plays its sound.
     var playsSound = true { didSet { if playsSound != oldValue { applySound(settings.sound) } } }
+    /// The window follows the picture's size (the host may switch to this Mac's last resolution just
+    /// after `ok`) until it's resized by hand or a resolution is chosen here; then it's yours.
+    private var followPicture = true
+    private var sizedFor: DisplayMode?
+    /// Full-screen transitions resize the window too; only a resize the user starts counts.
+    private var fullScreenMoving = false
+    private var resizingByHand = false
     private var uploadToasts: [String: ToastStack.Toast] = [:]
     private let proxy: SOCKSProxy?
     private var caps: [String] = []
@@ -135,6 +142,7 @@ final class Session: NSObject {
         model.setResolution = { [weak self] mode in
             guard let self else { return }
             self.client.send(mode.map { Msg.res(w: $0.w, h: $0.h) } ?? Msg.resNative)
+            self.followPicture = false                  // a resolution chosen here scales into this window
             self.content.toasts.show("Changing resolution…", ttl: 1.5)
         }
         model.sendCombo = { [weak self] codes in self?.keyboard.combo(codes) }
@@ -187,6 +195,28 @@ final class Session: NSObject {
             guard let self, self.isConnected else { return }
             self.clipboard.poll()                        // what was copied meanwhile (in another app, or from another computer)
         })
+        observers.append(nc.addObserver(forName: NSWindow.willStartLiveResizeNotification, object: window, queue: .main) {
+            [weak self] _ in
+            guard let self else { return }
+            self.resizingByHand = !self.fullScreenMoving && !self.window.styleMask.contains(.fullScreen)
+        })
+        observers.append(nc.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) {
+            [weak self] _ in
+            guard let self, self.resizingByHand else { return }
+            self.resizingByHand = false
+            self.followPicture = false                     // sized by hand: it stays that way
+        })
+        for name in [NSWindow.willEnterFullScreenNotification, NSWindow.willExitFullScreenNotification] {
+            observers.append(nc.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in self?.fullScreenMoving = true })
+        }
+        observers.append(nc.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main) {
+            [weak self] _ in self?.fullScreenMoving = false
+        })
+        observers.append(nc.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) {
+            [weak self] _ in
+            self?.fullScreenMoving = false
+            self?.followPictureNow()                       // the picture may have changed meanwhile
+        })
     }
 
     // MARK: - window
@@ -222,12 +252,31 @@ final class Session: NSObject {
         let k = min(1, (area.width * 0.94 - chrome.width) / w, (area.height * 0.94 - chrome.height) / h)
         w = (w * k).rounded()
         h = (h * k).rounded()
-        window.setContentSize(NSSize(width: max(window.minSize.width, w), height: max(window.minSize.height, h)))
-        window.center()
-        // Another computer's window right there: this one a step down and to the right.
-        while NSApp.windows.contains(where: { $0 !== window && $0.isVisible && $0.frame.origin == window.frame.origin }) {
-            window.setFrameOrigin(NSPoint(x: window.frame.minX + 28, y: window.frame.minY - 28))
+        let size = NSSize(width: max(window.minSize.width, w), height: max(window.minSize.height, h))
+        sizedFor = mode
+        guard window.isVisible else {
+            window.setContentSize(size)
+            window.center()
+            // Another computer's window right there: this one a step down and to the right.
+            while NSApp.windows.contains(where: { $0 !== window && $0.isVisible && $0.frame.origin == window.frame.origin }) {
+                window.setFrameOrigin(NSPoint(x: window.frame.minX + 28, y: window.frame.minY - 28))
+            }
+            return
         }
+        // Already on screen: the new size around the same centre, kept on the screen.
+        let old = window.frame
+        var f = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        f.origin.x = min(max(old.midX - f.width / 2, area.minX), area.maxX - f.width)
+        f.origin.y = min(max(old.midY - f.height / 2, area.minY), area.maxY - f.height)
+        window.setFrame(f, display: true, animate: true)
+    }
+
+    /// The window takes the picture's size, while it follows it (not in full screen: then on the way out).
+    private func followPictureNow() {
+        let s = video.streamSize
+        guard followPicture, s.width > 0, !window.styleMask.contains(.fullScreen) else { return }
+        let picture = DisplayMode(Int(s.width), Int(s.height))
+        if picture != sizedFor { sizeWindow(for: picture) }
     }
 
     /// Everything the host believes is pressed is released there too.
@@ -277,6 +326,8 @@ final class Session: NSObject {
     private func tick() {
         ticks += 1
         content.toolbar.quality = Quality(ms: client.quality)
+        let target = client.targetKbps.map { ($0 / 100).rounded() * 100 }
+        if model.targetKbps != target { model.targetKbps = target }
         if NSApp.isActive && window.isKeyWindow { clipboard.poll() }   // the Mac's clipboard goes to the computer in front
         guard settings.showStats || logStats else { return }
         let s = client.takeStats()
@@ -592,6 +643,8 @@ extension Session: ClientDelegate {
             if !wasConnected { sizeWindow(for: w.screen) }
         case .stream(let s):
             video.streamSize = CGSize(width: s.width, height: s.height)
+            model.stream = s
+            followPictureNow()
         case .screen:
             break                                         // a new stream follows
         case .cursor(let cur):
@@ -602,6 +655,8 @@ extension Session: ClientDelegate {
             model.modes = m
         case .notice(let text, let error):
             content.toasts.show(text, error: error, ttl: error ? 8 : 3.5)
+            // Why More GPU or full colour went (or came back): the display panel shows it next to what's in effect.
+            if text.localizedCaseInsensitiveContains("GPU") || text.localizedCaseInsensitiveContains("colour") { model.notice = text }
         case .upload(let u):
             uploadEvent(u)
         case .files(let access):

@@ -100,6 +100,10 @@ enum DebugHooks {
                 say("no menu item \"\(rest)\"")
             }
         case "scale": Settings.shared.scale = a.count > 1 && a[1] == "actual" ? .actual : .fit
+        case "sleep":                                     // as if the Mac were going to sleep, or waking
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: NSWorkspace.shared)
+        case "wake":
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: NSWorkspace.shared)
         case "stats": Settings.shared.showStats = a.count > 1 && a[1] == "on"
         case "fps": Settings.shared.fps = Int(num(1))
         case "quality": Settings.shared.quality = Int(num(1))
