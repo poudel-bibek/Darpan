@@ -2,6 +2,7 @@
 import AppKit
 import DarpanCore
 import ImageIO
+import SwiftUI
 import VideoToolbox
 
 /// Test hooks, debug builds only (release builds don't contain them). With
@@ -50,6 +51,8 @@ enum DebugHooks {
             say(geometry(s))
         case "snap":
             snapshot(s, to: a.count > 1 ? a[1] : "/tmp/darpan-snap.png")
+        case "panel":                                     // panel [path]: the display panel, drawn off screen
+            MainActor.assumeIsolated { panel(s, to: a.count > 1 ? a[1] : "/tmp/darpan-panel.png") }
         case "connect":                                   // connect <address> <password|->
             guard let m = app?.debugConnectModel, a.count > 2 else { return }
             m.address = a[1]
@@ -200,6 +203,22 @@ enum DebugHooks {
             + "video \(v.videoRect) toolbar \(c.toolbar.frame) expanded=\(c.toolbar.expanded) key=\(w.isKeyWindow) "
             + "visible=\(w.occlusionState.contains(.visible)) fullscreen=\(w.styleMask.contains(.fullScreen)) "
             + "responder=\(w.firstResponder.map { "\(type(of: $0))" } ?? "nil") state=\(s.client.state)"
+    }
+
+    /// The display panel as the session would show it, drawn off screen (nothing appears on the screen).
+    @MainActor private static func panel(_ s: Session?, to path: String) {
+        guard let s else { return say("no session") }
+        let host = NSHostingView(rootView: DisplayPanel(model: s.debugModel, settings: Settings.shared))
+        host.appearance = NSAppearance(named: .darkAqua)
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        host.wantsLayer = true
+        host.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        host.layoutSubtreeIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return say("panel: nothing drawn") }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        guard let png = rep.representation(using: .png, properties: [:]) else { return say("panel: nothing drawn") }
+        try? png.write(to: URL(fileURLWithPath: path))
+        say("panel \(path) \(Int(host.bounds.width))×\(Int(host.bounds.height))")
     }
 
     /// The last decoded frame drawn into the video rectangle, with the overlays rendered on top.

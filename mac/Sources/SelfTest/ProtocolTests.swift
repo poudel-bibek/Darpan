@@ -60,6 +60,26 @@ func protocolTests() {
         eq(hex(FileChunk.message(id: 0x0A0B_0C0D, data: Data([0xFF]))), "020a0b0c0dff", "FILE_CHUNK framing")
     }
 
+    section("fitting the desktop to the window") {
+        eq(Fit.request(pixels: CGSize(width: 3360, height: 2100), scale: 200), Fit(3360, 2100, scale: 200), "full screen, Retina")
+        eq(Fit.request(pixels: CGSize(width: 2559, height: 1441), scale: 200), Fit(2558, 1440, scale: 200), "even sizes")
+        eq(Fit.request(pixels: CGSize(width: 600, height: 400), scale: 100), nil, "under 640×480: not asked")
+        check(Fit(3360, 2100, scale: 200).isAnswered(by: Fit(3360, 2100, scale: 200)), "made as asked")
+        check(!Fit(3360, 2100, scale: 200).isAnswered(by: Fit(3360, 2100, scale: 100)), "another scale isn't it")
+        check(!Fit(3360, 2100, scale: 200).isAnswered(by: nil), "nothing made")
+        check(Fit(6016, 3384, scale: 200).isAnswered(by: Fit(4096, 2304, scale: 200)), "over 4096: both sides down, as the host does")
+        check(!Fit(3024, 1890, scale: 200).isAnswered(by: Fit(3024, 1964, scale: 200)), "another size isn't it")
+        eq(Fit.scale(chosen: 0, backingScale: 2, offered: [100, 200]), 200, "Retina: 200 %")
+        eq(Fit.scale(chosen: 0, backingScale: 1, offered: [100, 200]), 100, "a 1× screen: 100 %")
+        eq(Fit.scale(chosen: 100, backingScale: 2, offered: [100, 200]), 100, "the viewer's choice")
+        eq(Fit.scale(chosen: 150, backingScale: 2, offered: [100, 200]), 200, "a choice the host doesn't offer")
+        eq(Fit.scale(chosen: 0, backingScale: 2, offered: []), nil, "a host that can't fit")
+        eq(Msg.resFit(Fit(3360, 2100, scale: 200)), #"{"t":"res","fit":[3360,2100],"scale":200}"#, "res.fit")
+        let fitted = Incoming(Data(Msg.resFit(Fit(3360, 2100, scale: 200)).utf8))!
+        eq(fitted.mode("fit"), DisplayMode(3360, 2100), "res.fit is [w, h]")
+        eq(fitted.int("scale"), 200, "res.fit scale")
+    }
+
     section("host addresses") {
         func parse(_ s: String) -> HostAddress? { try? HostAddress(parsing: s) }
         let a = parse("  workstation.example.ts.net  ")

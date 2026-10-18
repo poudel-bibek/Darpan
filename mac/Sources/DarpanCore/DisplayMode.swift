@@ -22,3 +22,39 @@ public struct DisplayMode: Hashable, CustomStringConvertible {
         return best
     }
 }
+
+/// The host's desktop made exactly the viewer's size, drawn at a GNOME scale (PROTOCOL.md §8, `res.fit`):
+/// one remote pixel per device pixel, so nothing is scaled on the way.
+public struct Fit: Equatable, CustomStringConvertible {
+    public let w: Int
+    public let h: Int
+    /// GNOME's scale, in %: 200 draws everything twice as large, like a Retina screen.
+    public let scale: Int
+    public init(_ w: Int, _ h: Int, scale: Int) { self.w = w; self.h = h; self.scale = scale }
+    public var description: String { "\(w)×\(h)" }
+
+    /// The host's limits: sizes from 640×480, and at most 4096 a side (H.264), both sides scaled down together.
+    public static let maxSide = 4096
+
+    /// What to ask for a view of `pixels` (device pixels): its size rounded down to even numbers (4:2:0);
+    /// nil when it's smaller than the host takes.
+    public static func request(pixels: CGSize, scale: Int) -> Fit? {
+        let w = Int(pixels.width) / 2 * 2, h = Int(pixels.height) / 2 * 2
+        return w >= 640 && h >= 480 ? Fit(w, h, scale: scale) : nil
+    }
+
+    /// Whether `fitted` (what the host made) answers this request, as the host shrinks a side over `maxSide`.
+    public func isAnswered(by fitted: Fit?) -> Bool {
+        guard let f = fitted, f.scale == scale else { return false }
+        let k = min(1, Double(Self.maxSide) / Double(max(w, h)))
+        return f.w == Int(Double(w) * k) / 2 * 2 && f.h == Int(Double(h) * k) / 2 * 2
+    }
+
+    /// The scale to draw at: the viewer's choice if the host offers it, else 200 % on a Retina screen and
+    /// 100 % on a 1× one, else whatever the host offers; nil if it offers none.
+    public static func scale(chosen: Int, backingScale: CGFloat, offered: [Int]) -> Int? {
+        if offered.contains(chosen) { return chosen }
+        let natural = backingScale >= 2 ? 200 : 100
+        return offered.contains(natural) ? natural : offered.first
+    }
+}
