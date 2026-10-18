@@ -1388,8 +1388,10 @@ class Hub:
     def status(self):
         return {"sessions": [{"sid": s.sid, "client": s.client, "source": s.source, "user": s.ts_user,
                               "since": int(s.since), "streaming": bool(s.cap and s.paused_at is None),
+                              "paused": s.paused_at is not None,
                               "w": s.w, "h": s.h, "kbps": s.rc.kbps if s.rc else None,
-                              "enc": s.cap.encoder if s.cap else None, "api": s.cap.api if s.cap else None}
+                              "enc": s.cap.encoder if s.cap else None, "api": s.cap.api if s.cap else None,
+                              "chroma": s.cap.chroma if s.cap else None}
                              for s in self.sessions],
                 "encoder": self.encoder, "restart_for_gpu": self.cfg["encoder"] != "x264" and capture.driver_restart_needed(),
                 "url": self.url, "port": self.cfg["port"],
