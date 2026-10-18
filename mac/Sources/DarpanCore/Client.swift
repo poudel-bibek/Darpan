@@ -341,6 +341,12 @@ public final class Client {
             self.fps = f
             self.bitrate = b
             self.fullGPU = fullGPU
+            if changedBitrate {
+                // The host's last target is for the old choice, and a still screen sends no new stats.
+                self.lock.lock()
+                self.counters.host = nil
+                self.lock.unlock()
+            }
             if self.streaming && (changedFps || changedBitrate || changedGPU) {
                 self.socket?.send(text: Msg.cfg(fps: changedFps ? f : nil, bitrate: changedBitrate ? b : nil,
                                                 fullGPU: changedGPU ? fullGPU : nil))
