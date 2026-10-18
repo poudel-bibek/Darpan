@@ -22,8 +22,12 @@ class _Conn(http.client.HTTPConnection):
 
     def connect(self):
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(self.timeout)
-        s.connect(SOCKET)
+        try:
+            s.settimeout(self.timeout)
+            s.connect(SOCKET)
+        except OSError:                  # tailscaled down: not a socket left for the collector
+            s.close()
+            raise
         self.sock = s
 
 
