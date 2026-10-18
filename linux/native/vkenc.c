@@ -80,6 +80,7 @@ struct VkEnc {
     uint32_t cfam, efam;                 // compute (conversion) and encode queue families
     VkQueue cq, eq;
     uint32_t w, h, cw, ch;               // visible and coded (16-aligned) size
+    uint32_t iw;                         // the pictures' width (see vkenc_open)
     uint32_t src_pitch_px, matrix601, c444;
     VkFormat fmt;                        // the pictures: NV12, or NV24 for 4:4:4
 
@@ -226,7 +227,7 @@ static int make_image(VkEnc *e, uint32_t layers, VkImageUsageFlags usage, int sh
     uint32_t fams[2] = {e->cfam, e->efam};
     int concurrent = shared && e->cfam != e->efam;
     VkImageCreateInfo ii = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, &e->profiles, 0, VK_IMAGE_TYPE_2D,
-                            e->fmt, {e->cw, e->ch, 1}, 1, layers, VK_SAMPLE_COUNT_1_BIT,
+                            e->fmt, {e->iw, e->ch, 1}, 1, layers, VK_SAMPLE_COUNT_1_BIT,
                             VK_IMAGE_TILING_OPTIMAL, usage,
                             concurrent ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
                             concurrent ? 2 : 1, concurrent ? fams : &e->efam, VK_IMAGE_LAYOUT_UNDEFINED};
@@ -260,6 +261,9 @@ VkEnc *vkenc_open(const VkEncParams *p, char gpu_name[128], const uint8_t **ps_o
     e->h = p->h;
     e->cw = (p->w + 15) & ~15u;
     e->ch = (p->h + 15) & ~15u;
+    // 4:4:4 pictures are made a multiple of 64 wide (the coded size stays): at a width of 16 or 32 past
+    // one, the copy and NVIDIA's encoder lay out the chroma rows differently and the colours shear.
+    e->iw = p->chroma444 ? (e->cw + 63) & ~63u : e->cw;
     e->src_pitch_px = p->src_pitch / 4;
     e->matrix601 = p->matrix601 ? 1 : 0;
     e->c444 = p->chroma444 ? 1 : 0;

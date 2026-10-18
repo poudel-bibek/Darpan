@@ -6,8 +6,9 @@ per frame, then the six refreshes after the screen settles), decodes the stream 
 (GStreamer avdec_h264) and compares every picture with its source (PSNR). Both encoder routes run:
 Vulkan Video (the default) and CUDA ("Use more of the Linux computer's GPU"). Vulkan's encoder searches a
 smaller range for motion, so fast scrolling is where CUDA is better. Full colour (4:4:4) runs at
-Higher Quality's 30 Mbit/s: 4:2:0 stops near 34.7 dB on this screen at any bitrate. The floors sit a
-little under what an RTX 4090 measures.
+Higher Quality's 30 Mbit/s: 4:2:0 stops near 34.7 dB on this screen at any bitrate. It runs at
+3360×2100 too, a Mac's full screen with the desktop fitted to it: a width 32 past a multiple of 64,
+where Vulkan's colours once sheared. The floors sit a little under what an RTX 4090 measures.
 Usage: python3 linux/tools/quality_test.py [helper]      Needs Xvfb, PIL, GStreamer's avdec_h264, NVENC."""
 import ctypes, math, os, random, struct, subprocess, sys, threading, time
 from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageStat
@@ -17,7 +18,8 @@ HELPER = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "native", "dar
 W, H, KBPS = 2560, 1440, 12000
 FLOORS = {("vulkan", 20): (31.5, 33.3), ("cuda", 20): (31.5, 33.0),           # dB: scrolling, settled
           ("vulkan", 60): (28.0, 32.0), ("cuda", 60): (30.5, 32.8),
-          ("vulkan 4:4:4", 20): (36.8, 38.6), ("cuda 4:4:4", 20): (36.3, 38.3)}
+          ("vulkan 4:4:4", 20): (36.8, 38.6), ("cuda 4:4:4", 20): (36.3, 38.3),
+          ("vulkan 4:4:4 3360×2100", 20): (36.2, 37.6)}
 MONO = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 15)
 SANS = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
 COLS = [(0xE0, 0x6C, 0x75), (0x98, 0xC3, 0x79), (0x61, 0xAF, 0xEF), (0xE5, 0xC0, 0x7B), (0xC6, 0x78, 0xDD),
@@ -173,9 +175,11 @@ def measure(env, step, kbps=KBPS, extra=()):
 
 
 results = []
-cases = [(api, env, step, KBPS, ()) for step in (20, 60) for api, env in (("vulkan", {}), ("cuda", {"DARPAN_NVENC_CUDA": "1"}))]
-cases += [("vulkan 4:4:4", {}, 20, 30000, ("--chroma", "444")), ("cuda 4:4:4", {"DARPAN_NVENC_CUDA": "1"}, 20, 30000, ("--chroma", "444"))]
-for api, env, step, kbps, extra in cases:
+cases = [(api, env, step, KBPS, (), (W, H)) for step in (20, 60) for api, env in (("vulkan", {}), ("cuda", {"DARPAN_NVENC_CUDA": "1"}))]
+cases += [("vulkan 4:4:4", {}, 20, 30000, ("--chroma", "444"), (W, H)),
+          ("cuda 4:4:4", {"DARPAN_NVENC_CUDA": "1"}, 20, 30000, ("--chroma", "444"), (W, H)),
+          ("vulkan 4:4:4 3360×2100", {}, 20, 30000, ("--chroma", "444"), (3360, 2100))]
+for api, env, step, kbps, extra, (W, H) in cases:          # (the screens are painted at W×H)
     ps = measure(env, step, kbps, extra)
     scroll, settled = (sum(ps[1:13]) / 12, ps[-1]) if ps else (0, 0)
     floor_scroll, floor_settled = FLOORS[(api, step)]
