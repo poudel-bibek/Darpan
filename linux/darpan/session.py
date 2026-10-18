@@ -748,8 +748,9 @@ class Session:
     def _xy(self, m):
         sw, sh = self.hub.x.size
         x, y = int(m["x"]), int(m["y"])
-        if self.w and (self.w, self.h) != (sw, sh):
-            x, y = x * sw // self.w, y * sh // self.h
+        bw, bh = (self.w, self.h) if self.w else self.hub.screen.scaled or (sw, sh)   # (before the first stream:
+        if (bw, bh) != (sw, sh):                                                       # the size it was told)
+            x, y = x * sw // bw, y * sh // bh
         return max(0, min(sw - 1, x)), max(0, min(sh - 1, y))
 
     def on_mm(self, m):
@@ -995,6 +996,7 @@ class Hub:
         self._repeat_off = False
         self._cursor_pending = False
         self.cursor_dirty = True       # shapes/clipboard are only read while someone is connected
+        self._scaled_was = None        # the scaled size viewers were last told of (125-175 %), see _rescale
         self.clip_dirty = True
         self._clip_task = None
         self._active = asyncio.Event()
@@ -1233,6 +1235,7 @@ class Hub:
                     await self.screen.restore()
                 except Exception:
                     log.exception("resolution restore failed")
+                self._rescale()                   # (the pointer image, scaled no more)
 
     # ---------------------------------------------------------------- keyboard
     def begin_control(self):
@@ -1355,7 +1358,13 @@ class Hub:
 
     def _rescale(self):
         """After a resolution change: streams scaled to another size than the screen is now scaled to start
-        again (a desktop that kept its size sends no resize), and the pointer image follows."""
+        again, and the size viewers see is announced (a desktop that kept its size sends no resize); the
+        pointer image follows."""
+        if self.screen.scaled != self._scaled_was:
+            self._scaled_was = self.screen.scaled
+            w, h = self.screen.scaled or self.x.size
+            for s in self.sessions:
+                s.ws.send_json({"t": "screen", "w": w, "h": h})
         for s in self.sessions:
             if s.cap and s.cap.size != self.screen.scaled:
                 s._task(s._stop_capture() if s.paused_at is not None else s._start_capture(restart=True))
@@ -1415,6 +1424,7 @@ class Hub:
                 async with self._screen:
                     if self.sessions == {session} and os.path.exists(self.screen.state_file):
                         await self.screen.restore()
+                self._rescale()
                 await self.refresh_modes(broadcast=True)
             return
         try:

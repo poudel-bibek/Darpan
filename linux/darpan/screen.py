@@ -247,20 +247,20 @@ class Screen:
         log.info("fitting %s to %dx%d at %d %% (a %dx%d desktop; its own %dx%d shows it %dx%d)",
                  name, w, h, scale, dw, dh, *native, ow, oh)
         await _run(None, "gsettings", "set", *SCALE_KEY, str(want))
-        was, self.scaled = self.scaled, (w, h) if (dw, dh) != (w, h) else None   # before the desktop changes
+        was = self.scaled, self.fitted           # both before the desktop changes (the pointer reads them meanwhile)
+        self.scaled, self.fitted = (w, h) if (dw, dh) != (w, h) else None, [w, h, scale]
         try:
             if want != scaling and _screen_size(text) == (dw, dh):  # (else the shell keeps its scale, apps don't:
                 await self._assign(meta, native, dw, dh - 2)       # menus come out cut off)
             await self._assign(meta, native, dw, dh)
         except RuntimeError:
-            self.scaled = was
+            self.scaled, self.fitted = was
             await self._unscale(orig)            # not 200 % on the old desktop
             try:                                 # and the desktop as it was (a step may have changed it)
                 await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=" + meta)
             except RuntimeError as e:
                 log.warning("desktop not put back: %s", e)
             raise
-        self.fitted = [w, h, scale]
 
     async def _unscale(self, orig):
         """GNOME's own scale again, before a mode change makes it read it."""

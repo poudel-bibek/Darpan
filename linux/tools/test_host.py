@@ -1472,7 +1472,7 @@ async def run(args, tmp, probe_log):
     # the resolution goes back a while after the last viewer leaves, so a quick reconnect finds it as it was
     import darpan.session as session_mod
     restored, hub = [], types.SimpleNamespace(sessions=set(), x=object(), _repeat_off=False, _screen=asyncio.Lock(),
-                                              login_screen=False, _restoring=None, _restore_at=0.0)
+                                              login_screen=False, _restoring=None, _restore_at=0.0, _rescale=lambda: None)
     marker = os.path.join(tmp, "screen-state.json")
     open(marker, "w").write("{}")
 
@@ -1538,8 +1538,8 @@ async def run(args, tmp, probe_log):
     c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 4000})
     await pump(c, 2.0, "stream")
     c.send({"t": "res", "fit": [1600, 1000], "scale": 150})
-    got, end = {}, time.monotonic() + 6                         # (either may come first)
-    while time.monotonic() < end and len(got) < 2:
+    got, end = {}, time.monotonic() + 6                         # (in any order)
+    while time.monotonic() < end and len(got) < 3:
         try:
             kind, m = await asyncio.wait_for(c.recv(), max(0.01, end - time.monotonic()))
         except asyncio.TimeoutError:
@@ -1547,9 +1547,9 @@ async def run(args, tmp, probe_log):
         if kind == "binary":
             _, _, sid, seq, _ = struct.unpack(">BBHIQ", m[:16])
             c.send({"t": "ack", "id": sid, "n": seq})
-        elif m.get("t") in ("modes", "stream"):
+        elif m.get("t") in ("modes", "stream", "screen"):
             got.setdefault(m["t"], m)
-    frac, frac_stream = got.get("modes"), got.get("stream")
+    frac, frac_stream, frac_screen = got.get("modes"), got.get("stream"), got.get("screen")
     v = await WS.connect("127.0.0.1", args.port)
     _, vh = await v.recv()
     v.send({"t": "auth", "proof": proof_for(pw, vh), "client": "test_host.py fit viewer"})
@@ -1632,9 +1632,14 @@ HDMI-1 disconnected (normal left inverted right x axis y axis)
        "%s | %s | %s" % (steps, same and same.get("fitted"), rescaled and rescaled.get("fitted")))
     ok("fit at 150 %: a desktop 4/3 as big at 200 %, streamed scaled to the size asked for",
        frac and frac.get("fitted") == [1600, 1000, 150] and any("@2132x1332" in l for l in tools) and frac_stream
-       and (frac_stream.get("w"), frac_stream.get("h")) == (1600, 1000) and seen and seen.get("screen") == {"w": 1600, "h": 1000},
-       "%s | %s | %s" % (frac and frac.get("fitted"), frac_stream and (frac_stream.get("w"), frac_stream.get("h")),
-                         seen and seen.get("screen")))
+       and (frac_stream.get("w"), frac_stream.get("h")) == (1600, 1000) and seen and seen.get("screen") == {"w": 1600, "h": 1000}
+       and frac_screen and (frac_screen.get("w"), frac_screen.get("h")) == (1600, 1000),
+       "%s | %s | %s | %s" % (frac and frac.get("fitted"), frac_stream and (frac_stream.get("w"), frac_stream.get("h")),
+                              seen and seen.get("screen"), frac_screen))
+    import darpan.session as session_mod
+    early = session_mod.Session._xy(types.SimpleNamespace(w=0, h=0, hub=types.SimpleNamespace(
+        x=types.SimpleNamespace(size=(2132, 1332)), screen=types.SimpleNamespace(scaled=(1600, 1000)))), {"x": 1599, "y": 999})
+    ok("input before the first stream maps from the size the viewer was told", early == (2130, 1330), early)
     from darpan.x11 import scale_rgba
     half = scale_rgba(4, 4, bytes([255, 0, 0, 255] * 2 + [0, 0, 0, 0] * 2) * 4, 0.5)
     edge = scale_rgba(2, 1, bytes([255, 255, 255, 255, 0, 0, 0, 0]), 0.5)
