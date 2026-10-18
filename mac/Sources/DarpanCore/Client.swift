@@ -224,6 +224,8 @@ public final class Client {
     private var hostRestarting = false
     private var retry = 0
     private var lastInbound = 0.0
+    /// Closed for the Mac's sleep (`sleep()`); `wake()` reconnects.
+    private var asleep = false
     private var pingTimer: DispatchSourceTimer?
     private var activity: NSObjectProtocol?
 
@@ -354,9 +356,31 @@ public final class Client {
         }
     }
 
-    /// After the Mac wakes: probe at once instead of waiting for the next ping.
+    /// The Mac is going to sleep: end the connection cleanly, so the host gets its desktop back at once
+    /// instead of after 30 s without a reply, and don't reconnect until `wake()`. While asleep the Mac
+    /// wakes for a moment about every 15 min, with the network up (a dark wake); those connect nothing.
+    /// Also a first connection still signing in: it goes on after the wake. `sent` runs (on the client's
+    /// queue) once the goodbye is out, or at once when there was nothing to close.
+    public func sleep(sent: @escaping () -> Void = {}) {
+        queue.async {
+            guard !self.asleep, self.everConnected || self.socket != nil else { return sent() }
+            self.asleep = true
+            self.generation += 1                    // the closing socket and any scheduled reconnect are stale
+            self.teardown(sent: sent)
+            if self.everConnected { self.publish(.reconnecting(restarting: false)) }
+        }
+    }
+
+    /// The Mac is awake again (its screens are on): reconnect after a `sleep()`, or else probe at once
+    /// instead of waiting for the next ping.
     public func wake() {
         queue.async {
+            if self.asleep {
+                self.asleep = false
+                self.retry = 0
+                self.open(initial: !self.everConnected)
+                return
+            }
             guard self.authed else { return }
             self.lastInbound = Clock.nowMs()
             self.ping()
@@ -515,9 +539,9 @@ public final class Client {
         }
     }
 
-    /// Drops the socket and everything that belongs to a session.
-    private func teardown() {
-        socket?.close()
+    /// Drops the socket and everything that belongs to a session; `sent` once its close frame is out.
+    private func teardown(sent: (() -> Void)? = nil) {
+        if let s = socket { s.close(sent: sent) } else { sent?() }
         socket = nil
         lock.lock()
         live = nil
