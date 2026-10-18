@@ -1533,6 +1533,31 @@ async def run(args, tmp, probe_log):
     _, rescaled = await pump(c, 2.0, "modes")
     c.send({"t": "res", "native": True})                        # back to a mode of the same size
     await pump(c, 2.0, "modes")
+    # 150 %: a desktop 4/3 as big drawn at 200 %, which the stream shows scaled down to the size asked for (the
+    # capture starts again with --size though the test screen keeps its size), and what a viewer is told it sees
+    c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 4000})
+    await pump(c, 2.0, "stream")
+    c.send({"t": "res", "fit": [1600, 1000], "scale": 150})
+    got, end = {}, time.monotonic() + 6                         # (either may come first)
+    while time.monotonic() < end and len(got) < 2:
+        try:
+            kind, m = await asyncio.wait_for(c.recv(), max(0.01, end - time.monotonic()))
+        except asyncio.TimeoutError:
+            break
+        if kind == "binary":
+            _, _, sid, seq, _ = struct.unpack(">BBHIQ", m[:16])
+            c.send({"t": "ack", "id": sid, "n": seq})
+        elif m.get("t") in ("modes", "stream"):
+            got.setdefault(m["t"], m)
+    frac, frac_stream = got.get("modes"), got.get("stream")
+    v = await WS.connect("127.0.0.1", args.port)
+    _, vh = await v.recv()
+    v.send({"t": "auth", "proof": proof_for(pw, vh), "client": "test_host.py fit viewer"})
+    _, seen = await pump(v, 2.0, "ok")
+    v.w.close()
+    c.send({"t": "stop"})
+    c.send({"t": "res", "native": True})
+    await pump(c, 2.0, "modes")
     c.send({"t": "res", "fit": [1234, 800], "scale": 200})      # refused by the driver: not 200 % on the old desktop
     _, refused = await pump(c, 2.0, "notice")
     c.w.close()
@@ -1605,7 +1630,18 @@ HDMI-1 disconnected (normal left inverted right x axis y axis)
     ok("fit at the size the desktop already is: a step to another size, so GNOME reads the scale",
        stepped and same and same.get("fitted") == [1920, 1080, 200] and rescaled and rescaled.get("fitted") == [1920, 1080, 100],
        "%s | %s | %s" % (steps, same and same.get("fitted"), rescaled and rescaled.get("fitted")))
-    ok("fit: GNOME's scale, then the desktop size; native or a mode undoes both", before and before.get("fit_scales") == [100, 200]
+    ok("fit at 150 %: a desktop 4/3 as big at 200 %, streamed scaled to the size asked for",
+       frac and frac.get("fitted") == [1600, 1000, 150] and any("@2132x1332" in l for l in tools) and frac_stream
+       and (frac_stream.get("w"), frac_stream.get("h")) == (1600, 1000) and seen and seen.get("screen") == {"w": 1600, "h": 1000},
+       "%s | %s | %s" % (frac and frac.get("fitted"), frac_stream and (frac_stream.get("w"), frac_stream.get("h")),
+                         seen and seen.get("screen")))
+    from darpan.x11 import scale_rgba
+    half = scale_rgba(4, 4, bytes([255, 0, 0, 255] * 2 + [0, 0, 0, 0] * 2) * 4, 0.5)
+    edge = scale_rgba(2, 1, bytes([255, 255, 255, 255, 0, 0, 0, 0]), 0.5)
+    ok("pointer images scale with the picture, weighted by alpha (no dark edges)",
+       half == (2, 2, bytes([255, 0, 0, 255, 0, 0, 0, 0]) * 2) and edge == (1, 1, bytes([255, 255, 255, 128])),
+       "%s | %s" % (half, edge))
+    ok("fit: GNOME's scale, then the desktop size; native or a mode undoes both", before and before.get("fit_scales") == [100, 125, 150, 175, 200]
        and fitted and fitted.get("fitted") == [1600, 1000, 200] and after and "fitted" not in after and got and cleared
        and big and big.get("fitted") == [4096, 2458, 200] and once and undone and refused is not None
        and moded and "fitted" not in moded and unfit,

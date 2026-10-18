@@ -158,6 +158,29 @@ def png_rgba(w, h, rgba):
             chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
 
 
+def scale_rgba(w, h, rgba, k):
+    """A pointer image k times as big (0 < k < 1): each pixel averages what it covers, weighted by alpha
+    (so edges don't darken). For a picture the host scales down (a fit at 125-175 %)."""
+    nw, nh = max(1, round(w * k)), max(1, round(h * k))
+    out = bytearray(nw * nh * 4)
+    for oy in range(nh):
+        y0, y1 = oy / k, min(h, (oy + 1) / k)
+        for ox in range(nw):
+            x0, x1 = ox / k, min(w, (ox + 1) / k)
+            r = g = b = a = area = 0.0
+            for sy in range(int(y0), min(h, int(y1 + 0.999))):
+                wy = min(y1, sy + 1) - max(y0, sy)
+                for sx in range(int(x0), min(w, int(x1 + 0.999))):
+                    wt = wy * (min(x1, sx + 1) - max(x0, sx))
+                    i = (sy * w + sx) * 4
+                    pa = rgba[i + 3] * wt
+                    r, g, b, a, area = r + rgba[i] * pa, g + rgba[i + 1] * pa, b + rgba[i + 2] * pa, a + pa, area + wt
+            j = (oy * nw + ox) * 4
+            if a:
+                out[j], out[j + 1], out[j + 2], out[j + 3] = round(r / a), round(g / a), round(b / a), round(a / area)
+    return nw, nh, bytes(out)
+
+
 LOGIN_USER = "gdm"                             # GDM runs the login screen's X server as this user
 X11_SOCKETS = "/tmp/.X11-unix"
 

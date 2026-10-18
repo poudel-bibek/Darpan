@@ -17,7 +17,7 @@ from . import audio
 from . import auth, capture, config, files, keymap, tailscale
 from .clipboard import Clipboard
 from .screen import Screen
-from .x11 import BUTTONS, X11, find_display, png_rgba
+from .x11 import BUTTONS, X11, find_display, png_rgba, scale_rgba
 
 log = logging.getLogger("darpan.session")
 
@@ -321,7 +321,7 @@ class Session:
     def _welcome(self):
         hub = self.hub
         hub._refresh_url()
-        w, h = hub.x.size
+        w, h = hub.screen.scaled or hub.x.size        # what the viewer sees: scaled, at 125-175 %
         self.ws.send_json({"t": "ok", "sid": self.sid, "screen": {"w": w, "h": h}, "codecs": ["h264"],
                            "caps": ["clip", "files", "text", "cursor", "res", "fs"] + (["audio"] if hub.audio_ok else []),
                            "url": hub.url,
@@ -540,7 +540,7 @@ class Session:
             return lambda *a: fn(*a) if mine and mine[0] is self.cap else None
 
         self.cap = cls(hub.display, fps, self.rc.kbps, self.window, on_start=current(self._cap_started),
-                       on_frame=current(self._cap_frame), on_exit=current(self._cap_exit), **kw)
+                       on_frame=current(self._cap_frame), on_exit=current(self._cap_exit), size=hub.screen.scaled, **kw)
         mine.append(self.cap)
         try:
             await self.cap.start()
@@ -1294,6 +1294,10 @@ class Hub:
             cid = 0
         else:
             serial, w, h, hx, hy, rgba = img
+            if self.screen.scaled:                  # the picture is scaled down (125-175 %): the pointer with it
+                k = self.screen.fitted[2] / 200
+                w, h, rgba = scale_rgba(w, h, rgba, k)
+                hx, hy = min(w - 1, round(hx * k)), min(h - 1, round(hy * k))
             cid = (zlib.crc32(rgba, zlib.crc32(struct.pack("<HHHH", w, h, hx, hy))) & 0x7FFFFFFF) or 1
             if cid not in self.cursor_cache:
                 self.cursor_cache[cid] = {"t": "cur", "id": cid, "w": w, "h": h, "hx": hx, "hy": hy,
@@ -1342,11 +1346,20 @@ class Hub:
 
     # ---------------------------------------------------------------- screen
     def _on_resize(self, w, h):
+        w, h = self.screen.scaled or (w, h)
         for s in self.sessions:
             s.ws.send_json({"t": "screen", "w": w, "h": h})
             if s.cap and s.cap.encoder == "x264":      # ximagesrc keeps its old size: restart it
                 s._task(s._stop_capture() if s.paused_at is not None else s._start_capture(restart=True))
         self.loop.create_task(self.refresh_modes(broadcast=True))
+
+    def _rescale(self):
+        """After a resolution change: streams scaled to another size than the screen is now scaled to start
+        again (a desktop that kept its size sends no resize), and the pointer image follows."""
+        for s in self.sessions:
+            if s.cap and s.cap.size != self.screen.scaled:
+                s._task(s._stop_capture() if s.paused_at is not None else s._start_capture(restart=True))
+        self._on_cursor()
 
     async def refresh_modes(self, send_to=None, broadcast=False):
         if self.login_screen:
@@ -1381,6 +1394,7 @@ class Hub:
             config.write_private(self.res_file, json.dumps(saved))
         except (ValueError, KeyError, TypeError, IndexError, RuntimeError) as e:
             session.ws.send_json({"t": "notice", "level": "error", "text": "resolution change failed: %s" % e})
+        self._rescale()
         await self.refresh_modes(broadcast=True)
 
     def _saved_resolutions(self):
@@ -1414,6 +1428,7 @@ class Hub:
         except (ValueError, TypeError, IndexError, KeyError, RuntimeError) as e:   # e.g. another monitor now
             log.info("last resolution of %s not restored: %s", _kind(session), e)
             return
+        self._rescale()
         await self.refresh_modes(broadcast=True)
 
     # ---------------------------------------------------------------- control API
