@@ -1546,6 +1546,8 @@ async def run(args, tmp, probe_log):
     once = sum("@1600x1000" in l for l in tools) == 1
     undone = [l for l in tools if l.startswith("gsettings")][-2:] == [
         "gsettings set org.gnome.desktop.interface scaling-factor 2", "gsettings set org.gnome.desktop.interface scaling-factor 0"]
+    undone = undone and [l for l in tools if l.startswith("nvidia-settings")][-1] == (   # the MetaMode as it was, too
+        "nvidia-settings --assign CurrentMetaMode=DPY-1: 1920x1080_60 @1920x1080 +0+0 {ViewPortIn=1920x1080, ViewPortOut=1920x1080+0+0}")
     got = len(seq) == 5 and [seq[0], seq[1], seq[4]] == want and seq[2] == want[0] and seq[3].startswith(
         "nvidia-settings --assign CurrentMetaMode=DPY-1: nvidia-auto-select @4096x2458 +0+0 {ViewPortIn=4096x2458,")
     cleared = any(l.startswith("xrandr --output screen --mode 1920x1080") and l.endswith("--transform none") for l in tools)

@@ -195,6 +195,10 @@ class Screen:
             await self._assign(meta, native, w, h)
         except RuntimeError:
             await self._unscale(orig)            # not 200 % on the old desktop
+            try:                                 # and the desktop as it was (a step may have changed it)
+                await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=" + meta)
+            except RuntimeError as e:
+                log.warning("desktop not put back: %s", e)
             raise
         self.fitted = [w, h, scale]
 
