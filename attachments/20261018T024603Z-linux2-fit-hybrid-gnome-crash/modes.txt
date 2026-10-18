@@ -1,0 +1,30 @@
+# eDP-2's modes (xrandr --verbose --current): three are 2560x1600
+  2560x1600 (0x46) 777.322MHz -HSync -VSync +preferred
+        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock 285.78KHz
+        v: height 1600 start 1603 end 1609 total 1732           clock 165.00Hz
+  2560x1600 (0x47) 282.670MHz +HSync -VSync *current +preferred
+        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock 103.92KHz
+        v: height 1600 start 1603 end 1609 total 1732           clock  60.00Hz
+  2560x1600 (0x48) 268.634MHz +HSync -VSync
+        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock  98.76KHz
+        v: height 1600 start 1603 end 1609 total 1646           clock  60.00Hz
+  2560x1440 (0x49) 241.705MHz +HSync -VSync
+        h: width  2560 start 2608 end 2640 total 2720 skew    0 clock  88.86KHz
+        v: height 1440 start 1443 end 1448 total 1481           clock  60.00Hz
+  1920x1440 (0x4b) 234.006MHz -HSync +VSync
+        h: width  1920 start 2048 end 2256 total 2600 skew    0 clock  90.00KHz
+        v: height 1440 start 1441 end 1444 total 1500           clock  60.00Hz
+
+# refresh = clock / (htotal * vtotal), and mutter's mode id (WxH@%.3f); same id = mutter keeps only one
+  2560x1600 (0x46) 165.0001 Hz  mutter id 2560x1600@165.000 +preferred
+  2560x1600 (0x47) 60.0016 Hz  mutter id 2560x1600@60.002 +preferred
+  2560x1600 (0x48) 60.0015 Hz  mutter id 2560x1600@60.002 
+  1920x1440 (0x4b) 60.0015 Hz  mutter id 1920x1440@60.002 
+
+# xrandr --mode 2560x1600 --rate 60.00 takes the mode nearest 60.00: |60.0015-60| < |60.0016-60| -> 0x48
+
+# mutter's own list for eDP-2 (org.gnome.Mutter.DisplayConfig.GetCurrentState), 2560x1600 and 1920x1440 only
+   2560x1600@165.000 {'is-preferred': <true>}
+   2560x1600@60.002 {'is-current': <true>}
+   1920x1440@60.002 {}
+   logical monitors now: [('0, 0, 1.0', 'eDP-2')]

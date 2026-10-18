@@ -1,0 +1,102 @@
+# GNOME Shell around the crash (system + user journal, 22:20:30-22:21:20, noise filtered)
+2026-10-17T22:20:34-04:00 <host> gnome-shell[3208]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:20:34-04:00 <host> gnome-shell[3208]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: **
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: libmutter:ERROR:../src/core/window.c:5957:meta_window_get_work_area_for_logical_monitor: assertion failed: (logical_monitor)
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: Bail out! libmutter:ERROR:../src/core/window.c:5957:meta_window_get_work_area_for_logical_monitor: assertion failed: (logical_monitor)
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: GNOME Shell crashed with signal 6
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: == Stack trace for context 0x567d07c465c0 ==
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: #0   567d07d0e130 i   file:///usr/share/gnome-shell/extensions/tiling-assistant[at]ubuntu.com/extension.js:211 (8d180e10a10 @ 38)
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: #1   7ffdb42e7730 b   self-hosted:349 (daa0cd4a880 @ 235)
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: #2   567d07d0e090 i   file:///usr/share/gnome-shell/extensions/tiling-assistant[at]ubuntu.com/extension.js:209 (8d180e109c0 @ 122)
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: #3   567d07d0dfb8 i   resource:///org/gnome/shell/ui/panel.js:765 (30c010a1e3d0 @ 352)
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: #4   567d07d0df28 i   resource:///org/gnome/shell/ui/panel.js:783 (30c010a1e420 @ 70)
+2026-10-17T22:20:47-04:00 <host> gnome-shell[3208]: #5   567d07d0de98 i   resource:///org/gnome/shell/ui/init.js:21 (ed643170bf0 @ 48)
+2026-10-17T22:20:54-04:00 <host> systemd[1986]: org.gnome.Shell[at]x11.service: Main process exited, code=dumped, status=6/ABRT
+2026-10-17T22:20:54-04:00 <host> systemd[1986]: org.gnome.Shell[at]x11.service: Failed with result 'core-dump'.
+2026-10-17T22:20:54-04:00 <host> systemd[1986]: org.gnome.Shell[at]x11.service: Triggering OnFailure= dependencies.
+2026-10-17T22:20:54-04:00 <host> systemd[1986]: org.gnome.Shell[at]x11.service: Consumed 3min 14.456s CPU time, 1.8G memory peak, 0B memory swap peak.
+2026-10-17T22:20:54-04:00 <host> systemd[1986]: org.gnome.Shell[at]x11.service: Scheduled restart job, restart counter is at 1.
+2026-10-17T22:20:54-04:00 <host> systemd[1986]: Started gnome-session-failed.service - GNOME Session Failed lockdown screen (user).
+2026-10-17T22:20:54-04:00 <host> systemd[1986]: Reached target gnome-session-failed.target - GNOME Session Failed.
+2026-10-17T22:20:54-04:00 <host> systemd[1986]: Starting org.gnome.Shell[at]x11.service - GNOME Shell on X11...
+2026-10-17T22:20:54-04:00 <host> gnome-shell[34269]: Running GNOME Shell (using mutter 46.2) as a X11 window and compositing manager
+2026-10-17T22:20:56-04:00 <host> systemd[1986]: Started org.gnome.Shell[at]x11.service - GNOME Shell on X11.
+2026-10-17T22:20:59-04:00 <host> systemd[1986]: Stopped target gnome-session-failed.target - GNOME Session Failed.
+2026-10-17T22:20:59-04:00 <host> systemd[1986]: Stopped target gnome-session-x11[at]ubuntu.target - GNOME X11 Session (session: ubuntu).
+2026-10-17T22:20:59-04:00 <host> systemd[1986]: Stopping darpan.service - Darpan host (remote desktop)...
+2026-10-17T22:20:59-04:00 <host> systemd[1986]: Stopped gnome-session-failed.service - GNOME Session Failed lockdown screen (user).
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target graphical-session.target - Current graphical user session.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target gnome-session.target - GNOME Session.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target gnome-session-x11.target - GNOME X11 Session.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target gnome-session[at]ubuntu.target - GNOME Session (session: ubuntu).
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target gnome-session-x11-services.target - GNOME session X11 services.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target gnome-session-initialized.target - GNOME Session is initialized.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopping org.gnome.Shell[at]x11.service - GNOME Shell on X11...
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped org.gnome.Shell[at]x11.service - GNOME Shell on X11.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: org.gnome.Shell[at]x11.service: Consumed 2.201s CPU time.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target gnome-session-manager.target - GNOME Session Manager is ready.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target gnome-session-pre.target - Tasks to be run before GNOME Session starts.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target graphical-session-pre.target - Session services which should run early before the graphical session is brought up.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target gnome-session-shutdown.target - Shutdown running GNOME Session.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped target gnome-session-shutdown.target - Shutdown running GNOME Session.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Started darpan.service - Darpan host (remote desktop).
+2026-10-17T22:21:12-04:00 <host> systemd[1986]: Stopping darpan.service - Darpan host (remote desktop)...
+2026-10-17T22:21:12-04:00 <host> systemd[1986]: Starting org.gnome.Shell[at]x11.service - GNOME Shell on X11...
+2026-10-17T22:21:12-04:00 <host> gnome-shell[36057]: Running GNOME Shell (using mutter 46.2) as a X11 window and compositing manager
+2026-10-17T22:21:14-04:00 <host> systemd[1986]: Started org.gnome.Shell[at]x11.service - GNOME Shell on X11.
+2026-10-17T22:21:14-04:00 <host> systemd[1986]: Started darpan.service - Darpan host (remote desktop).
+
+# The X server: the old one (pid 2953) until the logout; the new one since
+    PID                  STARTED COMMAND
+  35833 Sat Oct 17 22:21:08 2026 /usr/lib/xorg/Xorg vt2 -dis
+
+# Every 'is_current_mode_known' this boot (= mutter has no current mode for the panel); compare with darpan's switches
+2026-10-17T22:20:14-04:00 <host> darpan[33983]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:20:15-04:00 <host> gnome-shell[3208]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:20:15-04:00 <host> gnome-shell[3208]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:20:16-04:00 <host> darpan[33983]: I darpan.screen: eDP-2 already at 2560x1600@60.00
+2026-10-17T22:20:18-04:00 <host> darpan[33983]: I darpan.screen: eDP-2 already at 2560x1600@60.00
+2026-10-17T22:20:19-04:00 <host> darpan[33983]: I darpan.screen: restoring eDP-2 to 1920x1440@60.00
+2026-10-17T22:20:21-04:00 <host> darpan[33983]: I darpan.screen: switching eDP-2 to 2560x1440@60.00
+2026-10-17T22:20:24-04:00 <host> darpan[33983]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:20:24-04:00 <host> gnome-shell[3208]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:20:24-04:00 <host> gnome-shell[3208]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:20:27-04:00 <host> darpan[33983]: I darpan.screen: eDP-2 already at 2560x1600@60.00
+2026-10-17T22:20:30-04:00 <host> darpan[33983]: I darpan.screen: restoring eDP-2 to 1920x1440@60.00
+2026-10-17T22:20:34-04:00 <host> darpan[33983]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:20:34-04:00 <host> gnome-shell[3208]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:20:34-04:00 <host> gnome-shell[3208]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:21:00-04:00 <host> darpan[33983]: I darpan.screen: restoring eDP-2 to 1920x1440@60.00
+2026-10-17T22:21:15-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:21:15-04:00 <host> gnome-shell[36057]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:21:15-04:00 <host> gnome-shell[36057]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:21:30-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1440@60.00
+2026-10-17T22:21:43-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:21:43-04:00 <host> gnome-shell[36057]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:21:43-04:00 <host> gnome-shell[36057]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:21:56-04:00 <host> darpan[36502]: I darpan.screen: eDP-2 already at 2560x1600@60.00
+2026-10-17T22:21:59-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1440@60.00
+2026-10-17T22:22:05-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:22:05-04:00 <host> gnome-shell[36057]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:22:05-04:00 <host> gnome-shell[36057]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:22:20-04:00 <host> darpan[36502]: I darpan.screen: restoring eDP-2 to 1920x1440@60.00
+2026-10-17T22:22:49-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:22:49-04:00 <host> gnome-shell[36057]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:22:49-04:00 <host> gnome-shell[36057]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:23:06-04:00 <host> darpan[36502]: I darpan.screen: restoring eDP-2 to 1920x1440@60.00
+2026-10-17T22:31:51-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:31:51-04:00 <host> gnome-shell[36057]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+2026-10-17T22:31:51-04:00 <host> gnome-shell[36057]: (../src/backends/meta-monitor.c:1894):meta_monitor_derive_current_mode: runtime check failed: (is_current_mode_known (monitor))
+
+# The extension code that called mutter (Ubuntu's Tiling Assistant, extension.js:203-212)
+        this._getDraggableWindowForPosition = Main.panel._getDraggableWindowForPosition;
+        Main.panel._getDraggableWindowForPosition = function (stageX) {
+            const workspaceManager = global.workspace_manager;
+            const windows = workspaceManager.get_active_workspace().list_windows();
+            const allWindowsByStacking = global.display.sort_windows_by_stacking(windows).reverse();
+
+            return allWindowsByStacking.find(w => {
+                const rect = w.get_frame_rect();
+                const workArea = w.get_work_area_current_monitor();
+                return w.is_on_primary_monitor() &&

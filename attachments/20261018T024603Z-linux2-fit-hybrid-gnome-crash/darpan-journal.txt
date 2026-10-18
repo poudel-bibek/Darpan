@@ -1,0 +1,218 @@
+2026-10-17T22:19:59-04:00 <host> systemd[1986]: Stopping darpan.service - Darpan host (remote desktop)...
+2026-10-17T22:19:59-04:00 <host> darpan[3679]: I darpan: shutting down
+2026-10-17T22:19:59-04:00 <host> darpan[3679]: W darpan.audio: sound: pw-record exited
+2026-10-17T22:19:59-04:00 <host> darpan[3679]: I darpan.audio: sound: stopped
+2026-10-17T22:19:59-04:00 <host> darpan[3679]: I darpan.session: session dd91a557e01c closed
+2026-10-17T22:19:59-04:00 <host> systemd[1986]: Stopped darpan.service - Darpan host (remote desktop).
+2026-10-17T22:19:59-04:00 <host> systemd[1986]: darpan.service: Consumed 1min 26.301s CPU time, 89.3M memory peak, 0B memory swap peak.
+2026-10-17T22:19:59-04:00 <host> systemd[1986]: Starting darpan.service - Darpan host (remote desktop)...
+2026-10-17T22:19:59-04:00 <host> systemd[1986]: Started darpan.service - Darpan host (remote desktop).
+2026-10-17T22:19:59-04:00 <host> darpan[33983]: I darpan.session: screen: :1
+2026-10-17T22:20:00-04:00 <host> darpan[33983]: I darpan.session: encoder: NVENC on NVIDIA GeForce RTX 4090 Laptop GPU
+2026-10-17T22:20:00-04:00 <host> darpan[33983]: I darpan.web: listening on <ip>:47470 (socket from systemd)
+2026-10-17T22:20:02-04:00 <host> darpan[33983]: I darpan.session: session 141cd954fd4d: Darpan for Mac 1.4.3 on macOS 27.0.1 from <ip> (<email>)
+2026-10-17T22:20:02-04:00 <host> darpan[34076]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:20:02-04:00 <host> darpan[34076]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:20:03-04:00 <host> darpan[33983]: I darpan.audio: sound: capturing (pw-record 34085)
+2026-10-17T22:20:03-04:00 <host> darpan[33983]: I darpan.session: session 141cd954fd4d: stream 1: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:20:14-04:00 <host> darpan[33983]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:20:15-04:00 <host> darpan[33983]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1600}
+2026-10-17T22:20:15-04:00 <host> darpan[34114]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:20:15-04:00 <host> darpan[34114]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:20:15-04:00 <host> darpan[33983]: I darpan.session: session 141cd954fd4d: stream 3: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:20:16-04:00 <host> darpan[33983]: I darpan.screen: eDP-2 already at 2560x1600@60.00
+2026-10-17T22:20:18-04:00 <host> darpan[33983]: I darpan.screen: eDP-2 already at 2560x1600@60.00
+2026-10-17T22:20:19-04:00 <host> darpan[33983]: I darpan.screen: restoring eDP-2 to 1920x1440@60.00
+2026-10-17T22:20:20-04:00 <host> darpan[34114]: darpan-capture: screen grab failed (X error 8)
+2026-10-17T22:20:20-04:00 <host> darpan[33983]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 1920, 'h': 1440}
+2026-10-17T22:20:21-04:00 <host> darpan[34135]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:20:21-04:00 <host> darpan[34135]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:20:21-04:00 <host> darpan[33983]: I darpan.screen: switching eDP-2 to 2560x1440@60.00
+2026-10-17T22:20:21-04:00 <host> darpan[33983]: I darpan.session: session 141cd954fd4d: stream 4: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 10500 kbit/s
+2026-10-17T22:20:21-04:00 <host> darpan[33983]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1440}
+2026-10-17T22:20:21-04:00 <host> darpan[34148]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:20:21-04:00 <host> darpan[34148]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:20:22-04:00 <host> darpan[33983]: I darpan.session: session 141cd954fd4d: stream 5: 2560x1440 nvenc via cuda, 4:2:0, 30 fps, 12324 kbit/s
+2026-10-17T22:20:24-04:00 <host> darpan[33983]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:20:24-04:00 <host> darpan[33983]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1600}
+2026-10-17T22:20:24-04:00 <host> darpan[34163]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:20:24-04:00 <host> darpan[34163]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:20:25-04:00 <host> darpan[33983]: I darpan.session: session 141cd954fd4d: stream 6: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 14422 kbit/s
+2026-10-17T22:20:27-04:00 <host> darpan[33983]: I darpan.screen: eDP-2 already at 2560x1600@60.00
+2026-10-17T22:20:30-04:00 <host> darpan[33983]: I darpan.screen: restoring eDP-2 to 1920x1440@60.00
+2026-10-17T22:20:32-04:00 <host> darpan[34163]: darpan-capture: screen grab failed (X error 8)
+2026-10-17T22:20:32-04:00 <host> darpan[33983]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 1920, 'h': 1440}
+2026-10-17T22:20:32-04:00 <host> darpan[34189]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:20:32-04:00 <host> darpan[34189]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:20:32-04:00 <host> darpan[33983]: I darpan.session: session 141cd954fd4d: stream 7: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:20:34-04:00 <host> darpan[33983]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:20:34-04:00 <host> darpan[33983]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1600}
+2026-10-17T22:20:34-04:00 <host> darpan[34204]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:20:34-04:00 <host> darpan[34204]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:20:35-04:00 <host> darpan[33983]: I darpan.session: session 141cd954fd4d: stream 8: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:20:56-04:00 <host> darpan[33983]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 1920, 'h': 1440}
+2026-10-17T22:20:57-04:00 <host> darpan[34428]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:20:57-04:00 <host> darpan[34428]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:20:57-04:00 <host> darpan[33983]: I darpan.session: session 141cd954fd4d: stream 11: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 5144 kbit/s
+2026-10-17T22:20:59-04:00 <host> systemd[1986]: Stopping darpan.service - Darpan host (remote desktop)...
+2026-10-17T22:20:59-04:00 <host> darpan[33983]: I darpan: shutting down
+2026-10-17T22:20:59-04:00 <host> darpan[33983]: W darpan.audio: sound: pw-record exited
+2026-10-17T22:20:59-04:00 <host> darpan[33983]: I darpan.audio: sound: stopped
+2026-10-17T22:21:00-04:00 <host> darpan[33983]: I darpan.screen: restoring eDP-2 to 1920x1440@60.00
+2026-10-17T22:21:00-04:00 <host> darpan[33983]: Exception ignored in: <function BaseSubprocessTransport.__del__ at 0x7e85dfc5d9e0>
+2026-10-17T22:21:00-04:00 <host> darpan[33983]: Traceback (most recent call last):
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:   File "/usr/lib/python3.12/asyncio/base_subprocess.py", line 126, in __del__
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:     self.close()
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:   File "/usr/lib/python3.12/asyncio/base_subprocess.py", line 104, in close
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:     proto.pipe.close()
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:   File "/usr/lib/python3.12/asyncio/unix_events.py", line 767, in close
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:     self.write_eof()
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:   File "/usr/lib/python3.12/asyncio/unix_events.py", line 753, in write_eof
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:     self._loop.call_soon(self._call_connection_lost, None)
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:   File "/usr/lib/python3.12/asyncio/base_events.py", line 795, in call_soon
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:     self._check_closed()
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:   File "/usr/lib/python3.12/asyncio/base_events.py", line 541, in _check_closed
+2026-10-17T22:21:00-04:00 <host> darpan[33983]:     raise RuntimeError('Event loop is closed')
+2026-10-17T22:21:00-04:00 <host> darpan[33983]: RuntimeError: Event loop is closed
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Stopped darpan.service - Darpan host (remote desktop).
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: darpan.service: Consumed 5.458s CPU time.
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Starting darpan.service - Darpan host (remote desktop)...
+2026-10-17T22:21:00-04:00 <host> systemd[1986]: Started darpan.service - Darpan host (remote desktop).
+2026-10-17T22:21:02-04:00 <host> darpan[34674]: I darpan.session: encoder: NVENC on NVIDIA GeForce RTX 4090 Laptop GPU
+2026-10-17T22:21:02-04:00 <host> darpan[34674]: I darpan.web: listening on <ip>:47470 (socket from systemd)
+2026-10-17T22:21:02-04:00 <host> darpan[34674]: I darpan.session: session 689f88a1146f: Darpan for Mac 1.4.3 on macOS 27.0.1 from <ip> (<email>)
+2026-10-17T22:21:02-04:00 <host> darpan[34674]: Invalid MIT-MAGIC-COOKIE-1 key
+2026-10-17T22:21:04-04:00 <host> darpan[34674]: I darpan.session: session 10895d536498: Darpan for Mac 1.4.3 on macOS 27.0.1 from <ip> (<email>)
+2026-10-17T22:21:04-04:00 <host> darpan[34674]: Invalid MIT-MAGIC-COOKIE-1 key
+2026-10-17T22:21:06-04:00 <host> darpan[34674]: I darpan.session: session 4a177286d9e3: Darpan for Mac 1.4.3 on macOS 27.0.1 from <ip> (<email>)
+2026-10-17T22:21:06-04:00 <host> darpan[34674]: I darpan.session: screen: :0 (login screen)
+2026-10-17T22:21:06-04:00 <host> darpan[35765]: darpan-capture: no shared memory with the X server (10); copying frames
+2026-10-17T22:21:06-04:00 <host> darpan[35765]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:21:06-04:00 <host> darpan[35765]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:21:06-04:00 <host> darpan[34674]: I darpan.audio: sound: capturing (pw-record 35773)
+2026-10-17T22:21:06-04:00 <host> darpan[34674]: I darpan.session: session 4a177286d9e3: stream 1: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:21:12-04:00 <host> systemd[1986]: Stopping darpan.service - Darpan host (remote desktop)...
+2026-10-17T22:21:12-04:00 <host> darpan[34674]: I darpan: shutting down
+2026-10-17T22:21:12-04:00 <host> darpan[34674]: W darpan.audio: sound: pw-record exited
+2026-10-17T22:21:12-04:00 <host> darpan[34674]: I darpan.audio: sound: stopped
+2026-10-17T22:21:12-04:00 <host> darpan[34674]: I darpan.session: session 4a177286d9e3 closed after 0 min: 43 frames, 0.1 Mbit/s on average, no freezes; path direct → direct
+2026-10-17T22:21:12-04:00 <host> systemd[1986]: Stopped darpan.service - Darpan host (remote desktop).
+2026-10-17T22:21:12-04:00 <host> systemd[1986]: darpan.service: Consumed 1.363s CPU time.
+2026-10-17T22:21:14-04:00 <host> systemd[1986]: Starting darpan.service - Darpan host (remote desktop)...
+2026-10-17T22:21:14-04:00 <host> systemd[1986]: Started darpan.service - Darpan host (remote desktop).
+2026-10-17T22:21:14-04:00 <host> darpan[36502]: I darpan.session: screen: :1
+2026-10-17T22:21:15-04:00 <host> darpan[36502]: I darpan.session: encoder: NVENC on NVIDIA GeForce RTX 4090 Laptop GPU
+2026-10-17T22:21:15-04:00 <host> darpan[36502]: I darpan.web: listening on <ip>:47470 (socket from systemd)
+2026-10-17T22:21:15-04:00 <host> darpan[36502]: I darpan.session: session 9aae18ced814: Darpan for Mac 1.4.3 on macOS 27.0.1 from <ip> (<email>)
+2026-10-17T22:21:15-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:21:15-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 36637)
+2026-10-17T22:21:15-04:00 <host> darpan[36633]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:21:15-04:00 <host> darpan[36633]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:21:15-04:00 <host> darpan[36502]: I darpan.session: session 9aae18ced814: stream 1: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:21:15-04:00 <host> darpan[36502]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1600}
+2026-10-17T22:21:16-04:00 <host> darpan[36832]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:21:16-04:00 <host> darpan[36832]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:21:16-04:00 <host> darpan[36502]: I darpan.session: session 9aae18ced814: stream 2: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:21:30-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1440@60.00
+2026-10-17T22:21:31-04:00 <host> darpan[36502]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1440}
+2026-10-17T22:21:32-04:00 <host> darpan[36988]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:21:32-04:00 <host> darpan[36988]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:21:32-04:00 <host> darpan[36502]: I darpan.session: session 9aae18ced814: stream 5: 2560x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:21:43-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:21:43-04:00 <host> darpan[36502]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1600}
+2026-10-17T22:21:43-04:00 <host> darpan[37007]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:21:43-04:00 <host> darpan[37007]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:21:44-04:00 <host> darpan[36502]: I darpan.session: session 9aae18ced814: stream 7: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:21:51-04:00 <host> darpan[36502]: I darpan.session: session 9aae18ced814: stream 8: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:21:56-04:00 <host> darpan[36502]: I darpan.screen: eDP-2 already at 2560x1600@60.00
+2026-10-17T22:21:59-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1440@60.00
+2026-10-17T22:22:00-04:00 <host> darpan[36502]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1440}
+2026-10-17T22:22:01-04:00 <host> darpan[36502]: I darpan.session: session 9aae18ced814: stream 9: 2560x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:22:05-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:22:05-04:00 <host> darpan[36502]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1600}
+2026-10-17T22:22:06-04:00 <host> darpan[36502]: I darpan.session: session 9aae18ced814: stream 10: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:22:10-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:22:10-04:00 <host> darpan[36502]: I darpan.session: session 9aae18ced814 closed after 1 min: 126 frames, 0.1 Mbit/s on average, no freezes; path direct → direct
+2026-10-17T22:22:20-04:00 <host> darpan[36502]: I darpan.screen: restoring eDP-2 to 1920x1440@60.00
+2026-10-17T22:22:47-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: Darpan for Mac 1.4.3 on macOS 27.0.1 from <ip> (<email>)
+2026-10-17T22:22:47-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 37135)
+2026-10-17T22:22:49-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:22:49-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 1: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:22:49-04:00 <host> darpan[36502]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1600}
+2026-10-17T22:22:50-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 2: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:23:06-04:00 <host> darpan[36502]: I darpan.screen: restoring eDP-2 to 1920x1440@60.00
+2026-10-17T22:23:06-04:00 <host> darpan[36502]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 1920, 'h': 1440}
+2026-10-17T22:23:08-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 5: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:23:10-04:00 <host> darpan[37176]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:23:10-04:00 <host> darpan[37176]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:23:10-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 6: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 10500 kbit/s
+2026-10-17T22:24:27-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:26:03-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 39276)
+2026-10-17T22:26:04-04:00 <host> darpan[39274]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:26:04-04:00 <host> darpan[39274]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:26:05-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 12: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:26:05-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:27:58-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 39344)
+2026-10-17T22:27:59-04:00 <host> darpan[39342]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:27:59-04:00 <host> darpan[39342]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:27:59-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 13: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:29:13-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:29:51-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 39401)
+2026-10-17T22:29:52-04:00 <host> darpan[39399]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:29:52-04:00 <host> darpan[39399]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:29:52-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 14: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:29:52-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:30:03-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 39431)
+2026-10-17T22:31:38-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:31:41-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 39767)
+2026-10-17T22:31:42-04:00 <host> darpan[39765]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:31:42-04:00 <host> darpan[39765]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:31:43-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 16: 1920x1440 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:31:51-04:00 <host> darpan[36502]: I darpan.screen: switching eDP-2 to 2560x1600@60.00
+2026-10-17T22:31:51-04:00 <host> darpan[36502]: I darpan.capture: capture resize: {'ev': 'resize', 'w': 2560, 'h': 1600}
+2026-10-17T22:31:52-04:00 <host> darpan[39844]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:31:52-04:00 <host> darpan[39844]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:31:52-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 17: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:31:58-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:32:49-04:00 <host> darpan[39874]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:32:49-04:00 <host> darpan[39874]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:32:49-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 18: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:33:01-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 39886)
+2026-10-17T22:33:32-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:34:13-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 40053)
+2026-10-17T22:34:14-04:00 <host> darpan[40051]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:34:14-04:00 <host> darpan[40051]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:34:14-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 20: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:36:16-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:36:50-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 40280)
+2026-10-17T22:36:51-04:00 <host> darpan[40278]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:36:51-04:00 <host> darpan[40278]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:36:52-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 21: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:37:07-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:39:35-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 40587)
+2026-10-17T22:39:36-04:00 <host> darpan[40585]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:39:36-04:00 <host> darpan[40585]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:39:36-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 22: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:39:37-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:39:53-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 41017)
+2026-10-17T22:39:53-04:00 <host> darpan[41020]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:39:53-04:00 <host> darpan[41020]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:39:53-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 23: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:40:17-04:00 <host> darpan[41506]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:40:17-04:00 <host> darpan[41506]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:40:17-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 25: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:41:01-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:41:49-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 43419)
+2026-10-17T22:41:49-04:00 <host> darpan[43396]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:41:49-04:00 <host> darpan[43396]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:41:50-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 27: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:41:54-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:42:55-04:00 <host> darpan[44754]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:42:55-04:00 <host> darpan[44754]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:42:56-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 28: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:43:00-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 44900)
+2026-10-17T22:43:03-04:00 <host> darpan[36502]: I darpan.audio: sound: stopped
+2026-10-17T22:43:25-04:00 <host> darpan[45450]: darpan-capture: vulkan: vkGetPhysicalDeviceVideoCapabilitiesKHR(e->pd, &e->profile, &cap) failed (-1000023003)
+2026-10-17T22:43:25-04:00 <host> darpan[45450]: darpan-capture: no Vulkan Video: NVENC through CUDA
+2026-10-17T22:43:25-04:00 <host> darpan[36502]: I darpan.session: session 9b2097cb81c9: stream 30: 2560x1600 nvenc via cuda, 4:2:0, 30 fps, 15000 kbit/s
+2026-10-17T22:43:26-04:00 <host> darpan[36502]: I darpan.audio: sound: capturing (pw-record 45481)

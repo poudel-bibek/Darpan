@@ -1,0 +1,4 @@
+# Recorder: every second, on change: the panel's mode (XID), the screen, mutter's logical monitors,
+# GNOME's scaling-factor, gnome-shell's PID. 22:41:04 = xrandr --output eDP-2 --mode 0x47 (the owner's OK).
+22:39:35 mode=[eDP-2 2560x1600 (0x48)] current 2560 x 1600 logical=NONE scaling-factor=uint32 0 shell=36057
+22:41:05 mode=[eDP-2 2560x1600 (0x47)] current 2560 x 1600 logical=eDP-2@0,0:scale1.0 scaling-factor=uint32 0 shell=36057

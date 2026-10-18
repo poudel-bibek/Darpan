@@ -1,0 +1,44 @@
+# Environment
+Ubuntu 24.04.5 LTS
+session: x11 ubuntu:GNOME; mutter 46.2 (from gnome-shell's log); kernel 7.0.0-38-generic
+darpan 1.4.3; NVIDIA driver 580.178.04
+
+$ lspci -k | grep -A3 -iE 'vga|3d'   (subsystem lines left out)
+0000:00:02.0 VGA compatible controller: Intel Corporation Raptor Lake-S UHD Graphics (rev 04)
+	Kernel driver in use: i915
+	Kernel modules: i915, xe
+--
+0000:01:00.0 VGA compatible controller: NVIDIA Corporation GN21-X11 (rev a1)
+	Kernel driver in use: nvidia
+	Kernel modules: nvidiafb, nouveau, nvidia_drm, nvidia
+
+$ prime-select query
+on-demand
+
+$ xrandr --listproviders
+Providers: number : 2
+Provider 0: id: 0x45 cap: 0x9, Source Output, Sink Offload crtcs: 4 outputs: 3 associated providers: 1 name:modesetting
+Provider 1: id: 0x209 cap: 0x2, Sink Output crtcs: 4 outputs: 8 associated providers: 1 name:NVIDIA-G0
+
+$ xrandr --listmonitors
+Monitors: 1
+ 0: +*eDP-2 2560/388x1600/242+0+0  eDP-2
+
+$ nvidia-settings -q CurrentMetaMode -t; echo exit=$?
+
+ERROR: Error resolving target specification '' (No targets match target specification), specified in query 'CurrentMetaMode'.
+
+exit=1
+
+$ nvidia-settings -q screens   (prints nothing: no NVIDIA X screen)
+
+
+$ gsettings get org.gnome.desktop.interface scaling-factor
+uint32 0
+
+$ xrandr --prop: eDP-2 'scaling mode'
+	scaling mode: Full aspect 
+		supported: Full, Center, Full aspect
+
+GNOME's saved monitor config, ~/.config/monitors.xml, written 2026-10-17 17:32:43:
+  first configuration: eDP-2 1920 1440 60.002 (width height rate)
