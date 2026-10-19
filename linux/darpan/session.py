@@ -1429,13 +1429,15 @@ class Hub:
     async def change_resolution(self, session, m):
         if self.login_screen:
             return
+        watching = False
         try:
             if m.get("fit"):                # the desktop exactly the viewer's size, at its scale
                 choice = {"fit": [int(m["fit"][0]), int(m["fit"][1])], "scale": int(m.get("scale", 200))}
             elif not m.get("native"):
                 choice = [int(m["w"]), int(m["h"])]
             async with self._screen:
-                if not session.watching:    # a hidden window doesn't change the desktop: it applies on its start
+                watching = session.watching
+                if not watching:            # a hidden window doesn't change the desktop: it applies on its start
                     log.info("resolution choice of %s saved for when it watches", _kind(session))
                 elif m.get("native"):
                     await self.screen.restore()
@@ -1452,8 +1454,9 @@ class Hub:
         except (ValueError, KeyError, TypeError, IndexError, RuntimeError) as e:
             log.warning("resolution change for %s failed: %s", _kind(session), e)
             session.ws.send_json({"t": "notice", "level": "error", "text": "resolution change failed: %s" % e})
-        self._rescale()
-        await self.refresh_modes(broadcast=True)
+        if watching or not session.gone:    # (a viewer gone before its change began: only its choice is saved)
+            self._rescale()
+            await self.refresh_modes(broadcast=True)
 
     def _saved_resolutions(self):
         try:

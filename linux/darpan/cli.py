@@ -46,8 +46,12 @@ def _serve(args):
         await asyncio.sleep(0.3)
         for s in list(hub.sessions):
             await s._close()
-        if hub.jobs:
-            await asyncio.wait(hub.jobs, timeout=15)   # a resolution change under way finishes first
+        if hub.jobs:                         # a resolution change under way finishes first; one that drags on
+            _, late = await asyncio.wait(hub.jobs, timeout=15)   # stops after the tool it's running
+            for t in late:
+                t.cancel()
+            if late:
+                await asyncio.wait(late)
         await hub.session_ended(now=True)   # put the resolution back before we go, not 10 s later
         if hub.screen:
             await hub.screen.settle()        # (and the desktop icons it rescales)
