@@ -274,13 +274,17 @@ class Screen:
         one = sum(1 for line in text.splitlines() if _OUT_RE.match(line)) == 1
         return "randr" if one and re.search(r"Source Output.*name:(?!NVIDIA)", providers) else None
 
-    def _remember(self, name, current, **more):
-        """Write down what to restore, before the first change; more (e.g. GNOME's scale) when first changed."""
+    def _remember(self, name, current, meta=None, **more):
+        """Write down what to restore, before the first change (with NVIDIA, its MetaMode too: an xrandr mode alone
+        can keep a fit's frame, the desktop in the middle of the monitor); more (e.g. GNOME's scale) when first
+        changed."""
         try:
             with open(self.state_file) as f:
                 orig = json.load(f)
         except (OSError, ValueError):
             orig = {"output": name, "w": current[0], "h": current[1], "rate": current[2]}
+            if meta:
+                orig["meta"] = meta
         for k, v in more.items():
             orig.setdefault(k, v)
         config.write_private(self.state_file, json.dumps(orig))
@@ -331,7 +335,7 @@ class Screen:
             raise RuntimeError("this computer can't fit its desktop to a window (it needs one monitor, and "
                                "NVIDIA's nvidia-settings or a driver that scales)")
         scaling = int((await _run(None, "gsettings", "get", *SCALE_KEY)).split()[-1])
-        orig = self._remember(name, current, scaling=scaling)
+        orig = self._remember(name, current, meta, scaling=scaling)
         want = 1 if scale == 100 else 2
         k = min(native[0] / dw, native[1] / dh)
         ow, oh = int(dw * k) // 2 * 2, int(dh * k) // 2 * 2
@@ -413,7 +417,7 @@ class Screen:
         if not self.fitted and (xid == vcurrent if xid else (w, h) == tuple(current[:2]) and abs(rate - current[2]) < 0.05):
             log.info("%s already at %dx%d@%.2f", name, w, h, rate)   # e.g. a reconnect before the old mode came back
             return
-        orig = self._remember(name, current)
+        orig = self._remember(name, current, None if os.path.exists(self.state_file) else await self._metamode())
         if self.fitted:
             await self._unscale(orig)
             await self._step(text, w, h)
@@ -436,10 +440,14 @@ class Screen:
         try:
             if "scaling" in orig:                # it was fitted
                 await self._step(await _xrandr(self.display, "--query"), orig["w"], orig["h"])
-            xid = _pick(_mutter_modes(await _xrandr(self.display, "--verbose"), orig["output"])[0],
-                        orig["w"], orig["h"], orig["rate"])
-            log.info("restoring %s to %dx%d@%.2f (%s)", orig["output"], orig["w"], orig["h"], orig["rate"], xid)
-            await _switch(self.display, orig["output"], xid, orig["w"], orig["h"], orig["rate"])
+            if orig.get("meta"):
+                log.info("restoring %s to %dx%d (%s)", orig["output"], orig["w"], orig["h"], orig["meta"])
+                await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=" + orig["meta"])
+            else:
+                xid = _pick(_mutter_modes(await _xrandr(self.display, "--verbose"), orig["output"])[0],
+                            orig["w"], orig["h"], orig["rate"])
+                log.info("restoring %s to %dx%d@%.2f (%s)", orig["output"], orig["w"], orig["h"], orig["rate"], xid)
+                await _switch(self.display, orig["output"], xid, orig["w"], orig["h"], orig["rate"])
         except RuntimeError as e:
             log.warning("restore failed: %s", e)
             try:  # fall back to the monitor's preferred mode
