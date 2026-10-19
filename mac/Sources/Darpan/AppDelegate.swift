@@ -34,10 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.activate(ignoringOtherApps: true)
         let ws = NSWorkspace.shared.notificationCenter
         ws.addObserver(self, selector: #selector(willSleep(_:)), name: NSWorkspace.willSleepNotification, object: nil)
-        // The screens going dark counts as sleep too: a wake for a notification (lid closed, 4 s with the
-        // display on) goes back to sleep through a dark wake without `willSleep`, and every dark wake after
-        // it would connect again. With no screen to look at, no connection.
-        ws.addObserver(self, selector: #selector(willSleep(_:)), name: NSWorkspace.screensDidSleepNotification, object: nil)
+        // The screens going dark holds reconnects: a wake for a notification (lid closed, 4 s with the display
+        // on) goes back to sleep through a dark wake without `willSleep`, and every dark wake after it would
+        // connect again. A live session goes on (sound, a transfer) until it drops.
+        ws.addObserver(self, selector: #selector(screensSlept(_:)), name: NSWorkspace.screensDidSleepNotification, object: nil)
         ws.addObserver(self, selector: #selector(didWake(_:)), name: NSWorkspace.didWakeNotification, object: nil)
         ws.addObserver(self, selector: #selector(didWake(_:)), name: NSWorkspace.screensDidWakeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(windowBecameMain(_:)),
@@ -91,6 +91,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             s.client.sleep { sent.leave() }
         }
         _ = sent.wait(timeout: .now() + 0.5)
+    }
+
+    @objc private func screensSlept(_ n: Notification) {
+        for s in sessions { s.client.screensSlept() }
     }
 
     /// A real wake: the system with its display on, or the screens coming on. Not a dark wake (the
