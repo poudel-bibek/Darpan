@@ -34,6 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.activate(ignoringOtherApps: true)
         let ws = NSWorkspace.shared.notificationCenter
         ws.addObserver(self, selector: #selector(willSleep(_:)), name: NSWorkspace.willSleepNotification, object: nil)
+        // The screens going dark counts as sleep too: a wake for a notification (lid closed, 4 s with the
+        // display on) goes back to sleep through a dark wake without `willSleep`, and every dark wake after
+        // it would connect again. With no screen to look at, no connection.
+        ws.addObserver(self, selector: #selector(willSleep(_:)), name: NSWorkspace.screensDidSleepNotification, object: nil)
         ws.addObserver(self, selector: #selector(didWake(_:)), name: NSWorkspace.didWakeNotification, object: nil)
         ws.addObserver(self, selector: #selector(didWake(_:)), name: NSWorkspace.screensDidWakeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(windowBecameMain(_:)),
