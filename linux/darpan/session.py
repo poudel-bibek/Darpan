@@ -1260,10 +1260,12 @@ class Hub:
             await self._restoring
 
     def _restore_soon(self, after, now=False):
-        self._restore_at = time.monotonic() + after
-        if now and self._restoring and not self._restoring.done():
-            self._restoring.cancel()
-        if now or not self._restoring or self._restoring.done():
+        at = time.monotonic() + after
+        if self._restoring and not self._restoring.done() and (now or at < self._restore_at):
+            self._restoring.cancel()          # asleep till later (a pause's 5 min, then the window closed): sooner
+            self._restoring = None
+        self._restore_at = at
+        if not self._restoring or self._restoring.done():
             self._restoring = asyncio.get_running_loop().create_task(self._restore_later())
 
     async def _restore_later(self):
