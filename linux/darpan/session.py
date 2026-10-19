@@ -59,7 +59,8 @@ NEED_MIB = {"gpu": 512, "nvenc": 192, "444": 256}   # free GPU memory before Mor
                                                     # all, or 4:4:4 is tried again
 RECHECK_S = 30.0                            # how often, while one of them is off for lack of it
 RESTORE_AFTER_S = 10.0                      # the resolution goes back this long after the last viewer leaves
-PAUSED_RESTORE_S = 30.0                     # ... or stops watching (its window hidden: a quick look elsewhere keeps it)
+PAUSED_RESTORE_S = 300.0                    # ... or stops watching (its window hidden or covered: a while elsewhere
+                                            # on the viewer's computer keeps it, as each switch rearranges the desktop)
 
 
 class RateControl:

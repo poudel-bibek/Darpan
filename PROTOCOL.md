@@ -306,7 +306,7 @@ client-selected mode is active. Client → host:
 
 Only a viewer that **watches** changes the resolution: one that has sent `start` and no `stop` since. A
 `res` from a viewer that isn't watching (a hidden window) is remembered and applied when it starts. The host
-restores the original mode 10 s after the last watching viewer leaves, or 30 s after it sends `stop`. It
+restores the original mode 10 s after the last watching viewer leaves, or 5 min after it sends `stop`. It
 remembers the last `res` of each kind of client (`auth.client` without version numbers; `native` forgets it)
 and switches back to it when that kind of client starts watching again with nobody else watching. A
 resolution change produces `screen`, `modes` and a new `stream`.
