@@ -1504,7 +1504,8 @@ async def run(args, tmp, probe_log):
     # the resolution goes back a while after the last viewer leaves, so a quick reconnect finds it as it was
     import darpan.session as session_mod
     restored, hub = [], types.SimpleNamespace(sessions=set(), x=object(), _repeat_off=False, _screen=asyncio.Lock(),
-                                              login_screen=False, _restoring=None, _restore_at=0.0, _rescale=lambda: None)
+                                              login_screen=False, _restoring=None, _restore_at=0.0, _rescale=lambda: None,
+                                              _restore_wake=asyncio.Event())
     hub.watchers = lambda: session_mod.Hub.watchers(hub)
 
     class Viewer:
@@ -1568,6 +1569,19 @@ async def run(args, tmp, probe_log):
        idle == 1 and kept and len(restored) == 2 and restored[1] - paused_at >= 0.29,
        "connected only: %d restore(s); looked again in time: %s; then %d restore(s), %.2f s after the pause" % (
            idle, kept, len(restored), restored[-1] - paused_at if len(restored) == 2 else -1))
+    # a window that closes pauses first (it's hidden), then leaves: back 10 s after it leaves, not the pause's 5 min
+    hub.sessions = set()
+    real_after, real_paused = session_mod.RESTORE_AFTER_S, session_mod.PAUSED_RESTORE_S
+    session_mod.RESTORE_AFTER_S, session_mod.PAUSED_RESTORE_S = 0.1, 5.0
+    session_mod.Hub.stopped_watching(hub)
+    await asyncio.sleep(0.05)
+    closed_at = time.monotonic()
+    await session_mod.Hub.session_ended(hub)
+    await asyncio.sleep(0.3)
+    closed = restored[2] - closed_at if len(restored) == 3 else -1
+    ok("a window that pauses, then closes: the resolution back after the close's delay, not the pause's",
+       0.09 <= closed < 0.25, "%d restore(s), %.2f s after the close" % (len(restored), closed))
+    session_mod.RESTORE_AFTER_S, session_mod.PAUSED_RESTORE_S = real_after, real_paused
     # a tool under way when its task is cancelled (the host stopping) finishes: an xrandr stopped half-way can
     # leave the monitor without a mode
     import darpan.screen as screen_mod

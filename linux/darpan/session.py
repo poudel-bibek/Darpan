@@ -1024,6 +1024,7 @@ class Hub:
         self.jobs = set()                 # display changes, run to the end whoever asked (see job)
         self._restoring = None            # the pending put-it-back, after the last viewer left ...
         self._restore_at = 0.0            # ... at this time (each departure pushes it out)
+        self._restore_wake = asyncio.Event()   # ... or brings it in: the waiting looks at the new time
         self.unauthed_by = collections.Counter()
         self.audio_ok = audio.available()
         self.audio_pre_skip = None
@@ -1261,6 +1262,7 @@ class Hub:
 
     def _restore_soon(self, after, now=False):
         self._restore_at = time.monotonic() + after
+        self._restore_wake.set()              # a sooner time counts too: a pause's 5 min, then the window closed
         if now and self._restoring and not self._restoring.done():
             self._restoring.cancel()
         if now or not self._restoring or self._restoring.done():
@@ -1270,7 +1272,11 @@ class Hub:
         # A little later, not at once: a quick reconnect (the Mac waking up, a dropped link, a short look) finds the
         # screen as it left it, instead of two mode switches that make the desktop rearrange its windows.
         while (wait := self._restore_at - time.monotonic()) > 0:
-            await asyncio.sleep(wait)
+            self._restore_wake.clear()
+            try:
+                await asyncio.wait_for(self._restore_wake.wait(), wait)
+            except asyncio.TimeoutError:
+                pass
         async with self._screen:
             if self.watchers():           # someone watches (again) since
                 return
