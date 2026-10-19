@@ -1504,7 +1504,8 @@ async def run(args, tmp, probe_log):
     # the resolution goes back a while after the last viewer leaves, so a quick reconnect finds it as it was
     import darpan.session as session_mod
     restored, hub = [], types.SimpleNamespace(sessions=set(), x=object(), _repeat_off=False, _screen=asyncio.Lock(),
-                                              login_screen=False, _restoring=None, _restore_at=0.0, _rescale=lambda: None)
+                                              login_screen=False, _restoring=None, _restore_at=0.0, _rescale=lambda: None,
+                                              _restore_wake=asyncio.Event())
     hub.watchers = lambda: session_mod.Hub.watchers(hub)
 
     class Viewer:
