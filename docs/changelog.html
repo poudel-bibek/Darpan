@@ -21,6 +21,21 @@
     <h1>Changelog</h1>
     <p class="lede">What's new in Darpan. Both apps update themselves.</p>
   </header>
+  <article class="release" id="v1.4.7">
+    <h2>Your own screen when you’re not watching</h2>
+    <p class="meta"><b>Version 1.4.7</b> · <time datetime="2026-10-19">October 19, 2026</time> · <a href="https://github.com/poudel-bibek/Darpan/releases/tag/v1.4.7">Downloads</a></p>
+    <p class="intro">The Linux computer keeps its own resolution unless you’re actually looking at it from another computer.</p>
+    <h3>Fixes on Linux</h3>
+    <ul>
+      <li>Only a window that shows the picture changes the Linux computer’s resolution. A Mac that reconnects in its sleep, or a hidden window, leaves it alone. The resolution goes back 10&nbsp;seconds after you disconnect, or 5&nbsp;minutes after you hide the window.</li>
+      <li>Closing a window while the resolution is changing no longer leaves the Linux screen without a mode, which could make GNOME log you out at the next click on the top bar.</li>
+      <li>Updating or stopping Darpan on Linux takes a second or two. Before, it could take 90&nbsp;seconds.</li>
+    </ul>
+    <h3>Fixes on the Mac</h3>
+    <ul>
+      <li>While no screen is on (the lid closed, or the display asleep), a dropped connection waits for a screen before reconnecting, so a Mac you’re not using no longer connects by itself. A session that’s still open, such as sound playing, goes on.</li>
+    </ul>
+  </article>
   <article class="release" id="v1.4.6">
     <h2>The desktop menu, whole again</h2>
     <p class="meta"><b>Version 1.4.6</b> · <time datetime="2026-10-18">October 18, 2026</time> · <a href="https://github.com/poudel-bibek/Darpan/releases/tag/v1.4.6">Downloads</a></p>
