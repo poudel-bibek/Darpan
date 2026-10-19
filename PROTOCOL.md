@@ -304,10 +304,12 @@ client-selected mode is active. Client → host:
 * `{"t":"res","native":true}` — restore the original mode (and scale).
 * `{"t":"modes"}` — ask for a fresh `modes` message.
 
-The host restores the original mode automatically when the last session ends. It remembers the last `res`
-of each kind of client (`auth.client` without version numbers; `native` forgets it) and switches back
-to it when that kind of client connects again with nobody else connected. A resolution change produces `screen`, `modes`
-and a new `stream`.
+Only a viewer that **watches** changes the resolution: one that has sent `start` and no `stop` since. A
+`res` from a viewer that isn't watching (a hidden window) is remembered and applied when it starts. The host
+restores the original mode 10 s after the last watching viewer leaves, or 30 s after it sends `stop`. It
+remembers the last `res` of each kind of client (`auth.client` without version numbers; `native` forgets it)
+and switches back to it when that kind of client starts watching again with nobody else watching. A
+resolution change produces `screen`, `modes` and a new `stream`.
 
 ## 9. Other host → client messages
 
