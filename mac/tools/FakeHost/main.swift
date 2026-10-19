@@ -11,6 +11,7 @@
 // Commands on stdin: clip <text> · notice <text> · error <text> · kick · restart · drop ·
 // stall (8 s of silence) · lock (30 s lockout) · quit
 import AVFoundation
+import CryptoKit
 import DarpanCore
 import Foundation
 import Network
@@ -56,7 +57,7 @@ while let a = args.next() {
 }
 
 let queue = DispatchQueue(label: "fakehost", qos: .userInteractive)
-let salt = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+let salt = Data(SHA256.hash(data: Data(password.utf8)).prefix(16))   // the same after a restart, as a real host keeps it
 let iterations = 200_000
 let key = try! Auth.deriveKey(password: password, salt: salt, iterations: iterations)
 let uploadDir = FileManager.default.temporaryDirectory.appendingPathComponent("darpan-fakehost")

@@ -230,6 +230,10 @@ public final class Client {
     private var lastInbound = 0.0
     /// Closed for the Mac's sleep (`sleep()`); `wake()` reconnects.
     private var asleep = false
+    /// The screens are dark (idle, or the lid closed): a live session goes on (sound, a transfer), but one that
+    /// drops waits for a screen to come back before connecting again (`reconnectHeld`), so a dark wake never does.
+    private var screensOff = false
+    private var reconnectHeld = false
     private var pingTimer: DispatchSourceTimer?
     private var activity: NSObjectProtocol?
 
@@ -379,7 +383,10 @@ public final class Client {
     /// instead of waiting for the next ping.
     public func wake() {
         queue.async {
-            if self.asleep {
+            let held = self.reconnectHeld
+            self.screensOff = false
+            self.reconnectHeld = false
+            if self.asleep || held {
                 self.asleep = false
                 self.retry = 0
                 self.open(initial: !self.everConnected)
@@ -389,6 +396,11 @@ public final class Client {
             self.lastInbound = Clock.nowMs()
             self.ping()
         }
+    }
+
+    /// The screens went dark: keep a live session, but hold any reconnect until `wake()`.
+    public func screensSlept() {
+        queue.async { self.screensOff = true }
     }
 
     /// Sound on or off (PROTOCOL.md §12). Decoded audio goes to `sink`, on its own queue.
@@ -534,11 +546,13 @@ public final class Client {
 
     private func scheduleReconnect() {
         publish(.reconnecting(restarting: hostRestarting))
+        guard !screensOff else { reconnectHeld = true; return }   // until a screen wakes
         let delay = min(10, 0.4 * pow(2, Double(min(retry, 10))))
         retry += 1
         let gen = generation
         queue.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.generation == gen else { return }
+            if self.screensOff { self.reconnectHeld = true; return }   // the screens went dark meanwhile
             self.open(initial: false)
         }
     }

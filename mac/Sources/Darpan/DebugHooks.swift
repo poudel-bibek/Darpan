@@ -107,6 +107,10 @@ enum DebugHooks {
             NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: NSWorkspace.shared)
         case "wake":
             NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: NSWorkspace.shared)
+        case "screens-off":                               // as if the screens went dark (or came back), the system awake
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.screensDidSleepNotification, object: NSWorkspace.shared)
+        case "screens-on":
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.screensDidWakeNotification, object: NSWorkspace.shared)
         case "stats": s?.debugComputer.prefs.showStats = a.count > 1 && a[1] == "on"
         case "fps": s?.debugComputer.prefs.fps = Int(num(1))
         case "quality": s?.debugComputer.prefs.quality = Int(num(1))
