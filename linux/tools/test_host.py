@@ -1674,8 +1674,10 @@ async def run(args, tmp, probe_log):
              for l in steps[:next((k for k, l in enumerate(steps) if "1234x" in l), len(steps))]]
     # (native puts NVIDIA's MetaMode back as it was, not just a mode: xrandr can keep a fit's frame)
     stepped = steps[:9] == ["s2", "@1920x1078", "@1920x1080", "s1", "@1920x1078", "@1920x1080", "s0", "@1920x1078", "orig"]
+    first_mode = next((k for k, l in enumerate(tail) if l.startswith("xrandr --output screen --mode")), len(tail))
     unfit = ("gsettings set org.gnome.desktop.interface scaling-factor 0" in tail and any(
-        re.fullmatch(r"xrandr --output screen --mode 0x[0-9a-f]+ --transform none", l) for l in tail))
+        re.fullmatch(r"xrandr --output screen --mode 0x[0-9a-f]+ --transform none", l) for l in tail)
+        and any("1920x1080_60" in l for l in tail[:first_mode]))    # NVIDIA's frame off before the mode
     # two displays: no fit offered (a MetaMode names every display; assigning one would turn the other off)
     real_run = screen_mod._run
 

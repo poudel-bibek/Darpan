@@ -421,6 +421,8 @@ class Screen:
         if self.fitted:
             await self._unscale(orig)
             await self._step(text, w, h)
+            if orig.get("meta"):                 # NVIDIA: the fit's frame off first (a mode alone keeps it)
+                await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=" + orig["meta"])
         self.scaled = None
         log.info("switching %s to %dx%d@%.2f (%s)", name, w, h, rate, xid)
         await _switch(self.display, name, xid, w, h, rate)   # (--transform none: a fit's scaling, if there was one)
