@@ -40,15 +40,23 @@ def _serve(args):
             loop.add_signal_handler(sig, stop.set)
         await stop.wait()
         log.info("shutting down")
+        await server.close()                 # no new viewers meanwhile
+        ctl.close()
         hub.kick(code=4004, reason="host shutting down")
         await asyncio.sleep(0.3)
         for s in list(hub.sessions):
             await s._close()
+        if hub.jobs:                         # a resolution change under way finishes first; one that drags on
+            _, late = await asyncio.wait(hub.jobs, timeout=15)   # stops after the tool it's running
+            for t in late:
+                t.cancel()
+            if late:
+                await asyncio.wait(late)
         await hub.session_ended(now=True)   # put the resolution back before we go, not 10 s later
         if hub.screen:
             await hub.screen.settle()        # (and the desktop icons it rescales)
-        ctl.close()
-        await server.close()
+        logging.shutdown()
+        os._exit(0)                          # everything is put back: a thread still blocked mustn't hold the stop up
 
     asyncio.run(main())
 

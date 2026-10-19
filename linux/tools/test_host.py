@@ -997,7 +997,7 @@ async def run(args, tmp, probe_log):
                                wd_after=3.0, ws=types.SimpleNamespace(buffered=900 * 1024, last_rx=time.monotonic() - 4.0),
                                _task=lambda c: asyncio.ensure_future(c), cap=types.SimpleNamespace(
                                    keyframe=lambda: keyframes.append(1), pause=lambda: None), paused_at=None,
-                               _credit=lambda n: None)
+                               _credit=lambda n: None, wants=False)
     f3._log_freeze = note
     f3._end_freeze = lambda by: Sess._end_freeze(f3, by)
     Sess._watchdog(f3, time.monotonic())
@@ -1118,7 +1118,8 @@ async def run(args, tmp, probe_log):
         cap=types.SimpleNamespace(fps_=60, cuda=False), errors=collections.deque(), x264_until=0.0, x264_backoff=60.0,
         ws=types.SimpleNamespace(closed=False, send_json=sent.append), _resume=lambda: tasks.append("resume"),
         _full_colour=lambda: False, short=set(), recheck_at=0.0, recheck_s=30.0, came_back=set(), told=set(),
-        _task=lambda c: (c.close(), tasks.append("restart")), _start_capture=lambda restart=False: asyncio.sleep(0))
+        _task=lambda c: (c.close(), tasks.append("restart")), _start_capture=lambda restart=False: asyncio.sleep(0),
+        wants=True)
     fake._fall_back_to_x264 = lambda why: Session._fall_back_to_x264(fake, why)
     fake._cuda = lambda: Session._cuda(fake)
     fake._short_of_memory = lambda what: Session._short_of_memory(fake, what)
@@ -1320,7 +1321,7 @@ async def run(args, tmp, probe_log):
     log3 = os.path.join(tmp, "host3.log")
     host3 = subprocess.Popen([sys.executable, "-m", "darpan", "serve", "--port", str(port3), "-v"], env=env3,
                              cwd=args.root, stdout=open(log3, "w"), stderr=subprocess.STDOUT)
-    got = 0
+    got, stopped = 0, -1.0
     try:
         for _ in range(100):
             try:
@@ -1335,11 +1336,17 @@ async def run(args, tmp, probe_log):
             pass
         c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 0})
         got, _ = await pump(c, 4.0)
+        stop_at = time.monotonic()
+        host3.terminate()                               # a viewer still watching
+        await asyncio.get_running_loop().run_in_executor(None, host3.wait, 10)
+        stopped = time.monotonic() - stop_at
         c.w.close()
     finally:
         host3.terminate()
         host3.wait(5)
     said = open(log3).read()
+    ok("the host stops at once with a viewer watching", stopped < 3 and host3.returncode == 0 and "Traceback" not in said,
+       "%.1f s, exit %s" % (stopped, host3.returncode))
     ok("Vulkan fails: NVENC through CUDA, not software", got > 0 and "NVENC through CUDA from now on" in said
        and "software encoding" not in said, "%d frames after the failure" % got)
 
@@ -1433,6 +1440,7 @@ async def run(args, tmp, probe_log):
         c = await WS.connect("127.0.0.1", args.port)
         _, h = await c.recv()
         c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py"})
+        c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 2000})
         await pump(c, 1.0)
         if msg:
             c.send(msg)
@@ -1446,6 +1454,29 @@ async def run(args, tmp, probe_log):
     ok("each client gets its last resolution back", seen == [(1, {"test_host.py": [1920, 1080]}),
        (2, {"test_host.py": [1920, 1080]}), (3, {}), (3, {})], seen)
 
+    # only a viewer that watches changes the screen: one that is merely connected (a hidden window, a Mac that
+    # reconnects by itself) has its choice saved, applied once it starts; and a choice sent just before leaving
+    # is still saved (the change is the host's, not cancelled with the session)
+    c = await WS.connect("127.0.0.1", args.port)
+    _, h = await c.recv()
+    c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py hidden"})
+    await pump(c, 1.0)
+    at = switches()
+    c.send({"t": "res", "w": 1920, "h": 1080})
+    await pump(c, 1.0)
+    hidden = switches() - at, json.load(open(res_file)).get("test_host.py hidden")
+    c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 2000})
+    await pump(c, 1.0)
+    shown = switches() - at
+    c.send({"t": "res", "native": True})
+    c.send({"t": "res", "w": 1920, "h": 1080})
+    c.w.close()
+    await asyncio.sleep(1.0)
+    left = json.load(open(res_file)).get("test_host.py hidden")
+    ok("only a watching viewer changes the screen; a choice sent while leaving is kept",
+       hidden == (0, [1920, 1080]) and shown == 1 and left == [1920, 1080],
+       "connected: %s; watching: %d switch(es); sent while leaving: %s" % (hidden, shown, left))
+
     # another device right after, with no choice of its own, gets the original back at once, not the last viewer's
     host_log = os.path.join(tmp, "host.log")
     restores = open(host_log).read().count("restoring screen to")
@@ -1454,6 +1485,7 @@ async def run(args, tmp, probe_log):
         c = await WS.connect("127.0.0.1", args.port)
         _, h = await c.recv()
         c.send({"t": "auth", "proof": proof_for(pw, h), "client": name})
+        c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 2000})
         await pump(c, 1.0)
         if msg:
             c.send(msg)
@@ -1473,6 +1505,12 @@ async def run(args, tmp, probe_log):
     import darpan.session as session_mod
     restored, hub = [], types.SimpleNamespace(sessions=set(), x=object(), _repeat_off=False, _screen=asyncio.Lock(),
                                               login_screen=False, _restoring=None, _restore_at=0.0, _rescale=lambda: None)
+    hub.watchers = lambda: session_mod.Hub.watchers(hub)
+
+    class Viewer:
+        def __init__(self, watching):
+            self.watching = watching
+    hub._restore_soon = lambda after, now=False: session_mod.Hub._restore_soon(hub, after, now)
     marker = os.path.join(tmp, "screen-state.json")
     open(marker, "w").write("{}")
 
@@ -1483,7 +1521,7 @@ async def run(args, tmp, probe_log):
     real_after, session_mod.RESTORE_AFTER_S = session_mod.RESTORE_AFTER_S, 0.3
     await session_mod.Hub.session_ended(hub)            # the last viewer leaves ...
     await asyncio.sleep(0.05)
-    hub.sessions.add("back")                            # ... is back at once ...
+    hub.sessions.add(Viewer(True))                      # ... is back at once ...
     await asyncio.sleep(0.1)
     hub.sessions.clear()                                # ... and gone again while the first timer still runs
     left = time.monotonic()
@@ -1504,6 +1542,45 @@ async def run(args, tmp, probe_log):
     session_mod.RESTORE_AFTER_S = real_after
     ok("on shutdown the resolution goes back at once", len(restored) == 1 and restored[0] - stop_at < 0.1,
        "%d restore(s), %.2f s after the stop" % (len(restored), restored[0] - stop_at if restored else -1))
+    # a viewer still connected but not watching doesn't hold the resolution; one that pauses gives it back after a
+    # while, unless it shows the picture again first
+    restored.clear()
+    session_mod.RESTORE_AFTER_S, real_paused, session_mod.PAUSED_RESTORE_S = 0.2, session_mod.PAUSED_RESTORE_S, 0.3
+    viewer = Viewer(False)
+    hub.sessions = {viewer}
+    await session_mod.Hub.session_ended(hub)            # another viewer leaves; this one is only connected
+    await asyncio.sleep(0.35)
+    idle = len(restored)
+    viewer.watching = True
+    await asyncio.sleep(0.05)
+    viewer.watching = False
+    session_mod.Hub.stopped_watching(hub)               # it pauses ...
+    await asyncio.sleep(0.1)
+    viewer.watching = True                              # ... looks again ...
+    await asyncio.sleep(0.3)
+    kept = len(restored) == idle
+    viewer.watching = False
+    paused_at = time.monotonic()
+    session_mod.Hub.stopped_watching(hub)               # ... and pauses for good
+    await asyncio.sleep(0.45)
+    session_mod.RESTORE_AFTER_S, session_mod.PAUSED_RESTORE_S = real_after, real_paused
+    ok("a connected viewer that isn't watching doesn't hold the resolution; a paused one, a while",
+       idle == 1 and kept and len(restored) == 2 and restored[1] - paused_at >= 0.29,
+       "connected only: %d restore(s); looked again in time: %s; then %d restore(s), %.2f s after the pause" % (
+           idle, kept, len(restored), restored[-1] - paused_at if len(restored) == 2 else -1))
+    # a tool under way when its task is cancelled (the host stopping) finishes: an xrandr stopped half-way can
+    # leave the monitor without a mode
+    import darpan.screen as screen_mod
+    mark = os.path.join(tmp, "tool-finished")
+    tool = asyncio.ensure_future(screen_mod._run(None, "sh", "-c", "sleep 0.4; echo done > " + mark))
+    await asyncio.sleep(0.1)
+    tool.cancel()
+    try:
+        await tool
+    except asyncio.CancelledError:
+        pass
+    ok("a display tool finishes though its task is cancelled", tool.cancelled() and os.path.exists(mark),
+       "cancelled: %s, finished: %s" % (tool.cancelled(), os.path.exists(mark)))
 
     # fit: the desktop exactly the viewer's size at 200 %: GNOME's scale first (it reads it only when the monitors
     # change), then NVIDIA's MetaMode with the desktop fitted into the monitor's own mode; native undoes both,
@@ -1511,6 +1588,7 @@ async def run(args, tmp, probe_log):
     c = await WS.connect("127.0.0.1", args.port)
     _, h = await c.recv()
     c.send({"t": "auth", "proof": proof_for(pw, h), "client": "test_host.py fit"})
+    c.send({"t": "start", "codec": "h264", "fps": 30, "bitrate": 2000})   # (only a watching viewer changes the screen)
     _, before = await pump(c, 1.5, "modes")
     await pump(c, 1.0)                          # (modes again: the visits above left a restore pending)
     c.send({"t": "res", "fit": [1600, 1000], "scale": 200})
@@ -1555,7 +1633,6 @@ async def run(args, tmp, probe_log):
     v.send({"t": "auth", "proof": proof_for(pw, vh), "client": "test_host.py fit viewer"})
     _, seen = await pump(v, 2.0, "ok")
     v.w.close()
-    c.send({"t": "stop"})
     c.send({"t": "res", "native": True})
     await pump(c, 2.0, "modes")
     c.send({"t": "res", "fit": [1234, 800], "scale": 200})      # refused by the driver: not 200 % on the old desktop
@@ -1585,7 +1662,6 @@ async def run(args, tmp, probe_log):
     unfit = ("gsettings set org.gnome.desktop.interface scaling-factor 0" in tail and any(
         re.fullmatch(r"xrandr --output screen --mode 0x[0-9a-f]+ --transform none", l) for l in tail))
     # two displays: no fit offered (a MetaMode names every display; assigning one would turn the other off)
-    import darpan.screen as screen_mod
     real_run = screen_mod._run
 
     async def two_displays(display, *cmd):

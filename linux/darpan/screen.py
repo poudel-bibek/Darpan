@@ -35,20 +35,31 @@ async def _run(display, *cmd):
                                                     stderr=asyncio.subprocess.PIPE)
     except FileNotFoundError:
         raise RuntimeError("%s isn't installed" % cmd[0])
+    talk = asyncio.ensure_future(proc.communicate())
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), 10)
-    except (asyncio.TimeoutError, asyncio.CancelledError) as e:   # (cancelled: the host stopping)
-        try:
-            proc.kill()
-        except ProcessLookupError:           # it had just finished
-            pass
-        await asyncio.shield(proc.wait())    # its pipes closed while the event loop still runs
-        if isinstance(e, asyncio.CancelledError):
-            raise
+        await asyncio.wait({talk}, timeout=10)
+    except asyncio.CancelledError:           # (the host stopping): it finishes all the same, as an xrandr stopped
+        await asyncio.shield(asyncio.wait({talk}, timeout=10))   # half-way can leave the monitor without a mode
+        await _reap(proc, talk)
+        raise
+    if await _reap(proc, talk):
         raise RuntimeError("%s timed out" % cmd[0])
+    out, err = talk.result()
     if proc.returncode:
         raise RuntimeError("%s failed: %s" % (" ".join(cmd), err.decode(errors="replace").strip()))
     return out.decode(errors="replace")
+
+
+async def _reap(proc, talk):
+    """Kills a tool that hangs (True), then waits for its pipes to close while the event loop still runs."""
+    if talk.done():
+        return False
+    try:
+        proc.kill()
+    except ProcessLookupError:               # it had just finished
+        pass
+    await asyncio.shield(talk)
+    return True
 
 
 async def _xrandr(display, *args):

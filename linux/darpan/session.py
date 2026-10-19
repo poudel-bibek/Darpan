@@ -59,6 +59,8 @@ NEED_MIB = {"gpu": 512, "nvenc": 192, "444": 256}   # free GPU memory before Mor
                                                     # all, or 4:4:4 is tried again
 RECHECK_S = 30.0                            # how often, while one of them is off for lack of it
 RESTORE_AFTER_S = 10.0                      # the resolution goes back this long after the last viewer leaves
+PAUSED_RESTORE_S = 300.0                    # ... or stops watching (its window hidden or covered: a while elsewhere
+                                            # on the viewer's computer keeps it, as each switch rearranges the desktop)
 
 
 class RateControl:
@@ -175,6 +177,8 @@ class Session:
         self.caps = set()               # what the viewer can do beyond the basics (auth's "caps")
         self.since = time.time()
         self.authed = False
+        self.gone = False                 # closed (_close runs once)
+        self.wants = False                # the viewer shows the picture: between its start and its stop
         # video
         self.cap = None
         self.stream_id = 0
@@ -252,8 +256,6 @@ class Session:
             return
         hub.sessions.add(self)
         hub._active.set()
-        if len(hub.sessions) == 1:
-            self._task(hub.restore_resolution(self))
         try:
             self._welcome()
             while True:
@@ -334,6 +336,9 @@ class Session:
         self._task(hub.send_clipboard(self))
 
     async def _close(self):
+        if self.gone:
+            return
+        self.gone = True
         hub = self.hub
         hub.sessions.discard(self)
         for t in [t for t, (s, _) in hub.audio_tokens.items() if s is self]:
@@ -405,6 +410,12 @@ class Session:
         t.add_done_callback(self.tasks.discard)
         return t
 
+    @property
+    def watching(self):
+        """Showing the picture: streaming and not paused. Only a viewer that watches sets the resolution; one that
+        is merely connected (a window hidden, a Mac reconnecting by itself) leaves the desktop as it is."""
+        return self.wants and not self.gone
+
     def kick(self, code=4003, reason="disconnected by host"):
         self.ws.send_json({"t": "bye", "reason": reason})
         self.ws.close(code, reason)
@@ -423,12 +434,18 @@ class Session:
             self._resume()
         else:
             self._task(self._start_capture())
+        if not self.wants:
+            self.wants = True
+            self.hub.started_watching(self)
 
     def on_stop(self, m):
         if self.cap and self.paused_at is None:
             self._end_freeze("a pause")
             self.paused_at = time.monotonic()   # keep the encoder warm for a quick resume
             self.cap.pause()
+        if self.wants:
+            self.wants = False
+            self.hub.stopped_watching()
 
     def on_cfg(self, m):
         if not self.params:
@@ -844,7 +861,7 @@ class Session:
 
     # ------------------------------------------------------------------ resolution
     def on_res(self, m):
-        self._task(self.hub.change_resolution(self, m))
+        self.hub.job(self.hub.change_resolution(self, m))   # (not a session task: see Hub.job)
 
     def on_modes(self, m):
         self._task(self.hub.refresh_modes(send_to=self))
@@ -1004,6 +1021,7 @@ class Hub:
         self._restore_keymap = None
         self._typing = asyncio.Lock()
         self._screen = asyncio.Lock()     # set_mode / restore never interleave
+        self.jobs = set()                 # display changes, run to the end whoever asked (see job)
         self._restoring = None            # the pending put-it-back, after the last viewer left ...
         self._restore_at = 0.0            # ... at this time (each departure pushes it out)
         self.unauthed_by = collections.Counter()
@@ -1202,25 +1220,51 @@ class Hub:
                 except Exception:
                     log.exception("tick failed")
 
+    def job(self, coro):
+        """A display change (resolution, fit, restore) as the hub's own task: a viewer leaving cancels its session's
+        tasks, and a change cancelled half-way could leave the monitor without a mode (GNOME then has no monitor,
+        and a click on the top bar crashes the shell)."""
+        t = asyncio.get_running_loop().create_task(coro)
+        self.jobs.add(t)
+        t.add_done_callback(self.jobs.discard)
+        return t
+
+    def watchers(self):
+        return {s for s in self.sessions if s.watching}
+
+    def started_watching(self, session):
+        """A viewer shows the picture (again): its resolution, if it's the only one watching."""
+        self.job(self.restore_resolution(session))
+
+    def stopped_watching(self):
+        """A viewer hid its window: once nobody watches for a while, the desktop goes back to its own resolution."""
+        if not self.watchers():
+            self._restore_soon(PAUSED_RESTORE_S)
+
     async def session_ended(self, now=False):
-        """The last viewer left: the resolution goes back a little later, or with `now` (the host is stopping and
-        a pending restore would be cancelled with it), at once."""
-        if self.sessions or not self.x:
+        """A viewer left: with nobody left watching, the resolution goes back a little later, or with `now` (the host
+        is stopping and a pending restore would be cancelled with it), at once."""
+        if not self.x:
             return
-        if self._repeat_off:
+        if not self.sessions and self._repeat_off:
             self.x.set_autorepeat(True)
             self._repeat_off = False
             try:
                 os.unlink(self.repeat_marker)
             except FileNotFoundError:
                 pass
-        self._restore_at = time.monotonic() + (0 if now else RESTORE_AFTER_S)
+        if self.watchers():
+            return
+        self._restore_soon(0 if now else RESTORE_AFTER_S, now)
+        if now:
+            await self._restoring
+
+    def _restore_soon(self, after, now=False):
+        self._restore_at = time.monotonic() + after
         if now and self._restoring and not self._restoring.done():
             self._restoring.cancel()
         if now or not self._restoring or self._restoring.done():
             self._restoring = asyncio.get_running_loop().create_task(self._restore_later())
-        if now:
-            await self._restoring
 
     async def _restore_later(self):
         # A little later, not at once: a quick reconnect (the Mac waking up, a dropped link, a short look) finds the
@@ -1228,7 +1272,7 @@ class Hub:
         while (wait := self._restore_at - time.monotonic()) > 0:
             await asyncio.sleep(wait)
         async with self._screen:
-            if self.sessions:             # someone connected while we waited
+            if self.watchers():           # someone watches (again) since
                 return
             if not self.login_screen and os.path.exists(self.screen.state_file):
                 try:
@@ -1385,15 +1429,21 @@ class Hub:
     async def change_resolution(self, session, m):
         if self.login_screen:
             return
+        watching = False
         try:
+            if m.get("fit"):                # the desktop exactly the viewer's size, at its scale
+                choice = {"fit": [int(m["fit"][0]), int(m["fit"][1])], "scale": int(m.get("scale", 200))}
+            elif not m.get("native"):
+                choice = [int(m["w"]), int(m["h"])]
             async with self._screen:
-                if m.get("native"):
+                watching = session.watching
+                if not watching:            # a hidden window doesn't change the desktop: it applies on its start
+                    log.info("resolution choice of %s saved for when it watches", _kind(session))
+                elif m.get("native"):
                     await self.screen.restore()
-                elif m.get("fit"):          # the desktop exactly the viewer's size, at its scale
-                    choice = {"fit": [int(m["fit"][0]), int(m["fit"][1])], "scale": int(m.get("scale", 200))}
+                elif m.get("fit"):
                     await self.screen.fit(*choice["fit"], choice["scale"])
                 else:
-                    choice = [int(m["w"]), int(m["h"])]
                     await self.screen.set_mode(*choice)
             saved = self._saved_resolutions()
             if m.get("native"):
@@ -1402,9 +1452,11 @@ class Hub:
                 saved[_kind(session)] = choice
             config.write_private(self.res_file, json.dumps(saved))
         except (ValueError, KeyError, TypeError, IndexError, RuntimeError) as e:
+            log.warning("resolution change for %s failed: %s", _kind(session), e)
             session.ws.send_json({"t": "notice", "level": "error", "text": "resolution change failed: %s" % e})
-        self._rescale()
-        await self.refresh_modes(broadcast=True)
+        if watching or not session.gone:    # (a viewer gone before its change began: only its choice is saved)
+            self._rescale()
+            await self.refresh_modes(broadcast=True)
 
     def _saved_resolutions(self):
         try:
@@ -1415,21 +1467,21 @@ class Hub:
             return {}
 
     async def restore_resolution(self, session):
-        """A device gets back the resolution it chose last time, unless someone else is watching."""
+        """A device that starts watching gets back the resolution it chose last time, unless someone else watches."""
         mode = self._saved_resolutions().get(_kind(session))
         if self.login_screen:
             return
         if not mode:                      # no choice of its own: not the last viewer's either, if it's still up
             if self._restoring and not self._restoring.done():
                 async with self._screen:
-                    if self.sessions == {session} and os.path.exists(self.screen.state_file):
+                    if self.watchers() == {session} and os.path.exists(self.screen.state_file):
                         await self.screen.restore()
                 self._rescale()
                 await self.refresh_modes(broadcast=True)
             return
         try:
             async with self._screen:
-                if self.sessions != {session}:
+                if self.watchers() != {session}:
                     return
                 if isinstance(mode, dict):
                     await self.screen.fit(int(mode["fit"][0]), int(mode["fit"][1]), int(mode["scale"]))
