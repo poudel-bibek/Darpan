@@ -63,11 +63,15 @@ async def _reap(proc, talk):
 
 
 def _unframed(meta, w, h):
-    """NVIDIA's MetaMode filling its w×h mode, whatever frame it had: a fit's ViewPortOut (the desktop in the middle,
-    bars either side) left behind by an xrandr mode change must not become the "original" that every restore
-    puts back."""
-    dpy, rest = meta.split(":", 1)
-    return "%s: %s @%dx%d +0+0 {ViewPortIn=%dx%d, ViewPortOut=%dx%d+0+0}" % (dpy, rest.split()[0], w, h, w, h, w, h)
+    """NVIDIA's MetaMode without a fit's frame: the desktop the size of its ViewPortOut, put in the middle of the
+    w×h mode (bars either side), is what an xrandr mode change leaves of a fit, and it must not become the
+    "original" every restore puts back. Only the frame goes; any other setting (rotation, composition) stays."""
+    vin = re.search(r"ViewPortIn=(\d+)x(\d+)", meta)
+    vout = re.search(r"ViewPortOut=(\d+)x(\d+)\+(\d+)\+(\d+)", meta)
+    if not (vin and vout) or vout.group(3, 4) == ("0", "0") or vin.groups() != vout.group(1, 2):
+        return meta
+    meta = re.sub(r"@\d+x\d+", "@%dx%d" % (w, h), meta, count=1)
+    return meta.replace(vin.group(0), "ViewPortIn=%dx%d" % (w, h)).replace(vout.group(0), "ViewPortOut=%dx%d+0+0" % (w, h))
 
 
 async def _xrandr(display, *args):
