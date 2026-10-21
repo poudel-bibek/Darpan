@@ -62,6 +62,18 @@ async def _reap(proc, talk):
     return True
 
 
+def _unframed(meta, w, h):
+    """NVIDIA's MetaMode without a fit's frame: the desktop the size of its ViewPortOut, put in the middle of the
+    w×h mode (bars either side), is what an xrandr mode change leaves of a fit, and it must not become the
+    "original" every restore puts back. Only the frame goes; any other setting (rotation, composition) stays."""
+    vin = re.search(r"ViewPortIn=(\d+)x(\d+)", meta)
+    vout = re.search(r"ViewPortOut=(\d+)x(\d+)\+(\d+)\+(\d+)", meta)
+    if not (vin and vout) or vout.group(3, 4) == ("0", "0") or vin.groups() != vout.group(1, 2):
+        return meta
+    meta = re.sub(r"@\d+x\d+", "@%dx%d" % (w, h), meta, count=1)
+    return meta.replace(vin.group(0), "ViewPortIn=%dx%d" % (w, h)).replace(vout.group(0), "ViewPortOut=%dx%d+0+0" % (w, h))
+
+
 async def _xrandr(display, *args):
     return await _run(display, "xrandr", *args)
 
@@ -422,7 +434,8 @@ class Screen:
             await self._unscale(orig)
             await self._step(text, w, h)
             if orig.get("meta"):                 # NVIDIA: the fit's frame off first (a mode alone keeps it)
-                await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=" + orig["meta"])
+                await _run(self.display, "nvidia-settings", "--assign",
+                           "CurrentMetaMode=" + _unframed(orig["meta"], orig["w"], orig["h"]))
         self.scaled = None
         log.info("switching %s to %dx%d@%.2f (%s)", name, w, h, rate, xid)
         await _switch(self.display, name, xid, w, h, rate)   # (--transform none: a fit's scaling, if there was one)
@@ -443,8 +456,9 @@ class Screen:
             if "scaling" in orig:                # it was fitted
                 await self._step(await _xrandr(self.display, "--query"), orig["w"], orig["h"])
             if orig.get("meta"):
-                log.info("restoring %s to %dx%d (%s)", orig["output"], orig["w"], orig["h"], orig["meta"])
-                await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=" + orig["meta"])
+                meta = _unframed(orig["meta"], orig["w"], orig["h"])
+                log.info("restoring %s to %dx%d (%s)", orig["output"], orig["w"], orig["h"], meta)
+                await _run(self.display, "nvidia-settings", "--assign", "CurrentMetaMode=" + meta)
             else:
                 xid = _pick(_mutter_modes(await _xrandr(self.display, "--verbose"), orig["output"])[0],
                             orig["w"], orig["h"], orig["rate"])
