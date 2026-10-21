@@ -1688,6 +1688,15 @@ async def run(args, tmp, probe_log):
     two = await screen_mod.Screen(":0")._metamode()
     screen_mod._run = real_run
     ok("two displays: no fit offered", two is None, repr(two))
+    # a MetaMode recorded while framed (a fit's ViewPortOut that an xrandr mode change left behind) is put back
+    # filling its mode: else every restore brings the bars back, and every fit after it records them again
+    framed = screen_mod._unframed("DPY-1: nvidia-auto-select @2304x1440 +0+0 {ViewPortIn=2304x1440, "
+                                  "ViewPortOut=2304x1440+568+0}", 3440, 1440)
+    plain = screen_mod._unframed("DPY-1: 1920x1080_60 @1920x1080 +0+0 {ViewPortIn=1920x1080, ViewPortOut=1920x1080+0+0}",
+                                 1920, 1080)
+    ok("a restore never puts a fit's frame back (the desktop in the middle, bars either side)",
+       framed == "DPY-1: nvidia-auto-select @3440x1440 +0+0 {ViewPortIn=3440x1440, ViewPortOut=3440x1440+0+0}" and
+       plain == "DPY-1: 1920x1080_60 @1920x1080 +0+0 {ViewPortIn=1920x1080, ViewPortOut=1920x1080+0+0}", "%s | %s" % (framed, plain))
     # after a scale change, Ubuntu's desktop icons start again (their menu otherwise keeps the old scale, cut off):
     # this user's on this display only, never the real desktop's (a stand-in on a display nobody uses)
     icons = "/usr/share/gnome-shell/extensions/ding-stand-in/app/ding.js"
