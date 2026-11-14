@@ -42,3 +42,18 @@ picture, small on the Mac, and more to capture and encode than you're looking at
 * **The work:** list the monitors with xrandr, capture only the chosen one's rectangle (on the CUDA
   and the Vulkan paths), shift pointer input by its position, and apply resolution changes to it.
   The monitor list and the choice need a PROTOCOL.md change agreed with the Mac side.
+
+## Thin lines at 125–175 %
+
+At these sizes the Linux desktop is drawn bigger and shrunk for the stream. The shrink weighs pixels
+unevenly, so a thin line, such as the text caret, is strong at some positions and nearly gone at
+others. At 125 % a 1-pixel line keeps between 28 % and 93 % of its darkness.
+
+* **The goal:** a thin line looks the same wherever it sits, and text stays as sharp as it is today.
+* **The idea:** grab the desktop at full size and shrink it in Darpan's own GPU step with exact
+  weights, instead of the X server's filter. Measured on an RTX 4090: the full-size grab is no slower
+  (4.7 ms against 6.2 ms).
+* **Not the way:** a two-step shrink in the X server is even, but softer (0.9 dB) and takes about
+  110 MB of GPU memory.
+* **The work:** the shader and the capture on the Vulkan path, the CUDA path too, and a thin-line
+  check in `quality_test.py`.
