@@ -68,7 +68,8 @@ def _unframed(meta, w, h):
     "original" every restore puts back. Only the frame goes; any other setting (rotation, composition) stays."""
     vin = re.search(r"ViewPortIn=(\d+)x(\d+)", meta)
     vout = re.search(r"ViewPortOut=(\d+)x(\d+)\+(\d+)\+(\d+)", meta)
-    if not (vin and vout) or vout.group(3, 4) == ("0", "0") or vin.groups() != vout.group(1, 2):
+    if (not (vin and vout) or vout.group(3, 4) == ("0", "0") or vin.groups() != vout.group(1, 2)
+            or vin.groups() == (str(w), str(h))):   # (a desktop already w×h, centred unscaled, is the user's own)
         return meta
     meta = re.sub(r"@\d+x\d+", "@%dx%d" % (w, h), meta, count=1)
     return meta.replace(vin.group(0), "ViewPortIn=%dx%d" % (w, h)).replace(vout.group(0), "ViewPortOut=%dx%d+0+0" % (w, h))

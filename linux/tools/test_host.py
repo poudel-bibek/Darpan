@@ -1696,10 +1696,12 @@ async def run(args, tmp, probe_log):
                                 "ForceCompositionPipeline=On}", 2560, 1440)     # (its other settings stay)
     own = ["DPY-1: 1920x1080_60 @1920x1080 +0+0 {ViewPortIn=1920x1080, ViewPortOut=1920x1080+0+0}",   # not framed:
            "DPY-1: nvidia-auto-select @3440x1440 +0+0 {ViewPortIn=3440x1440, ViewPortOut=3360x1400+40+20}"]   # as is
+    centred = "DPY-1: 1920x1080 @1920x1080 +0+0 {ViewPortIn=1920x1080, ViewPortOut=1920x1080+760+180}"   # the user's own
     ok("a restore never puts a fit's frame back (the desktop in the middle, bars either side)",
        framed == "DPY-1: nvidia-auto-select @3440x1440 +0+0 {ViewPortIn=3440x1440, ViewPortOut=3440x1440+0+0}" and
        kept == "DPY-1: 2560x1440_60 @2560x1440 +0+0 {ViewPortIn=2560x1440, ViewPortOut=2560x1440+0+0, "
-               "ForceCompositionPipeline=On}" and [screen_mod._unframed(m, 3440, 1440) for m in own] == own,
+               "ForceCompositionPipeline=On}" and [screen_mod._unframed(m, 3440, 1440) for m in own] == own and
+       screen_mod._unframed(centred, 1920, 1080) == centred,
        "%s | %s" % (framed, kept))
     # after a scale change, Ubuntu's desktop icons start again (their menu otherwise keeps the old scale, cut off):
     # this user's on this display only, never the real desktop's (a stand-in on a display nobody uses)
